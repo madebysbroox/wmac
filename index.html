@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Master Lee Payment Tracker</title>
+    <link rel="stylesheet" href="src/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-lockup">
+        <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
+        <div>
+          <h1>Payment Tracker</h1>
+          <p id="saveStatus">Saved on this computer</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="dashboardButton" class="button secondary" type="button">Dashboard</button>
+        <label class="button secondary" for="memberCsv">Import Members</label>
+        <input id="memberCsv" class="hidden" type="file" accept=".csv,text/csv">
+        <label class="button secondary" for="paymentCsv">Import Payments</label>
+        <input id="paymentCsv" class="hidden" type="file" accept=".csv,text/csv">
+        <button id="exportButton" class="button secondary" type="button">Export Backup</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="sidebar" aria-label="Members">
+        <div class="search-block">
+          <label for="searchInput">Find a member</label>
+          <input id="searchInput" type="search" autocomplete="off" placeholder="Type a name">
+        </div>
+        <button id="addMemberButton" class="button primary full" type="button">Add New Member</button>
+        <div class="summary-row">
+          <button id="paidCount" class="summary-link status-paid" type="button">0 paid</button>
+          <button id="watchCount" class="summary-link status-watch" type="button">0 attention</button>
+          <button id="lateCount" class="summary-link status-late" type="button">0 behind</button>
+        </div>
+        <div id="memberList" class="member-list" role="list"></div>
+      </section>
+
+      <section class="detail" aria-label="Workspace">
+        <div id="dashboardView" class="dashboard-view">
+          <div class="dashboard-header">
+            <div>
+              <p class="eyebrow">30,000-foot view</p>
+              <h2>Member Payment Field</h2>
+            </div>
+            <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
+          </div>
+
+          <div class="metric-grid">
+            <button id="dashboardPaid" class="metric-card status-paid" type="button">
+              <span>Paid up</span>
+              <strong>0</strong>
+            </button>
+            <button id="dashboardWatch" class="metric-card status-watch" type="button">
+              <span>Needs attention</span>
+              <strong>0</strong>
+            </button>
+            <button id="dashboardLate" class="metric-card status-late" type="button">
+              <span>Behind</span>
+              <strong>0</strong>
+            </button>
+            <div class="metric-card neutral">
+              <span>Estimated amount due</span>
+              <strong id="dashboardDue">$0.00</strong>
+            </div>
+          </div>
+
+          <div class="overview-grid">
+            <section class="overview-panel">
+              <h3>Field Snapshot</h3>
+              <div id="fieldSnapshot" class="snapshot-list"></div>
+            </section>
+            <section class="overview-panel">
+              <h3>Highest Balance</h3>
+              <div id="highestBalanceList" class="snapshot-list"></div>
+            </section>
+          </div>
+        </div>
+
+        <div id="rosterView" class="roster-view hidden">
+          <div class="roster-header">
+            <div>
+              <button id="backToDashboard" class="text-button" type="button">Back to dashboard</button>
+              <h2 id="rosterTitle">Members</h2>
+              <p id="rosterHelp"></p>
+            </div>
+          </div>
+          <div id="rosterMembers" class="roster-members"></div>
+        </div>
+
+        <div id="emptyState" class="empty-state hidden">
+          <h2>Choose a member</h2>
+          <p>Type the first few letters of a name, then click the member.</p>
+        </div>
+
+        <div id="memberDetail" class="hidden detail-grid">
+          <section class="member-main">
+            <div class="detail-header">
+              <div>
+                <h2 id="detailName"></h2>
+                <p id="detailContact"></p>
+              </div>
+              <span id="statusBadge" class="status-badge"></span>
+            </div>
+
+            <div id="latestPaid" class="latest-paid"></div>
+
+            <h3>Recent Months</h3>
+            <div id="monthStrip" class="month-strip"></div>
+
+            <section class="invoice-panel">
+              <div>
+                <h3>Invoice</h3>
+                <p id="invoiceSummary"></p>
+              </div>
+              <button id="invoiceButton" class="button secondary" type="button">Generate Invoice</button>
+            </section>
+
+            <form id="paymentForm" class="payment-form">
+              <h3>Record a Payment</h3>
+              <div class="form-row">
+                <label for="paymentMonth">Payment month</label>
+                <input id="paymentMonth" type="month" required>
+              </div>
+              <div class="form-row">
+                <label for="paymentAmount">Amount</label>
+                <input id="paymentAmount" type="number" min="0" step="0.01" required>
+              </div>
+              <button class="button primary large" type="submit">Save Payment</button>
+            </form>
+          </section>
+
+          <aside class="edit-panel">
+            <h3>Member Information</h3>
+            <form id="memberForm">
+              <div class="form-row">
+                <label for="memberName">Name</label>
+                <input id="memberName" required>
+              </div>
+              <div class="form-row">
+                <label for="memberPhone">Phone</label>
+                <input id="memberPhone">
+              </div>
+              <div class="form-row">
+                <label for="memberEmail">Email</label>
+                <input id="memberEmail" type="email">
+              </div>
+              <div class="form-row">
+                <label for="memberParent">Parent or guardian</label>
+                <input id="memberParent">
+              </div>
+              <div class="form-row">
+                <label for="memberAmount">Monthly amount</label>
+                <input id="memberAmount" type="number" min="0" step="0.01">
+              </div>
+              <div class="form-row">
+                <label for="memberStart">Contract start</label>
+                <input id="memberStart" type="date">
+              </div>
+              <label class="check-row">
+                <input id="memberInactive" type="checkbox">
+                Inactive member
+              </label>
+              <button class="button secondary full" type="submit">Save Member Info</button>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="mappingDialog">
+      <form method="dialog" id="mappingForm">
+        <h2 id="mappingTitle">Match CSV Columns</h2>
+        <p id="mappingHelp">Choose which columns match each field. Leave unknown fields blank.</p>
+        <div id="mappingFields" class="mapping-fields"></div>
+        <menu>
+          <button class="button secondary" value="cancel" type="button" id="cancelMapping">Cancel</button>
+          <button class="button primary" value="default">Import</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
