@@ -118,7 +118,7 @@ export function buildReminderEmail(member, balance) {
     ...(balance.feeDue > 0
       ? [
           "",
-          `* A one-time late fee of 5% or $5 (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
+          `* Payments are due each month on the same day of the month as the signing date. A one-time late fee of 5% or $5 (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
         ]
       : []),
     ...(balance.lines.length >= 2

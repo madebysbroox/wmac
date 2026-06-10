@@ -64,7 +64,8 @@ test("adds a one-time late fee to payments 10 or more days past due", () => {
     createEmptyStore()
   );
 
-  // June 8: April and May are well past due (fee), June is only 7 days late (no fee yet)
+  // Signed on the 1st, so each month is due the 1st. On June 8, April and
+  // May are well past due (fee) but June is only 7 days late (no fee yet)
   const balance = getLateFeeBalance(imported.store.members[0], [], new Date("2026-06-08T12:00:00"));
   assert.deepEqual(balance.lines.map((line) => [line.month, line.lateFee]), [
     ["2026-04", 6],
@@ -78,6 +79,49 @@ test("adds a one-time late fee to payments 10 or more days past due", () => {
   // June 11 is 10 days past the June 1 due date, so the fee kicks in
   const later = getLateFeeBalance(imported.store.members[0], [], new Date("2026-06-11T12:00:00"));
   assert.equal(later.lines[2].lateFee, 6);
+});
+
+test("due date follows the member's signing day of the month", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sarah Kim", Amount: "120", Start: "2026-04-15" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+
+  // June 20: April (due Apr 15) and May (due May 15) carry fees;
+  // June is due June 15, only 5 days late, so no fee yet
+  const balance = getLateFeeBalance(member, [], new Date("2026-06-20T12:00:00"));
+  assert.deepEqual(balance.lines.map((line) => [line.month, line.lateFee]), [
+    ["2026-04", 6],
+    ["2026-05", 6],
+    ["2026-06", 0]
+  ]);
+
+  // June 25 is exactly 10 days past June 15, so June's fee kicks in
+  const later = getLateFeeBalance(member, [], new Date("2026-06-25T12:00:00"));
+  assert.equal(later.lines[2].lateFee, 6);
+});
+
+test("due day clamps to the last day of short months", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Miguel Santos", Amount: "120", Start: "2026-01-31" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const payments = [
+    { id: "p1", memberId: member.id, month: "2026-01", amount: 120 },
+    { id: "p3", memberId: member.id, month: "2026-03", amount: 120 }
+  ];
+
+  // February is due Feb 28 (not rolled into March). March 9 is 9 days late.
+  const before = getLateFeeBalance(member, payments, new Date("2026-03-09T12:00:00"));
+  assert.deepEqual(before.lines.map((line) => [line.month, line.lateFee]), [["2026-02", 0]]);
+
+  // March 10 is 10 days past Feb 28, so the fee applies
+  const after = getLateFeeBalance(member, payments, new Date("2026-03-10T12:00:00"));
+  assert.deepEqual(after.lines.map((line) => [line.month, line.lateFee]), [["2026-02", 6]]);
 });
 
 test("late fee is at least $5 for small monthly amounts", () => {

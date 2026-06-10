@@ -49,7 +49,8 @@ test("builds an English-only payment reminder with late fees and phone number", 
   assert.match(body, /- May 2026: \$120\.00 \+ \$6\.00 late fee\* = \$126\.00/);
   assert.match(body, /- June 2026: \$120\.00/);
   assert.match(body, /Total due: \$246\.00/);
-  assert.match(body, /\* A one-time late fee of 5% or \$5 \(whichever is greater\) is added to each payment that is 10 or more days past due\./);
+  assert.match(body, /\* Payments are due each month on the same day of the month as the signing date\./);
+  assert.match(body, /A one-time late fee of 5% or \$5 \(whichever is greater\) is added to each payment that is 10 or more days past due\./);
   assert.match(body, /call Master Lee at \(540\) 347-7266/);
   assert.ok(body.includes("\r\n"), "uses CRLF line breaks for mail programs");
   assert.ok(!/[ㄱ-힝]/.test(subject + body), "email contains no Korean text");

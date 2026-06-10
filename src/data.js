@@ -306,17 +306,21 @@ export function getMemberBalance(member, payments, today = new Date()) {
   };
 }
 
-// Payments are due on the 1st. Once a payment is 10 or more days late it
-// picks up a one-time fee of 5% or $5, whichever is greater.
+// Each month's payment is due on the same day of the month as the member's
+// signing (contract start) date, clamped for short months (signed the 31st
+// means due Feb 28). Once a payment is 10 or more days late it picks up a
+// one-time fee of 5% or $5, whichever is greater.
 export const LATE_FEE_GRACE_DAYS = 10;
 export const LATE_FEE_RATE = 0.05;
 export const LATE_FEE_MINIMUM = 5;
 
 export function getLateFeeBalance(member, payments, today = new Date()) {
   const { unpaidMonths, monthlyAmount } = getMemberBalance(member, payments, today);
+  const dueDay = Number(member.startDate?.split("-")[2]) || 1;
   const lines = unpaidMonths.map((month) => {
     const [year, monthNumber] = month.split("-").map(Number);
-    const dueDate = new Date(year, monthNumber - 1, 1);
+    const lastDayOfMonth = new Date(year, monthNumber, 0).getDate();
+    const dueDate = new Date(year, monthNumber - 1, Math.min(dueDay, lastDayOfMonth));
     const daysLate = Math.floor((today - dueDate) / 86400000);
     const lateFee = daysLate >= LATE_FEE_GRACE_DAYS
       ? Math.max(LATE_FEE_MINIMUM, Math.round(monthlyAmount * LATE_FEE_RATE * 100) / 100)
