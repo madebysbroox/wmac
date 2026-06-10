@@ -6,6 +6,7 @@ import {
   exportRosterRows,
   exportStoreRows,
   getMemberBalance,
+  getLateFeeBalance,
   getMemberStatus,
   getYearRevenue,
   guessColumnMap,
@@ -267,12 +268,14 @@ function renderDetail() {
 }
 
 // The reminder button is a mailto: link, so clicking it opens the computer's
-// own mail program (Outlook) with the email already written.
+// own mail program (Outlook) with the email already written. The email uses
+// the late-fee balance, so overdue months include the one-time late fee.
 function renderEmailButton(member, balance) {
   const ready = Boolean(member.email) && balance.totalDue > 0;
   elements.emailButton.classList.toggle("disabled", !ready);
   if (ready) {
-    const { subject, body } = buildReminderEmail(member, balance);
+    const lateBalance = getLateFeeBalance(member, state.store.payments);
+    const { subject, body } = buildReminderEmail(member, lateBalance);
     elements.emailButton.href = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   } else {
     elements.emailButton.removeAttribute("href");

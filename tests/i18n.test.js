@@ -29,27 +29,48 @@ test("every importable CSV field has a bilingual label", () => {
   });
 });
 
-test("builds an English-only reminder email with unpaid months and total", () => {
+function feeBalance(lines) {
+  const baseDue = lines.reduce((sum, line) => sum + line.amount, 0);
+  const feeDue = lines.reduce((sum, line) => sum + line.lateFee, 0);
+  return { lines: lines.map((line) => ({ ...line, total: line.amount + line.lateFee })), baseDue, feeDue, totalDue: baseDue + feeDue };
+}
+
+test("builds an English-only payment reminder with late fees and phone number", () => {
   const member = { name: "Sam Park", email: "sam@example.com", parentName: "" };
-  const balance = { unpaidMonths: ["2026-05", "2026-06"], monthlyAmount: 120, totalDue: 240 };
+  const balance = feeBalance([
+    { month: "2026-05", amount: 120, lateFee: 6 },
+    { month: "2026-06", amount: 120, lateFee: 0 }
+  ]);
   const { subject, body } = buildReminderEmail(member, balance);
 
-  assert.match(subject, /Sam Park/);
-  assert.match(subject, /Tuition Reminder/);
+  assert.match(subject, /Payment Reminder/);
+  assert.ok(!subject.includes("Tuition") && !body.includes("tuition"), "says payment, not tuition");
   assert.match(body, /Hello Sam Park,/);
-  assert.match(body, /- May 2026: \$120\.00/);
+  assert.match(body, /- May 2026: \$120\.00 \+ \$6\.00 late fee\* = \$126\.00/);
   assert.match(body, /- June 2026: \$120\.00/);
-  assert.match(body, /Total due: \$240\.00/);
+  assert.match(body, /Total due: \$246\.00/);
+  assert.match(body, /\* A one-time late fee of 5% or \$5 \(whichever is greater\) is added to each payment that is 10 or more days past due\./);
+  assert.match(body, /call Master Lee at \(540\) 347-7266/);
   assert.ok(body.includes("\r\n"), "uses CRLF line breaks for mail programs");
   assert.ok(!/[ㄱ-힝]/.test(subject + body), "email contains no Korean text");
 });
 
-test("reminder email greets the parent or guardian when there is one", () => {
+test("reminder email includes the collection note only when 2 or more months are behind", () => {
   const member = { name: "Emma Chen", email: "emma@example.com", parentName: "David Chen" };
-  const balance = { unpaidMonths: ["2026-06"], monthlyAmount: 120, totalDue: 120 };
-  const { body } = buildReminderEmail(member, balance);
+  const twoBehind = feeBalance([
+    { month: "2026-04", amount: 120, lateFee: 6 },
+    { month: "2026-05", amount: 120, lateFee: 6 }
+  ]);
+  const { body } = buildReminderEmail(member, twoBehind);
   assert.match(body, /Hello David Chen,/);
-  assert.match(body, /Unpaid months for Emma Chen:/);
+  assert.match(body, /3 or more months behind may be sent to a collection agency/);
+  assert.match(body, /rather work something out together/);
+
+  const oneBehind = feeBalance([{ month: "2026-06", amount: 120, lateFee: 0 }]);
+  const single = buildReminderEmail(member, oneBehind).body;
+  assert.ok(!single.includes("collection agency"), "no collection note for a single month");
+  assert.ok(!single.includes("late fee*"), "no fee footnote when no fees apply");
+  assert.match(single, /call Master Lee at \(540\) 347-7266/);
 });
 
 test("formats months in both languages", () => {

@@ -4,6 +4,7 @@ import {
   addPayment,
   createEmptyStore,
   exportRosterRows,
+  getLateFeeBalance,
   getYearRevenue,
   guessColumnMap,
   importMembersFromRecords,
@@ -54,6 +55,40 @@ test("year revenue is empty for a year with no payments", () => {
   assert.equal(report.totalRevenue, 0);
   assert.equal(report.paymentCount, 0);
   assert.deepEqual(report.byMember, []);
+});
+
+test("adds a one-time late fee to payments 10 or more days past due", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+
+  // June 8: April and May are well past due (fee), June is only 7 days late (no fee yet)
+  const balance = getLateFeeBalance(imported.store.members[0], [], new Date("2026-06-08T12:00:00"));
+  assert.deepEqual(balance.lines.map((line) => [line.month, line.lateFee]), [
+    ["2026-04", 6],
+    ["2026-05", 6],
+    ["2026-06", 0]
+  ]);
+  assert.equal(balance.baseDue, 360);
+  assert.equal(balance.feeDue, 12);
+  assert.equal(balance.totalDue, 372);
+
+  // June 11 is 10 days past the June 1 due date, so the fee kicks in
+  const later = getLateFeeBalance(imported.store.members[0], [], new Date("2026-06-11T12:00:00"));
+  assert.equal(later.lines[2].lateFee, 6);
+});
+
+test("late fee is at least $5 for small monthly amounts", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "80", Start: "2026-05-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const balance = getLateFeeBalance(imported.store.members[0], [], new Date("2026-06-08T12:00:00"));
+  // 5% of $80 is $4, so the $5 minimum applies
+  assert.equal(balance.lines[0].lateFee, 5);
 });
 
 test("next-year roster exports only active members with importable headers", () => {

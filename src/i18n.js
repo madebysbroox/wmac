@@ -1,6 +1,8 @@
 // All user-facing words live here, in Korean first and English second,
 // so the whole app stays bilingual and the wording is easy to adjust in one place.
 
+import { LATE_FEE_GRACE_DAYS } from "./data.js";
+
 export const STATUS_LABELS = {
   paid: { ko: "완납", en: "Paid up" },
   watch: { ko: "확인 필요", en: "Needs attention" },
@@ -90,25 +92,44 @@ export function formatMonthBi(month) {
   return `${formatMonthKo(month)} (${formatMonthEn(month)})`;
 }
 
+export const MASTER_LEE_PHONE = "(540) 347-7266";
+
 // A polite reminder email in plain English, ready to drop into a mailto: link
 // so the computer's own mail program (Outlook) opens it pre-filled.
+// Takes the late-fee balance from getLateFeeBalance in data.js.
 export function buildReminderEmail(member, balance) {
   const money = (value) => Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  const total = money(balance.totalDue);
-  const monthLines = balance.unpaidMonths.map((month) => `- ${formatMonthEn(month)}: ${money(balance.monthlyAmount)}`);
+  const monthLines = balance.lines.map((line) =>
+    line.lateFee > 0
+      ? `- ${formatMonthEn(line.month)}: ${money(line.amount)} + ${money(line.lateFee)} late fee* = ${money(line.total)}`
+      : `- ${formatMonthEn(line.month)}: ${money(line.amount)}`
+  );
 
-  const subject = `World Martial Arts Center Tuition Reminder — ${member.name}`;
+  const subject = `World Martial Arts Center Payment Reminder — ${member.name}`;
   const body = [
     `Hello ${member.parentName || member.name},`,
     "",
-    "This is a friendly tuition reminder from World Martial Arts Center.",
+    "This is a friendly payment reminder from World Martial Arts Center.",
     "",
     `Unpaid months for ${member.name}:`,
     ...monthLines,
     "",
-    `Total due: ${total}`,
+    `Total due: ${money(balance.totalDue)}`,
+    ...(balance.feeDue > 0
+      ? [
+          "",
+          `* A one-time late fee of 5% or $5 (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
+        ]
+      : []),
+    ...(balance.lines.length >= 2
+      ? [
+          "",
+          "Please note: accounts that fall 3 or more months behind may be sent to a collection agency. We would much rather work something out together, so please reach out before it ever comes to that."
+        ]
+      : []),
     "",
-    "Please bring the account current at your next class, or let us know if a payment was already made.",
+    `The best next step is a quick phone call: please call Master Lee at ${MASTER_LEE_PHONE}. Keeping an open line of communication means we can always find a solution together.`,
+    "",
     "Thank you!",
     "",
     "World Martial Arts Center"
