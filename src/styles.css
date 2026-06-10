@@ -141,9 +141,19 @@ label small,
   text-align: left;
 }
 
-.button:disabled {
+.button:disabled,
+.button.disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+a.button {
+  text-decoration: none;
+}
+
+.invoice-actions {
+  display: grid;
+  gap: 8px;
 }
 
 .button.large {

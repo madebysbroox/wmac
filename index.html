@@ -131,12 +131,17 @@
 
             <section class="invoice-panel">
               <div>
-                <h3>청구서 <small lang="en">Invoice</small></h3>
+                <h3>청구서 · 알림 <small lang="en">Invoice &amp; Reminder</small></h3>
                 <p id="invoiceSummary"></p>
               </div>
-              <button id="invoiceButton" class="button secondary bi" type="button">
-                <span lang="ko">청구서 만들기</span><small lang="en">Generate Invoice</small>
-              </button>
+              <div class="invoice-actions">
+                <button id="invoiceButton" class="button secondary bi" type="button">
+                  <span lang="ko">청구서 만들기</span><small lang="en">Generate Invoice</small>
+                </button>
+                <a id="emailButton" class="button secondary bi">
+                  <span lang="ko">알림 이메일 쓰기</span><small lang="en">Email Reminder (Outlook)</small>
+                </a>
+              </div>
             </section>
 
             <form id="paymentForm" class="payment-form">

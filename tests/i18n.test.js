@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MEMBER_FIELD_ALIASES, PAYMENT_FIELD_ALIASES } from "../src/data.js";
-import { FIELD_LABELS, ROSTER_TITLES, STATUS_LABELS, bi, formatMonthBi, formatMonthEn, formatMonthKo } from "../src/i18n.js";
+import {
+  FIELD_LABELS,
+  ROSTER_TITLES,
+  STATUS_LABELS,
+  bi,
+  buildReminderEmail,
+  formatMonthBi,
+  formatMonthEn,
+  formatMonthKo
+} from "../src/i18n.js";
 
 test("every status level has Korean and English labels", () => {
   ["paid", "watch", "late"].forEach((level) => {
@@ -18,6 +27,29 @@ test("every importable CSV field has a bilingual label", () => {
     assert.ok(FIELD_LABELS[field]?.ko, `missing Korean label for field ${field}`);
     assert.ok(FIELD_LABELS[field]?.en, `missing English label for field ${field}`);
   });
+});
+
+test("builds a bilingual reminder email with unpaid months and total", () => {
+  const member = { name: "Sam Park", email: "sam@example.com", parentName: "" };
+  const balance = { unpaidMonths: ["2026-05", "2026-06"], monthlyAmount: 120, totalDue: 240 };
+  const { subject, body } = buildReminderEmail(member, balance);
+
+  assert.match(subject, /Sam Park/);
+  assert.match(subject, /회비 안내/);
+  assert.match(subject, /Tuition Reminder/);
+  assert.match(body, /Sam Park 회원님/);
+  assert.match(body, /2026년 5월 \(May 2026\): \$120\.00/);
+  assert.match(body, /2026년 6월 \(June 2026\): \$120\.00/);
+  assert.match(body, /Total due: \$240\.00/);
+  assert.ok(body.includes("\r\n"), "uses CRLF line breaks for mail programs");
+});
+
+test("reminder email greets the parent or guardian when there is one", () => {
+  const member = { name: "Emma Chen", email: "emma@example.com", parentName: "David Chen" };
+  const balance = { unpaidMonths: ["2026-06"], monthlyAmount: 120, totalDue: 120 };
+  const { body } = buildReminderEmail(member, balance);
+  assert.match(body, /David Chen님 \(Emma Chen 회원 보호자님\)/);
+  assert.match(body, /Hello David Chen,/);
 });
 
 test("formats months in both languages", () => {

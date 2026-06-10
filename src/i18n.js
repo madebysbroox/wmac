@@ -36,6 +36,8 @@ export const MSG = {
   csvEmpty: "가져올 내용이 없는 파일입니다. · That CSV did not have any rows to import.",
   nothingToExport: "아직 저장할 자료가 없습니다. · There is no data to export yet.",
   noBalanceToInvoice: "이 회원은 미납 금액이 없습니다. · This member has no balance to invoice.",
+  noEmailOnFile: "이메일 주소가 없습니다. 오른쪽 회원 정보에 이메일을 입력하세요. · No email address on file. Add one in Member Information first.",
+  noBalanceToRemind: "이 회원은 미납 금액이 없어서 알림이 필요 없습니다. · This member has no unpaid balance to remind about.",
   popupBlocked: "팝업이 차단되었습니다. 팝업을 허용하고 다시 누르세요. · The browser blocked the invoice window. Allow pop-ups and try again.",
   noMatchingMembers: "찾는 회원이 없습니다. · No matching members.",
   noMembersInGroup: "이 그룹에는 회원이 없습니다. · This group is empty right now.",
@@ -86,4 +88,39 @@ export function formatMonthBi(month) {
     return "";
   }
   return `${formatMonthKo(month)} (${formatMonthEn(month)})`;
+}
+
+// A polite bilingual reminder email, ready to drop into a mailto: link so the
+// computer's own mail program (Outlook) opens it pre-filled.
+export function buildReminderEmail(member, balance) {
+  const money = (value) => Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const total = money(balance.totalDue);
+  const monthLines = balance.unpaidMonths.map((month) => `- ${formatMonthBi(month)}: ${money(balance.monthlyAmount)}`);
+  const koreanGreeting = member.parentName
+    ? `${member.parentName}님 (${member.name} 회원 보호자님), 안녕하세요.`
+    : `${member.name} 회원님, 안녕하세요.`;
+  const englishGreeting = `Hello ${member.parentName || member.name},`;
+
+  const subject = `World Martial Arts Center 회비 안내 · Tuition Reminder — ${member.name}`;
+  const body = [
+    koreanGreeting,
+    "",
+    "World Martial Arts Center 회비 안내입니다.",
+    "",
+    "미납 내역 · Unpaid months:",
+    ...monthLines,
+    "",
+    `합계 · Total due: ${total}`,
+    "",
+    "다음 수업 시간에 정리해 주시거나, 이미 납부하셨다면 알려 주세요. 감사합니다.",
+    "",
+    englishGreeting,
+    "This is a friendly tuition reminder from World Martial Arts Center.",
+    `The unpaid months are listed above. Total due: ${total}.`,
+    "Please bring the account current at your next class, or let us know if a payment was already made. Thank you!",
+    "",
+    "World Martial Arts Center"
+  ].join("\r\n");
+
+  return { subject, body };
 }

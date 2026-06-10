@@ -21,6 +21,7 @@ import {
   MSG,
   ROSTER_TITLES,
   STATUS_LABELS,
+  buildReminderEmail,
   formatMonthBi,
   formatMonthEn,
   formatMonthKo
@@ -48,7 +49,7 @@ const elements = {};
   "dashboardDue", "fieldSnapshot", "highestBalanceList", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailName", "detailContact", "statusBadge", "latestPaid",
-  "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton",
+  "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberPhone", "memberEmail", "memberParent", "memberAmount", "memberStart",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
@@ -78,6 +79,7 @@ elements.dashboardLate.addEventListener("click", () => showRoster("late"));
 elements.backToDashboard.addEventListener("click", showDashboard);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.invoiceButton.addEventListener("click", generateInvoice);
+elements.emailButton.addEventListener("click", explainDisabledEmail);
 elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
@@ -251,6 +253,7 @@ function renderDetail() {
     ? `미납 ${balance.unpaidMonths.length}개월 · ${formatMoney(balance.totalDue)} (${balance.unpaidMonths.length} unpaid month${balance.unpaidMonths.length === 1 ? "" : "s"})`
     : MSG.noUnpaidBalance;
   elements.invoiceButton.disabled = balance.totalDue <= 0;
+  renderEmailButton(member, balance);
 
   elements.paymentMonth.value = status.currentMonth;
   elements.paymentAmount.value = Number(member.monthlyAmount || 0).toFixed(2);
@@ -261,6 +264,32 @@ function renderDetail() {
   elements.memberAmount.value = member.monthlyAmount || "";
   elements.memberStart.value = member.startDate || "";
   elements.memberInactive.checked = Boolean(member.inactive);
+}
+
+// The reminder button is a mailto: link, so clicking it opens the computer's
+// own mail program (Outlook) with the email already written.
+function renderEmailButton(member, balance) {
+  const ready = Boolean(member.email) && balance.totalDue > 0;
+  elements.emailButton.classList.toggle("disabled", !ready);
+  if (ready) {
+    const { subject, body } = buildReminderEmail(member, balance);
+    elements.emailButton.href = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  } else {
+    elements.emailButton.removeAttribute("href");
+  }
+}
+
+function explainDisabledEmail(event) {
+  if (elements.emailButton.hasAttribute("href")) {
+    return;
+  }
+  event.preventDefault();
+  const member = selectedMember();
+  if (!member) {
+    return;
+  }
+  const balance = getMemberBalance(member, state.store.payments);
+  showToast(balance.totalDue <= 0 ? MSG.noBalanceToRemind : MSG.noEmailOnFile);
 }
 
 function renderQuickPay(member, status) {
