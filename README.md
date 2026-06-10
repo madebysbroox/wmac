@@ -30,7 +30,7 @@ The everyday workflow needs only the left side of the screen:
 2. On the member page, click the big green **이번 달 납부 완료 (Mark This Month Paid)** button. One click records this month's payment at the member's normal amount.
 3. For a different month or amount, use **다른 달 회비 입력 (Record a Different Month)** below it.
 4. **＋ 새 회원 추가 (Add New Member)** creates a new member and jumps straight to the name field.
-5. For a member who is behind, **알림 이메일 쓰기 (Email Reminder)** opens the computer's own mail program (such as Outlook) with a polite bilingual reminder already written — recipient, subject, unpaid months, and total due all filled in. Just click Send. The button explains itself if the member has no email on file or no balance due.
+5. For a member who is behind, **알림 이메일 쓰기 (Email Reminder)** opens the computer's own mail program (such as Outlook) with a polite English reminder already written — recipient, subject, unpaid months, and total due all filled in. Just click Send. The button explains itself if the member has no email on file or no balance due.
 
 The home screen (처음 화면) shows who is paid, who needs attention, and who is behind — click any card to see that list of members.
 

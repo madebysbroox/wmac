@@ -29,27 +29,27 @@ test("every importable CSV field has a bilingual label", () => {
   });
 });
 
-test("builds a bilingual reminder email with unpaid months and total", () => {
+test("builds an English-only reminder email with unpaid months and total", () => {
   const member = { name: "Sam Park", email: "sam@example.com", parentName: "" };
   const balance = { unpaidMonths: ["2026-05", "2026-06"], monthlyAmount: 120, totalDue: 240 };
   const { subject, body } = buildReminderEmail(member, balance);
 
   assert.match(subject, /Sam Park/);
-  assert.match(subject, /회비 안내/);
   assert.match(subject, /Tuition Reminder/);
-  assert.match(body, /Sam Park 회원님/);
-  assert.match(body, /2026년 5월 \(May 2026\): \$120\.00/);
-  assert.match(body, /2026년 6월 \(June 2026\): \$120\.00/);
+  assert.match(body, /Hello Sam Park,/);
+  assert.match(body, /- May 2026: \$120\.00/);
+  assert.match(body, /- June 2026: \$120\.00/);
   assert.match(body, /Total due: \$240\.00/);
   assert.ok(body.includes("\r\n"), "uses CRLF line breaks for mail programs");
+  assert.ok(!/[ㄱ-힝]/.test(subject + body), "email contains no Korean text");
 });
 
 test("reminder email greets the parent or guardian when there is one", () => {
   const member = { name: "Emma Chen", email: "emma@example.com", parentName: "David Chen" };
   const balance = { unpaidMonths: ["2026-06"], monthlyAmount: 120, totalDue: 120 };
   const { body } = buildReminderEmail(member, balance);
-  assert.match(body, /David Chen님 \(Emma Chen 회원 보호자님\)/);
   assert.match(body, /Hello David Chen,/);
+  assert.match(body, /Unpaid months for Emma Chen:/);
 });
 
 test("formats months in both languages", () => {

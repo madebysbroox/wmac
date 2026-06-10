@@ -90,34 +90,26 @@ export function formatMonthBi(month) {
   return `${formatMonthKo(month)} (${formatMonthEn(month)})`;
 }
 
-// A polite bilingual reminder email, ready to drop into a mailto: link so the
-// computer's own mail program (Outlook) opens it pre-filled.
+// A polite reminder email in plain English, ready to drop into a mailto: link
+// so the computer's own mail program (Outlook) opens it pre-filled.
 export function buildReminderEmail(member, balance) {
   const money = (value) => Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
   const total = money(balance.totalDue);
-  const monthLines = balance.unpaidMonths.map((month) => `- ${formatMonthBi(month)}: ${money(balance.monthlyAmount)}`);
-  const koreanGreeting = member.parentName
-    ? `${member.parentName}님 (${member.name} 회원 보호자님), 안녕하세요.`
-    : `${member.name} 회원님, 안녕하세요.`;
-  const englishGreeting = `Hello ${member.parentName || member.name},`;
+  const monthLines = balance.unpaidMonths.map((month) => `- ${formatMonthEn(month)}: ${money(balance.monthlyAmount)}`);
 
-  const subject = `World Martial Arts Center 회비 안내 · Tuition Reminder — ${member.name}`;
+  const subject = `World Martial Arts Center Tuition Reminder — ${member.name}`;
   const body = [
-    koreanGreeting,
+    `Hello ${member.parentName || member.name},`,
     "",
-    "World Martial Arts Center 회비 안내입니다.",
+    "This is a friendly tuition reminder from World Martial Arts Center.",
     "",
-    "미납 내역 · Unpaid months:",
+    `Unpaid months for ${member.name}:`,
     ...monthLines,
     "",
-    `합계 · Total due: ${total}`,
+    `Total due: ${total}`,
     "",
-    "다음 수업 시간에 정리해 주시거나, 이미 납부하셨다면 알려 주세요. 감사합니다.",
-    "",
-    englishGreeting,
-    "This is a friendly tuition reminder from World Martial Arts Center.",
-    `The unpaid months are listed above. Total due: ${total}.`,
-    "Please bring the account current at your next class, or let us know if a payment was already made. Thank you!",
+    "Please bring the account current at your next class, or let us know if a payment was already made.",
+    "Thank you!",
     "",
     "World Martial Arts Center"
   ].join("\r\n");
