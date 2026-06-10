@@ -1,3 +1,7 @@
+/* ------------------------------------------------------------------------
+   Theme
+------------------------------------------------------------------------- */
+
 :root {
   color-scheme: light;
   --bg: #f7f4ef;
@@ -25,36 +29,14 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 18px;
+  font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", Arial, Helvetica, sans-serif;
+  font-size: 20px;
 }
 
 button,
 input,
 select {
   font: inherit;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 20px 28px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
-
-.brand-lockup {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.brand-lockup img {
-  width: 64px;
-  height: 64px;
-  object-fit: contain;
 }
 
 h1,
@@ -79,6 +61,44 @@ h3 {
   font-size: 22px;
 }
 
+/* English sub-labels under/next to the Korean text */
+h1 small,
+h2 small,
+h3 small,
+label small,
+.check-row small {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.62em;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------------
+   Top bar
+------------------------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 28px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-lockup img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
 .topbar p,
 .detail-header p,
 .empty-state p {
@@ -86,15 +106,12 @@ h3 {
   color: var(--muted);
 }
 
-.top-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
+/* ------------------------------------------------------------------------
+   Buttons
+------------------------------------------------------------------------- */
 
 .button {
-  min-height: 48px;
+  min-height: 52px;
   padding: 12px 18px;
   border: 2px solid transparent;
   border-radius: 8px;
@@ -114,6 +131,16 @@ h3 {
   color: var(--blue);
 }
 
+.button.tool {
+  display: grid;
+  width: 100%;
+  background: #f2f4f7;
+  border-color: var(--line);
+  color: var(--ink);
+  justify-items: start;
+  text-align: left;
+}
+
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -121,7 +148,7 @@ h3 {
 
 .button.large {
   width: 100%;
-  min-height: 62px;
+  min-height: 64px;
   font-size: 22px;
 }
 
@@ -129,9 +156,62 @@ h3 {
   width: 100%;
 }
 
+/* Bilingual buttons: Korean on top, English below */
+.button.bi {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  align-content: center;
+}
+
+.button.bi.tool,
+.button.bi.full {
+  justify-items: center;
+}
+
+.button.bi small {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* The big one-click pay button */
+.button.pay {
+  width: 100%;
+  min-height: 76px;
+  margin-bottom: 26px;
+  background: var(--green);
+  color: #fff;
+  font-size: 24px;
+}
+
+.button.pay small {
+  font-size: 15px;
+}
+
+.button.pay.done {
+  background: var(--green-soft);
+  color: var(--green);
+  opacity: 1;
+}
+
+.text-button {
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+/* ------------------------------------------------------------------------
+   Layout
+------------------------------------------------------------------------- */
+
 .layout {
   display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-columns: 400px minmax(0, 1fr);
   gap: 20px;
   padding: 20px;
 }
@@ -155,6 +235,10 @@ h3 {
   padding: 20px;
 }
 
+/* ------------------------------------------------------------------------
+   Forms and inputs
+------------------------------------------------------------------------- */
+
 .search-block label,
 .form-row label {
   display: block;
@@ -165,7 +249,7 @@ h3 {
 input,
 select {
   width: 100%;
-  min-height: 52px;
+  min-height: 54px;
   padding: 10px 12px;
   border: 2px solid #c9d0d6;
   border-radius: 8px;
@@ -180,6 +264,27 @@ button:focus {
   outline-offset: 2px;
 }
 
+.form-row {
+  margin-bottom: 14px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 18px;
+  font-weight: 700;
+}
+
+.check-row input {
+  width: 24px;
+  min-height: 24px;
+}
+
+/* ------------------------------------------------------------------------
+   Sidebar: search, summary, member list, file tools
+------------------------------------------------------------------------- */
+
 .search-block {
   margin-bottom: 14px;
 }
@@ -192,26 +297,36 @@ button:focus {
 }
 
 .summary-link {
-  min-height: 42px;
-  padding: 8px 10px;
+  min-height: 46px;
+  padding: 8px 12px;
   border: 1px solid transparent;
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
+}
+
+.summary-link small {
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.8;
 }
 
 .member-list {
   display: grid;
+  align-content: start;
   gap: 10px;
-  max-height: calc(100vh - 330px);
+  max-height: calc(100vh - 580px);
+  min-height: 220px;
   overflow: auto;
   padding-right: 4px;
 }
 
 .member-item {
   display: grid;
+  align-content: start;
   gap: 4px;
   width: 100%;
   padding: 14px;
@@ -229,7 +344,7 @@ button:focus {
 }
 
 .member-item strong {
-  font-size: 20px;
+  font-size: 21px;
 }
 
 .member-item span {
@@ -237,24 +352,43 @@ button:focus {
   font-size: 16px;
 }
 
-.detail-grid {
+.dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 9px;
+  border-radius: 50%;
+}
+
+.dot.paid {
+  background: var(--green);
+}
+
+.dot.watch {
+  background: var(--amber);
+}
+
+.dot.late {
+  background: var(--red);
+}
+
+.file-tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 20px;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
-.member-main,
-.edit-panel,
-.empty-state {
-  padding: 22px;
+.file-tools h3 {
+  margin-bottom: 4px;
+  font-size: 17px;
+  color: var(--muted);
 }
 
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
+/* ------------------------------------------------------------------------
+   Status colors
+------------------------------------------------------------------------- */
 
 .status-badge {
   min-width: 150px;
@@ -262,6 +396,13 @@ button:focus {
   border-radius: 8px;
   text-align: center;
   font-weight: 800;
+}
+
+.status-badge small {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 .status-paid {
@@ -278,6 +419,10 @@ button:focus {
   background: var(--red-soft);
   color: var(--red);
 }
+
+/* ------------------------------------------------------------------------
+   Dashboard
+------------------------------------------------------------------------- */
 
 .dashboard-view,
 .roster-view {
@@ -299,15 +444,6 @@ button:focus {
   object-fit: contain;
 }
 
-.eyebrow {
-  margin-bottom: 6px;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -318,7 +454,7 @@ button:focus {
 .metric-card {
   display: grid;
   gap: 8px;
-  min-height: 134px;
+  min-height: 140px;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -334,12 +470,20 @@ button:focus {
 
 .metric-card span {
   color: inherit;
+  font-size: 22px;
   font-weight: 800;
+}
+
+.metric-card span small {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.8;
 }
 
 .metric-card strong {
   align-self: end;
-  font-size: 38px;
+  font-size: 42px;
   line-height: 1;
 }
 
@@ -387,15 +531,14 @@ button:focus {
   color: var(--muted);
 }
 
-.text-button {
-  min-height: 38px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--blue);
-  cursor: pointer;
-  font-weight: 800;
+.snapshot-list span small {
+  display: block;
+  font-size: 13px;
 }
+
+/* ------------------------------------------------------------------------
+   Roster (filtered member list)
+------------------------------------------------------------------------- */
 
 .roster-members {
   display: grid;
@@ -411,7 +554,7 @@ button:focus {
   gap: 14px;
   align-items: center;
   width: 100%;
-  min-height: 78px;
+  min-height: 82px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -422,12 +565,35 @@ button:focus {
 }
 
 .roster-member strong {
-  font-size: 20px;
+  font-size: 21px;
 }
 
 .roster-member > span:not(.status-badge) {
   color: var(--muted);
-  font-size: 16px;
+  font-size: 17px;
+}
+
+/* ------------------------------------------------------------------------
+   Member detail
+------------------------------------------------------------------------- */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+}
+
+.member-main,
+.edit-panel,
+.empty-state {
+  padding: 22px;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
 }
 
 .latest-paid {
@@ -456,7 +622,7 @@ button:focus {
 }
 
 .month-box {
-  min-height: 88px;
+  min-height: 100px;
   padding: 12px;
   border: 2px solid var(--line);
   border-radius: 8px;
@@ -473,14 +639,28 @@ button:focus {
 }
 
 .month-box strong,
+.month-box small,
 .month-box span {
   display: block;
+}
+
+.month-box small {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .month-box span {
   margin-top: 8px;
   font-size: 16px;
-  color: var(--muted);
+  font-weight: 700;
+}
+
+.month-box.paid span {
+  color: var(--green);
+}
+
+.month-box.unpaid span {
+  color: var(--red);
 }
 
 .invoice-panel {
@@ -506,22 +686,9 @@ button:focus {
   border-top: 1px solid var(--line);
 }
 
-.form-row {
-  margin-bottom: 14px;
-}
-
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 0 18px;
-  font-weight: 700;
-}
-
-.check-row input {
-  width: 24px;
-  min-height: 24px;
-}
+/* ------------------------------------------------------------------------
+   Empty states, dialog, toast
+------------------------------------------------------------------------- */
 
 .empty-state {
   display: grid;
@@ -568,13 +735,18 @@ menu {
   position: fixed;
   right: 20px;
   bottom: 20px;
-  max-width: 420px;
+  max-width: 480px;
   padding: 16px 18px;
   border-radius: 8px;
   background: var(--ink);
   color: #fff;
+  font-size: 19px;
   box-shadow: var(--shadow);
 }
+
+/* ------------------------------------------------------------------------
+   Small screens
+------------------------------------------------------------------------- */
 
 @media (max-width: 980px) {
   .topbar,
@@ -587,15 +759,6 @@ menu {
 
   .topbar {
     display: grid;
-  }
-
-  .top-actions {
-    justify-content: stretch;
-  }
-
-  .top-actions .button,
-  .top-actions button {
-    width: 100%;
   }
 
   .member-list {
@@ -613,7 +776,7 @@ menu {
 
 @media (max-width: 560px) {
   body {
-    font-size: 17px;
+    font-size: 18px;
   }
 
   .layout,

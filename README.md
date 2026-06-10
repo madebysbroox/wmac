@@ -1,6 +1,8 @@
-# Master Lee Payment Tracker
+# 회비 관리 · Master Lee Payment Tracker
 
-A simple local payment tracker for a martial arts gym owner. It runs on the computer, saves data in the browser, imports member CSV files, records monthly payments, and exports a backup CSV.
+A simple, bilingual (한국어 / English) payment tracker for a martial arts gym owner. It runs locally, saves data in the browser, imports member CSV files, records monthly payments, and exports a backup CSV.
+
+Every button and label shows Korean first with English underneath, so the app can be used comfortably in either language. Text is large and high-contrast for easy reading.
 
 ## Setup
 
@@ -22,19 +24,33 @@ On Windows, Master Lee can double-click `start-windows.bat` after Node.js is ins
 
 ## Daily Use
 
-1. Click `Import Members` and choose a member CSV.
-2. Confirm the column matches. `Member name` is required.
-3. Type part of a member name in `Find a member`.
-4. Click the member.
-5. Confirm the payment month and amount.
-6. Click `Save Payment`.
-7. Click `Export Backup` when a backup CSV is needed.
+The everyday workflow needs only the left side of the screen:
+
+1. **회원 찾기 (Find a Member)** — type a few letters of a name, then click the member. Each member shows a colored dot: green 완납 (paid), orange 확인 필요 (needs attention), red 미납 (behind).
+2. On the member page, click the big green **이번 달 납부 완료 (Mark This Month Paid)** button. One click records this month's payment at the member's normal amount.
+3. For a different month or amount, use **다른 달 회비 입력 (Record a Different Month)** below it.
+4. **＋ 새 회원 추가 (Add New Member)** creates a new member and jumps straight to the name field.
+
+The home screen (처음 화면) shows who is paid, who needs attention, and who is behind — click any card to see that list of members.
+
+## Files & Backup · 파일 · 백업
+
+These less-frequent actions live at the bottom of the left sidebar:
+
+- **회원 명단 가져오기 (Import Members CSV)** — load a member spreadsheet. The app guesses which columns match; `이름 (Member name)` is required.
+- **결제 내역 가져오기 (Import Payments CSV)** — load a Square-style payment export. Payments are matched to members by ID, email, phone, or exact name. This keeps the future Square import path separate from the member import flow.
+- **백업 파일 저장 (Export Backup CSV)** — save a backup of all members and payments.
 
 The app saves the working data in the browser on the same computer, so the member CSV does not need to be imported again every time.
 
-## Payment CSV Imports
+## Code Layout
 
-`Import Payments` accepts a second CSV for Square-style monthly exports. The code is structured to match payments by member ID, email, phone, or exact name. This keeps the future Square import path separate from the member import flow.
+- `index.html` — page structure with bilingual labels baked in
+- `src/app.js` — UI state, rendering, and actions
+- `src/data.js` — pure data logic: CSV parsing, import matching, payment status (fully unit-tested)
+- `src/i18n.js` — every user-facing Korean/English string in one place
+- `src/styles.css` — large-type, high-contrast styling
+- `server.mjs` — tiny static file server
 
 ## Local Testing
 
