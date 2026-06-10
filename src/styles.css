@@ -731,6 +731,17 @@ menu {
   margin: 0;
 }
 
+.year-menu {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.year-menu .button {
+  width: 100%;
+  min-height: 64px;
+}
+
 .toast {
   position: fixed;
   right: 20px;

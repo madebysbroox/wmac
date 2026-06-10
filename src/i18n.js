@@ -46,6 +46,10 @@ export const MSG = {
   mapPaymentsTitle: "결제 내역 항목 맞추기 · Match Payment Columns",
   mapMembersHelp: "이름은 꼭 필요합니다. 나머지는 비워 두어도 됩니다. · Name is required. The other fields can be left blank.",
   mapPaymentsHelp: "회원 번호, 이메일, 전화번호, 이름으로 자동으로 맞춥니다. · The app will match payments by ID, email, phone, or name.",
+  noPaymentsForYear: (year) => `${year}년 납부 기록이 없습니다. · No payments recorded for ${year}.`,
+  noActiveMembers: "활동 회원이 없습니다. · There are no active members to export.",
+  rosterSaved: (year, count) =>
+    `${year}년 회원 명단을 저장했습니다 (회원 ${count}명). · Saved the ${year} member roster (${count} members).`,
   importedMembers: (count, skipped) =>
     `회원 ${count}명을 가져왔습니다 (${skipped}줄 건너뜀). · Imported ${count} members, ${skipped} rows skipped.`,
   importedPayments: (count, unmatched) =>

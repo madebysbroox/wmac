@@ -319,6 +319,57 @@ export function exportStoreRows(store) {
   return rows;
 }
 
+// Totals are grouped by the month each payment was for (the "2026-06" key),
+// so back-entered history lands in the right year.
+export function getYearRevenue(store, year) {
+  const inYear = store.payments.filter((payment) => String(payment.month).startsWith(`${year}-`));
+  const monthly = Array.from({ length: 12 }, (_, index) => {
+    const month = `${year}-${String(index + 1).padStart(2, "0")}`;
+    const monthPayments = inYear.filter((payment) => payment.month === month);
+    return {
+      month,
+      count: monthPayments.length,
+      total: monthPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+    };
+  });
+
+  const namesById = new Map(store.members.map((member) => [member.id, member.name]));
+  const byMemberMap = new Map();
+  inYear.forEach((payment) => {
+    const entry = byMemberMap.get(payment.memberId) || { memberId: payment.memberId, count: 0, total: 0 };
+    entry.count += 1;
+    entry.total += Number(payment.amount || 0);
+    byMemberMap.set(payment.memberId, entry);
+  });
+  const byMember = Array.from(byMemberMap.values())
+    .map((entry) => ({ ...entry, name: namesById.get(entry.memberId) || "Unknown member" }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  return {
+    year,
+    totalRevenue: monthly.reduce((sum, row) => sum + row.total, 0),
+    paymentCount: inYear.length,
+    monthly,
+    byMember
+  };
+}
+
+// A clean roster of active members, with headers the member import recognizes,
+// ready to start a new year.
+export function exportRosterRows(store) {
+  return store.members
+    .filter((member) => !member.inactive)
+    .map((member) => ({
+      "Member Name": member.name,
+      "Contract Start Date": member.startDate || "",
+      "Monthly Amount": moneyText(member.monthlyAmount),
+      Email: member.email || "",
+      Phone: member.phone || "",
+      "Parent/Guardian Name": member.parentName || "",
+      "Member ID": member.externalId || ""
+    }));
+}
+
 export { MEMBER_FIELD_ALIASES, PAYMENT_FIELD_ALIASES };
 
 function memberRow(member, payment) {

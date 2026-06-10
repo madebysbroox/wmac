@@ -49,6 +49,12 @@
           <button id="exportButton" class="button tool bi" type="button">
             <span lang="ko">백업 파일 저장</span><small lang="en">Export Backup CSV</small>
           </button>
+          <button id="yearReportButton" class="button tool bi" type="button">
+            <span lang="ko">연말 보고서 (세금)</span><small lang="en">Year-End Tax Report</small>
+          </button>
+          <button id="nextYearCsvButton" class="button tool bi" type="button">
+            <span lang="ko">새해 회원 명단 저장</span><small lang="en">New Year Roster CSV</small>
+          </button>
         </div>
       </section>
 
@@ -188,6 +194,16 @@
         </div>
       </section>
     </main>
+
+    <dialog id="yearDialog">
+      <h2>연말 보고서 <small lang="en">Year-End Report</small></h2>
+      <p>어느 해의 보고서를 만들까요? · Which year do you want?</p>
+      <menu class="year-menu">
+        <button id="yearLastButton" class="button primary bi" type="button"></button>
+        <button id="yearThisButton" class="button secondary bi" type="button"></button>
+        <button id="cancelYearDialog" class="button secondary" type="button">취소 · Cancel</button>
+      </menu>
+    </dialog>
 
     <dialog id="mappingDialog">
       <form method="dialog" id="mappingForm">

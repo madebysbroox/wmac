@@ -3,9 +3,11 @@ import {
   PAYMENT_FIELD_ALIASES,
   addPayment,
   createEmptyStore,
+  exportRosterRows,
   exportStoreRows,
   getMemberBalance,
   getMemberStatus,
+  getYearRevenue,
   guessColumnMap,
   importMembersFromRecords,
   importPaymentsFromRecords,
@@ -50,7 +52,9 @@ const elements = {};
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberPhone", "memberEmail", "memberParent", "memberAmount", "memberStart",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
-  "mappingHelp", "mappingFields", "cancelMapping", "toast"
+  "mappingHelp", "mappingFields", "cancelMapping", "toast",
+  "yearReportButton", "nextYearCsvButton", "yearDialog",
+  "yearLastButton", "yearThisButton", "cancelYearDialog"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
@@ -78,6 +82,11 @@ elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
 elements.mappingForm.addEventListener("submit", finishMappingImport);
+elements.yearReportButton.addEventListener("click", openYearDialog);
+elements.yearLastButton.addEventListener("click", () => runYearReport(new Date().getFullYear() - 1));
+elements.yearThisButton.addEventListener("click", () => runYearReport(new Date().getFullYear()));
+elements.cancelYearDialog.addEventListener("click", () => elements.yearDialog.close());
+elements.nextYearCsvButton.addEventListener("click", exportNextYearRoster);
 
 render();
 
@@ -423,11 +432,26 @@ function exportBackup() {
     showToast(MSG.nothingToExport);
     return;
   }
+  downloadCsv(csv, `master-lee-payment-backup-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function exportNextYearRoster() {
+  const rows = exportRosterRows(state.store);
+  if (rows.length === 0) {
+    showToast(MSG.noActiveMembers);
+    return;
+  }
+  const nextYear = new Date().getFullYear() + 1;
+  downloadCsv(toCsv(rows), `wmac-members-${nextYear}.csv`);
+  showToast(MSG.rosterSaved(nextYear, rows.length));
+}
+
+function downloadCsv(csv, filename) {
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `master-lee-payment-backup-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -510,6 +534,135 @@ function saveMember(event) {
   saveStore(MSG.memberSaved);
   showToast(MSG.memberSavedToast);
   render();
+}
+
+// ---------------------------------------------------------------------------
+// Year-end report
+// ---------------------------------------------------------------------------
+
+function openYearDialog() {
+  const thisYear = new Date().getFullYear();
+  elements.yearLastButton.innerHTML = `<span lang="ko">${thisYear - 1}년 보고서</span><small lang="en">${thisYear - 1} Report (last year)</small>`;
+  elements.yearThisButton.innerHTML = `<span lang="ko">${thisYear}년 보고서</span><small lang="en">${thisYear} Report (this year)</small>`;
+  elements.yearDialog.showModal();
+}
+
+function runYearReport(year) {
+  elements.yearDialog.close();
+  const report = getYearRevenue(state.store, year);
+  if (report.paymentCount === 0) {
+    showToast(MSG.noPaymentsForYear(year));
+    return;
+  }
+
+  const monthRows = report.monthly
+    .map((row) => {
+      const monthNumber = Number(row.month.split("-")[1]);
+      const englishMonth = new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", { month: "long" });
+      return `
+        <tr>
+          <td>${monthNumber}월 <span class="en">${englishMonth}</span></td>
+          <td class="num">${row.count}</td>
+          <td class="money">${formatMoney(row.total)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const memberRows = report.byMember
+    .map((entry) => `
+      <tr>
+        <td>${escapeHtml(entry.name)}</td>
+        <td class="num">${entry.count}</td>
+        <td class="money">${formatMoney(entry.total)}</td>
+      </tr>
+    `)
+    .join("");
+
+  const reportHtml = `<!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8">
+        <title>${year}년 연말 보고서 · Year-End Report</title>
+        <style>
+          body { margin: 0; background: #eef1f4; color: #1f2933; font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", Arial, sans-serif; }
+          .page { width: min(820px, calc(100vw - 32px)); margin: 24px auto; padding: 46px; background: #fff; box-shadow: 0 18px 42px rgba(31, 41, 51, .14); }
+          header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; border-bottom: 3px solid #22577a; padding-bottom: 24px; }
+          img { width: 92px; height: 92px; object-fit: contain; }
+          h1 { margin: 0 0 8px; font-size: 34px; }
+          h2 { margin: 32px 0 8px; font-size: 22px; }
+          p { margin: 0; color: #637083; }
+          .meta { text-align: right; color: #637083; line-height: 1.45; }
+          .totals { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
+          .totals div { padding: 18px; border: 1px solid #d9ded6; border-radius: 8px; background: #f7f4ef; }
+          .totals span { display: block; color: #637083; font-size: 15px; }
+          .totals strong { font-size: 32px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          th, td { padding: 12px 10px; border-bottom: 1px solid #d9ded6; text-align: left; }
+          th { color: #637083; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+          td .en { color: #637083; font-size: 14px; }
+          .num, .money { text-align: right; }
+          tfoot td { border-top: 3px solid #22577a; border-bottom: 0; font-weight: 800; font-size: 20px; }
+          .note { margin-top: 34px; padding: 18px; background: #f7f4ef; color: #1f2933; }
+          .actions { width: min(820px, calc(100vw - 32px)); margin: 0 auto 24px; text-align: right; }
+          button { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 8px; background: #22577a; color: white; font-weight: 700; cursor: pointer; }
+          @media print {
+            body { background: #fff; }
+            .page { width: auto; margin: 0; box-shadow: none; }
+            .actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header>
+            <div>
+              <h1>World Martial Arts Center</h1>
+              <p>${year}년 연말 결산 보고서 · ${year} Year-End Revenue Report</p>
+            </div>
+            <div class="meta">
+              <img src="${new URL("assets/wmac-logo.jpeg", import.meta.url).href}" alt="World Martial Arts Center logo">
+              <div>작성일 Generated: ${new Date().toLocaleDateString()}</div>
+            </div>
+          </header>
+
+          <div class="totals">
+            <div><span>총 수입 · Total Revenue</span><strong>${formatMoney(report.totalRevenue)}</strong></div>
+            <div><span>납부 건수 · Payments Received</span><strong>${report.paymentCount}</strong></div>
+          </div>
+
+          <h2>월별 수입 · Revenue by Month</h2>
+          <table>
+            <thead>
+              <tr><th>월 Month</th><th class="num">건수 Payments</th><th class="money">금액 Amount</th></tr>
+            </thead>
+            <tbody>${monthRows}</tbody>
+            <tfoot>
+              <tr><td>합계 Total</td><td class="num">${report.paymentCount}</td><td class="money">${formatMoney(report.totalRevenue)}</td></tr>
+            </tfoot>
+          </table>
+
+          <h2>회원별 수입 · Revenue by Member</h2>
+          <table>
+            <thead>
+              <tr><th>회원 Member</th><th class="num">건수 Payments</th><th class="money">금액 Amount</th></tr>
+            </thead>
+            <tbody>${memberRows}</tbody>
+          </table>
+
+          <div class="note">납부 월 기준으로 계산했습니다. 세무 자료로 보관하세요.<br>Totals are grouped by the month each payment was for. Keep this report for tax records.</div>
+        </main>
+        <div class="actions"><button type="button" onclick="window.print()">인쇄 · Print or Save PDF</button></div>
+      </body>
+    </html>`;
+
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    showToast(MSG.popupBlocked);
+    return;
+  }
+  reportWindow.document.write(reportHtml);
+  reportWindow.document.close();
 }
 
 // ---------------------------------------------------------------------------

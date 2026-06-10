@@ -40,6 +40,8 @@ These less-frequent actions live at the bottom of the left sidebar:
 - **회원 명단 가져오기 (Import Members CSV)** — load a member spreadsheet. The app guesses which columns match; `이름 (Member name)` is required.
 - **결제 내역 가져오기 (Import Payments CSV)** — load a Square-style payment export. Payments are matched to members by ID, email, phone, or exact name. This keeps the future Square import path separate from the member import flow.
 - **백업 파일 저장 (Export Backup CSV)** — save a backup of all members and payments.
+- **연말 보고서 (Year-End Tax Report)** — pick a year (last year or this year) and get a printable report with total revenue, revenue by month, and revenue by member. Totals are grouped by the month each payment was for.
+- **새해 회원 명단 저장 (New Year Roster CSV)** — download a clean CSV of active members (no payment history, inactive members left out), named for the coming year and ready to re-import as a fresh start.
 
 The app saves the working data in the browser on the same computer, so the member CSV does not need to be imported again every time.
 
