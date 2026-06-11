@@ -20,7 +20,7 @@ Then open:
 http://localhost:4173
 ```
 
-On Windows, Master Lee can double-click `start-windows.bat` after Node.js is installed.
+On Windows, Master Lee can double-click `start-windows.bat` after Node.js is installed — it opens the browser automatically. **For the complete Windows walkthrough (installing Node.js, desktop shortcut, backups, troubleshooting), see [README-windows.md](README-windows.md).**
 
 ## Daily Use
 
