@@ -49,6 +49,64 @@ test("calculates paid, watch, and late status", () => {
   assert.equal(getMemberStatus(store.members[1], store.payments, new Date("2026-09-08")).level, "late");
 });
 
+test("re-importing an updated member CSV fills blanks without duplicating or erasing", () => {
+  // First import: Sam has a phone but no email or parent yet
+  const first = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Phone: "555-0101" }],
+    { name: "Name", monthlyAmount: "Amount", phone: "Phone" },
+    createEmptyStore()
+  );
+
+  // The updated spreadsheet adds an email and parent, but leaves phone blank
+  const second = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Email: "sam@example.com", Parent: "Joon Park", Phone: "" }],
+    { name: "Name", monthlyAmount: "Amount", email: "Email", parentName: "Parent", phone: "Phone" },
+    first.store
+  );
+
+  assert.equal(second.store.members.length, 1, "no duplicate member created");
+  assert.equal(second.added.length, 0);
+  assert.equal(second.updated.length, 1);
+  const sam = second.store.members[0];
+  assert.equal(sam.id, first.store.members[0].id, "keeps the same member id");
+  assert.equal(sam.email, "sam@example.com", "fills in the new email");
+  assert.equal(sam.parentName, "Joon Park", "fills in the new parent");
+  assert.equal(sam.phone, "5550101", "blank cell does not erase the existing phone");
+});
+
+test("re-import matches by email even when the name was corrected", () => {
+  const first = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Email: "sam@example.com" }],
+    { name: "Name", monthlyAmount: "Amount", email: "Email" },
+    createEmptyStore()
+  );
+  const second = importMembersFromRecords(
+    [{ Name: "Samuel Park", Amount: "120", Email: "sam@example.com" }],
+    { name: "Name", monthlyAmount: "Amount", email: "Email" },
+    first.store
+  );
+  assert.equal(second.store.members.length, 1);
+  assert.equal(second.store.members[0].name, "Samuel Park", "name is updated in place");
+});
+
+test("re-importing a payment CSV skips months already recorded", () => {
+  const memberImport = importMembersFromRecords(
+    [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
+    { name: "Name", email: "Email", monthlyAmount: "Amount" },
+    createEmptyStore()
+  );
+  const records = [{ Email: "sam@example.com", Month: "2026-06", Amount: "$120" }];
+  const columnMap = { email: "Email", month: "Month", amount: "Amount" };
+
+  const first = importPaymentsFromRecords(records, columnMap, memberImport.store);
+  assert.equal(first.matches.length, 1);
+
+  const second = importPaymentsFromRecords(records, columnMap, first.store);
+  assert.equal(second.matches.length, 0, "nothing added the second time");
+  assert.equal(second.duplicates.length, 1);
+  assert.equal(second.store.payments.length, 1, "payment is not doubled");
+});
+
 test("imports payment CSV by email and exports backup rows", () => {
   const memberImport = importMembersFromRecords(
     [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],

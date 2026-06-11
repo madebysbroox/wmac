@@ -116,9 +116,14 @@ export function guessColumnMap(headers, aliases = MEMBER_FIELD_ALIASES) {
   return map;
 }
 
+// Re-import friendly: each row is matched to an existing member by ID, email,
+// phone, or name (in that order). Matched rows fill in blanks and update
+// changed details without touching payment history; unmatched rows are added.
 export function importMembersFromRecords(records, columnMap, existingStore = createEmptyStore()) {
-  const membersByKey = new Map(existingStore.members.map((member) => [member.identityKey, member]));
+  const members = [...existingStore.members];
   const imported = [];
+  const added = [];
+  const updated = [];
   const skipped = [];
 
   records.forEach((record, index) => {
@@ -131,11 +136,15 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
     const email = clean(record[columnMap.email]).toLowerCase();
     const phone = cleanPhone(record[columnMap.phone]);
     const externalId = clean(record[columnMap.externalId]);
-    const identityKey = buildIdentityKey({ externalId, email, phone, name });
-    const existing = membersByKey.get(identityKey);
+    const existing = members.find((member) =>
+      (externalId && member.externalId === externalId) ||
+      (email && member.email === email) ||
+      (phone && member.phone === phone) ||
+      normalize(member.name) === normalize(name)
+    );
+
     const member = {
       id: existing?.id ?? cryptoId("mem"),
-      identityKey,
       name,
       startDate: normalizeDate(record[columnMap.startDate]) || existing?.startDate || "",
       monthlyAmount: parseMoney(record[columnMap.monthlyAmount]) || existing?.monthlyAmount || 0,
@@ -146,24 +155,36 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
       inactive: existing?.inactive ?? false,
       notes: existing?.notes ?? ""
     };
+    member.identityKey = buildIdentityKey(member);
 
-    membersByKey.set(identityKey, member);
+    if (existing) {
+      members[members.indexOf(existing)] = member;
+      updated.push(member);
+    } else {
+      members.push(member);
+      added.push(member);
+    }
     imported.push(member);
   });
 
   return {
     store: {
       ...existingStore,
-      members: Array.from(membersByKey.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      members: members.sort((a, b) => a.name.localeCompare(b.name)),
       updatedAt: new Date().toISOString()
     },
     imported,
+    added,
+    updated,
     skipped
   };
 }
 
+// Re-import friendly: a month that is already recorded for a member is
+// skipped, so importing the same payment file twice never doubles anything.
 export function importPaymentsFromRecords(records, columnMap, store) {
   const matches = [];
+  const duplicates = [];
   const unmatched = [];
   const payments = [...store.payments];
 
@@ -174,6 +195,11 @@ export function importPaymentsFromRecords(records, columnMap, store) {
 
     if (!member || !month || !amount) {
       unmatched.push({ row: index + 2, record });
+      return;
+    }
+
+    if (payments.some((payment) => payment.memberId === member.id && payment.month === month)) {
+      duplicates.push({ row: index + 2, member, month });
       return;
     }
 
@@ -192,6 +218,7 @@ export function importPaymentsFromRecords(records, columnMap, store) {
   return {
     store: { ...store, payments, updatedAt: new Date().toISOString() },
     matches,
+    duplicates,
     unmatched
   };
 }
@@ -320,12 +347,20 @@ export function getLateFeeBalance(member, payments, today = new Date()) {
   const lines = unpaidMonths.map((month) => {
     const [year, monthNumber] = month.split("-").map(Number);
     const lastDayOfMonth = new Date(year, monthNumber, 0).getDate();
-    const dueDate = new Date(year, monthNumber - 1, Math.min(dueDay, lastDayOfMonth));
+    const day = Math.min(dueDay, lastDayOfMonth);
+    const dueDate = new Date(year, monthNumber - 1, day);
     const daysLate = Math.floor((today - dueDate) / 86400000);
     const lateFee = daysLate >= LATE_FEE_GRACE_DAYS
       ? Math.max(LATE_FEE_MINIMUM, Math.round(monthlyAmount * LATE_FEE_RATE * 100) / 100)
       : 0;
-    return { month, amount: monthlyAmount, daysLate, lateFee, total: monthlyAmount + lateFee };
+    return {
+      month,
+      dueDate: `${year}-${String(monthNumber).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+      amount: monthlyAmount,
+      daysLate,
+      lateFee,
+      total: monthlyAmount + lateFee
+    };
   });
 
   const baseDue = lines.reduce((sum, line) => sum + line.amount, 0);

@@ -25,7 +25,8 @@ import {
   buildReminderEmail,
   formatMonthBi,
   formatMonthEn,
-  formatMonthKo
+  formatMonthKo,
+  ordinalEn
 } from "./i18n.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
@@ -49,12 +50,12 @@ const elements = {};
   "memberList", "dashboardView", "dashboardPaid", "dashboardWatch", "dashboardLate",
   "dashboardDue", "fieldSnapshot", "highestBalanceList", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
-  "memberDetail", "detailName", "detailContact", "statusBadge", "latestPaid",
+  "memberDetail", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
   "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberPhone", "memberEmail", "memberParent", "memberAmount", "memberStart",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
-  "mappingHelp", "mappingFields", "cancelMapping", "toast",
+  "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
   "yearLastButton", "yearThisButton", "cancelYearDialog"
 ].forEach((id) => {
@@ -229,6 +230,8 @@ function renderDetail() {
   elements.detailContact.textContent = [formatPhone(member.phone), member.email, member.parentName && `보호자 ${member.parentName}`]
     .filter(Boolean)
     .join("  ");
+  const dueDay = Number(member.startDate?.split("-")[2]) || 1;
+  elements.detailDueDay.textContent = `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
   elements.statusBadge.innerHTML = `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>`;
   elements.statusBadge.className = `status-badge status-${status.level}`;
   elements.latestPaid.textContent = status.lastPaidMonth
@@ -407,6 +410,7 @@ async function prepareCsvImport(file, kind) {
   const guessed = guessColumnMap(parsed.headers, aliases);
   state.mapping = { kind, parsed, aliases, map: guessed };
   elements.mappingTitle.textContent = kind === "members" ? MSG.mapMembersTitle : MSG.mapPaymentsTitle;
+  elements.mappingReassure.textContent = kind === "members" ? MSG.membersImportSafe : MSG.paymentsImportSafe;
   elements.mappingHelp.textContent = kind === "members" ? MSG.mapMembersHelp : MSG.mapPaymentsHelp;
   renderMappingFields();
   elements.mappingDialog.showModal();
@@ -442,13 +446,15 @@ function finishMappingImport(event) {
     const result = importMembersFromRecords(state.mapping.parsed.records, columnMap, state.store);
     state.store = result.store;
     state.selectedId = result.imported[0]?.id || state.selectedId;
-    saveStore(MSG.importedMembers(result.imported.length, result.skipped.length));
-    showToast(MSG.importedMembers(result.imported.length, result.skipped.length));
+    const message = MSG.importedMembers(result.added.length, result.updated.length, result.skipped.length);
+    saveStore(message);
+    showToast(message);
   } else {
     const result = importPaymentsFromRecords(state.mapping.parsed.records, columnMap, state.store);
     state.store = result.store;
-    saveStore(MSG.importedPayments(result.matches.length, result.unmatched.length));
-    showToast(MSG.importedPayments(result.matches.length, result.unmatched.length));
+    const message = MSG.importedPayments(result.matches.length, result.duplicates.length, result.unmatched.length);
+    saveStore(message);
+    showToast(message);
   }
 
   state.mapping = null;

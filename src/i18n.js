@@ -50,14 +50,18 @@ export const MSG = {
   mapPaymentsTitle: "결제 내역 항목 맞추기 · Match Payment Columns",
   mapMembersHelp: "이름은 꼭 필요합니다. 나머지는 비워 두어도 됩니다. · Name is required. The other fields can be left blank.",
   mapPaymentsHelp: "회원 번호, 이메일, 전화번호, 이름으로 자동으로 맞춥니다. · The app will match payments by ID, email, phone, or name.",
+  membersImportSafe:
+    "안심하세요 — 지워지는 것은 없습니다. 이미 있는 회원은 회원 번호, 이메일, 전화번호, 이름으로 자동으로 찾아서 빈칸만 채우고, 새 회원만 추가됩니다. 납부 기록은 그대로 유지됩니다. · Nothing will be erased. Members already in the app are matched by ID, email, phone, or name — new details fill in the blanks, new people are added, and payment history is never touched.",
+  paymentsImportSafe:
+    "안심하세요 — 이미 기록된 납부는 건너뜁니다. 같은 파일을 두 번 가져와도 중복되지 않습니다. · Nothing will be doubled. Payments already recorded are skipped, so importing the same file twice is safe.",
   noPaymentsForYear: (year) => `${year}년 납부 기록이 없습니다. · No payments recorded for ${year}.`,
   noActiveMembers: "활동 회원이 없습니다. · There are no active members to export.",
   rosterSaved: (year, count) =>
     `${year}년 회원 명단을 저장했습니다 (회원 ${count}명). · Saved the ${year} member roster (${count} members).`,
-  importedMembers: (count, skipped) =>
-    `회원 ${count}명을 가져왔습니다 (${skipped}줄 건너뜀). · Imported ${count} members, ${skipped} rows skipped.`,
-  importedPayments: (count, unmatched) =>
-    `결제 ${count}건을 가져왔습니다 (${unmatched}건 확인 필요). · Imported ${count} payments, ${unmatched} rows need checking.`,
+  importedMembers: (addedCount, updatedCount, skipped) =>
+    `새 회원 ${addedCount}명 추가, 기존 회원 ${updatedCount}명 정보 채움 (${skipped}줄 건너뜀). 납부 기록은 그대로입니다. · Added ${addedCount} new members and filled in details for ${updatedCount} existing members (${skipped} rows skipped). Payment history untouched.`,
+  importedPayments: (addedCount, duplicateCount, unmatched) =>
+    `결제 ${addedCount}건 추가, 이미 기록된 ${duplicateCount}건 건너뜀 (${unmatched}건 확인 필요). · Added ${addedCount} payments, skipped ${duplicateCount} already recorded, ${unmatched} rows need checking.`,
   paymentSavedFor: (name, month) => `${name} — ${month} 회비를 저장했습니다. · Payment saved.`
 };
 
@@ -84,6 +88,15 @@ export function formatMonthEn(month) {
   return new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
+// 15 -> "15th", 1 -> "1st", 22 -> "22nd"
+export function ordinalEn(day) {
+  const tens = day % 100;
+  if (tens >= 11 && tens <= 13) {
+    return `${day}th`;
+  }
+  return `${day}${{ 1: "st", 2: "nd", 3: "rd" }[day % 10] || "th"}`;
+}
+
 // "2026년 6월 (June 2026)"
 export function formatMonthBi(month) {
   if (!month) {
@@ -99,11 +112,16 @@ export const MASTER_LEE_PHONE = "(540) 347-7266";
 // Takes the late-fee balance from getLateFeeBalance in data.js.
 export function buildReminderEmail(member, balance) {
   const money = (value) => Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  const monthLines = balance.lines.map((line) =>
-    line.lateFee > 0
-      ? `- ${formatMonthEn(line.month)}: ${money(line.amount)} + ${money(line.lateFee)} late fee* = ${money(line.total)}`
-      : `- ${formatMonthEn(line.month)}: ${money(line.amount)}`
-  );
+  const dueText = (isoDate) => {
+    const [year, month, day] = isoDate.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  };
+  const monthLines = balance.lines.map((line) => {
+    const label = `- ${formatMonthEn(line.month)} (due ${dueText(line.dueDate)})`;
+    return line.lateFee > 0
+      ? `${label}: ${money(line.amount)} + ${money(line.lateFee)} late fee* = ${money(line.total)}`
+      : `${label}: ${money(line.amount)}`;
+  });
 
   const subject = `World Martial Arts Center Payment Reminder — ${member.name}`;
   const body = [
