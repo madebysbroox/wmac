@@ -3,9 +3,12 @@ import {
   PAYMENT_FIELD_ALIASES,
   addPayment,
   createEmptyStore,
+  exportRosterRows,
   exportStoreRows,
   getMemberBalance,
+  getLateFeeBalance,
   getMemberStatus,
+  getYearRevenue,
   guessColumnMap,
   importMembersFromRecords,
   importPaymentsFromRecords,
@@ -14,8 +17,24 @@ import {
   toCsv,
   upsertMember
 } from "./data.js";
+import {
+  FIELD_LABELS,
+  MSG,
+  ROSTER_TITLES,
+  STATUS_LABELS,
+  buildReminderEmail,
+  formatMonthBi,
+  formatMonthEn,
+  formatMonthKo,
+  ordinalEn
+} from "./i18n.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
+
+// ---------------------------------------------------------------------------
+// State and element lookup
+// ---------------------------------------------------------------------------
+
 const state = {
   store: loadStore(),
   selectedId: "",
@@ -24,58 +43,28 @@ const state = {
   mapping: null
 };
 
-const elements = {
-  saveStatus: document.querySelector("#saveStatus"),
-  dashboardButton: document.querySelector("#dashboardButton"),
-  memberCsv: document.querySelector("#memberCsv"),
-  paymentCsv: document.querySelector("#paymentCsv"),
-  exportButton: document.querySelector("#exportButton"),
-  searchInput: document.querySelector("#searchInput"),
-  addMemberButton: document.querySelector("#addMemberButton"),
-  paidCount: document.querySelector("#paidCount"),
-  watchCount: document.querySelector("#watchCount"),
-  lateCount: document.querySelector("#lateCount"),
-  memberList: document.querySelector("#memberList"),
-  dashboardView: document.querySelector("#dashboardView"),
-  dashboardPaid: document.querySelector("#dashboardPaid"),
-  dashboardWatch: document.querySelector("#dashboardWatch"),
-  dashboardLate: document.querySelector("#dashboardLate"),
-  dashboardDue: document.querySelector("#dashboardDue"),
-  fieldSnapshot: document.querySelector("#fieldSnapshot"),
-  highestBalanceList: document.querySelector("#highestBalanceList"),
-  rosterView: document.querySelector("#rosterView"),
-  backToDashboard: document.querySelector("#backToDashboard"),
-  rosterTitle: document.querySelector("#rosterTitle"),
-  rosterHelp: document.querySelector("#rosterHelp"),
-  rosterMembers: document.querySelector("#rosterMembers"),
-  emptyState: document.querySelector("#emptyState"),
-  memberDetail: document.querySelector("#memberDetail"),
-  detailName: document.querySelector("#detailName"),
-  detailContact: document.querySelector("#detailContact"),
-  statusBadge: document.querySelector("#statusBadge"),
-  latestPaid: document.querySelector("#latestPaid"),
-  monthStrip: document.querySelector("#monthStrip"),
-  invoiceSummary: document.querySelector("#invoiceSummary"),
-  invoiceButton: document.querySelector("#invoiceButton"),
-  paymentForm: document.querySelector("#paymentForm"),
-  paymentMonth: document.querySelector("#paymentMonth"),
-  paymentAmount: document.querySelector("#paymentAmount"),
-  memberForm: document.querySelector("#memberForm"),
-  memberName: document.querySelector("#memberName"),
-  memberPhone: document.querySelector("#memberPhone"),
-  memberEmail: document.querySelector("#memberEmail"),
-  memberParent: document.querySelector("#memberParent"),
-  memberAmount: document.querySelector("#memberAmount"),
-  memberStart: document.querySelector("#memberStart"),
-  memberInactive: document.querySelector("#memberInactive"),
-  mappingDialog: document.querySelector("#mappingDialog"),
-  mappingForm: document.querySelector("#mappingForm"),
-  mappingTitle: document.querySelector("#mappingTitle"),
-  mappingHelp: document.querySelector("#mappingHelp"),
-  mappingFields: document.querySelector("#mappingFields"),
-  cancelMapping: document.querySelector("#cancelMapping"),
-  toast: document.querySelector("#toast")
-};
+const elements = {};
+[
+  "saveStatus", "dashboardButton", "memberCsv", "paymentCsv", "exportButton",
+  "searchInput", "addMemberButton", "paidCount", "watchCount", "lateCount",
+  "memberList", "dashboardView", "dashboardPaid", "dashboardWatch", "dashboardLate",
+  "dashboardDue", "fieldSnapshot", "highestBalanceList", "rosterView",
+  "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
+  "memberDetail", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
+  "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
+  "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
+  "memberPhone", "memberEmail", "memberParent", "memberAmount", "memberStart",
+  "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
+  "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
+  "yearReportButton", "nextYearCsvButton", "yearDialog",
+  "yearLastButton", "yearThisButton", "cancelYearDialog"
+].forEach((id) => {
+  elements[id] = document.querySelector(`#${id}`);
+});
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
 
 elements.dashboardButton.addEventListener("click", showDashboard);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
@@ -90,13 +79,24 @@ elements.dashboardPaid.addEventListener("click", () => showRoster("paid"));
 elements.dashboardWatch.addEventListener("click", () => showRoster("watch"));
 elements.dashboardLate.addEventListener("click", () => showRoster("late"));
 elements.backToDashboard.addEventListener("click", showDashboard);
+elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.invoiceButton.addEventListener("click", generateInvoice);
+elements.emailButton.addEventListener("click", explainDisabledEmail);
 elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
 elements.mappingForm.addEventListener("submit", finishMappingImport);
+elements.yearReportButton.addEventListener("click", openYearDialog);
+elements.yearLastButton.addEventListener("click", () => runYearReport(new Date().getFullYear() - 1));
+elements.yearThisButton.addEventListener("click", () => runYearReport(new Date().getFullYear()));
+elements.cancelYearDialog.addEventListener("click", () => elements.yearDialog.close());
+elements.nextYearCsvButton.addEventListener("click", exportNextYearRoster);
 
 render();
+
+// ---------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------
 
 function loadStore() {
   try {
@@ -110,11 +110,15 @@ function loadStore() {
   return createEmptyStore();
 }
 
-function saveStore(message = "Saved on this computer") {
+function saveStore(message = MSG.savedOnComputer) {
   state.store.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.store));
   elements.saveStatus.textContent = message;
 }
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
 
 function render() {
   renderSummary();
@@ -126,9 +130,9 @@ function render() {
 
 function renderSummary() {
   const counts = statusCounts();
-  elements.paidCount.textContent = `${counts.paid} paid`;
-  elements.watchCount.textContent = `${counts.watch} attention`;
-  elements.lateCount.textContent = `${counts.late} behind`;
+  elements.paidCount.innerHTML = `완납 ${counts.paid}명 <small lang="en">paid</small>`;
+  elements.watchCount.innerHTML = `확인 필요 ${counts.watch}명 <small lang="en">attention</small>`;
+  elements.lateCount.innerHTML = `미납 ${counts.late}명 <small lang="en">behind</small>`;
 }
 
 function renderDashboard() {
@@ -150,10 +154,10 @@ function renderDashboard() {
   elements.dashboardDue.textContent = formatMoney(totalDue);
 
   elements.fieldSnapshot.innerHTML = `
-    <div><span>Active members</span><strong>${activeTotal}</strong></div>
-    <div><span>Current this month</span><strong>${currentRate}%</strong></div>
-    <div><span>Need follow-up</span><strong>${atRisk}</strong></div>
-    <div><span>Inactive records</span><strong>${state.store.members.filter((member) => member.inactive).length}</strong></div>
+    <div><span>활동 회원 <small lang="en">Active members</small></span><strong>${activeTotal}</strong></div>
+    <div><span>이번 달 완납 <small lang="en">Paid this month</small></span><strong>${currentRate}%</strong></div>
+    <div><span>확인 필요 <small lang="en">Need follow-up</small></span><strong>${atRisk}</strong></div>
+    <div><span>쉬는 회원 <small lang="en">Inactive members</small></span><strong>${state.store.members.filter((member) => member.inactive).length}</strong></div>
   `;
 
   const highest = rows
@@ -163,7 +167,7 @@ function renderDashboard() {
 
   elements.highestBalanceList.innerHTML = highest.length
     ? highest.map((row) => rosterSummaryMarkup(row)).join("")
-    : `<div><span>No unpaid balances</span><strong>All clear</strong></div>`;
+    : `<div><span>${MSG.allClear}</span><strong>✓</strong></div>`;
 
   elements.highestBalanceList.querySelectorAll("[data-member-id]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.memberId));
@@ -176,18 +180,13 @@ function renderRoster() {
     return;
   }
 
-  const labels = {
-    all: "All Members",
-    paid: "Paid Up Members",
-    watch: "Needs Attention",
-    late: "Behind"
-  };
+  const title = ROSTER_TITLES[state.statusFilter] || ROSTER_TITLES.all;
   const rows = memberRows().filter((row) => state.statusFilter === "all" || row.status.level === state.statusFilter);
-  elements.rosterTitle.textContent = labels[state.statusFilter] || labels.all;
-  elements.rosterHelp.textContent = `${rows.length} active member${rows.length === 1 ? "" : "s"} in this group.`;
+  elements.rosterTitle.innerHTML = `${title.ko} <small lang="en">${title.en}</small>`;
+  elements.rosterHelp.textContent = `${rows.length}명 · ${rows.length} member${rows.length === 1 ? "" : "s"}`;
   elements.rosterMembers.innerHTML = rows.length
     ? rows.map((row) => rosterMemberMarkup(row)).join("")
-    : `<div class="empty-state compact"><h3>No members here</h3><p>This group is empty right now.</p></div>`;
+    : `<div class="empty-state compact"><p>${MSG.noMembersInGroup}</p></div>`;
 
   elements.rosterMembers.querySelectorAll("[data-member-id]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.memberId));
@@ -199,7 +198,7 @@ function renderMemberList() {
   elements.memberList.innerHTML = "";
 
   if (members.length === 0) {
-    elements.memberList.innerHTML = `<div class="empty-state"><p>No matching members.</p></div>`;
+    elements.memberList.innerHTML = `<div class="empty-state"><p>${MSG.noMatchingMembers}</p></div>`;
     return;
   }
 
@@ -209,8 +208,8 @@ function renderMemberList() {
     button.type = "button";
     button.className = `member-item ${member.id === state.selectedId ? "active" : ""}`;
     button.innerHTML = `
-      <strong>${escapeHtml(member.name)}</strong>
-      <span>${status.label}${status.lastPaidMonth ? ` · Last paid ${formatMonth(status.lastPaidMonth)}` : ""}</span>
+      <strong><span class="dot ${status.level}"></span>${escapeHtml(member.name)}</strong>
+      <span>${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}</span>
     `;
     button.addEventListener("click", () => selectMember(member.id));
     elements.memberList.append(button);
@@ -228,28 +227,37 @@ function renderDetail() {
   const status = getMemberStatus(member, state.store.payments);
   const balance = getMemberBalance(member, state.store.payments);
   elements.detailName.textContent = member.name;
-  elements.detailContact.textContent = [formatPhone(member.phone), member.email, member.parentName && `Parent: ${member.parentName}`]
+  elements.detailContact.textContent = [formatPhone(member.phone), member.email, member.parentName && `보호자 ${member.parentName}`]
     .filter(Boolean)
     .join("  ");
-  elements.statusBadge.textContent = status.label;
+  const dueDay = Number(member.startDate?.split("-")[2]) || 1;
+  elements.detailDueDay.textContent = `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
+  elements.statusBadge.innerHTML = `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>`;
   elements.statusBadge.className = `status-badge status-${status.level}`;
   elements.latestPaid.textContent = status.lastPaidMonth
-    ? `Most recent payment: ${formatMonth(status.lastPaidMonth)}`
-    : "No payments recorded yet";
+    ? `마지막 납부: ${formatMonthBi(status.lastPaidMonth)}`
+    : MSG.noPaymentsYet;
   elements.latestPaid.className = `latest-paid ${status.lastPaidMonth ? "has-payment" : "no-payment"}`;
+
+  renderQuickPay(member, status);
 
   elements.monthStrip.innerHTML = "";
   status.recentMonths.forEach((month) => {
     const item = document.createElement("div");
     item.className = `month-box ${month.paid ? "paid" : "unpaid"}`;
-    item.innerHTML = `<strong>${formatMonth(month.month)}</strong><span>${month.paid ? "Paid" : "Not paid"}</span>`;
+    item.innerHTML = `
+      <strong>${formatMonthKo(month.month)}</strong>
+      <small lang="en">${formatMonthEn(month.month)}</small>
+      <span>${month.paid ? "납부함 · Paid" : "미납 · Not paid"}</span>
+    `;
     elements.monthStrip.append(item);
   });
 
   elements.invoiceSummary.textContent = balance.unpaidMonths.length
-    ? `${balance.unpaidMonths.length} unpaid month${balance.unpaidMonths.length === 1 ? "" : "s"} · ${formatMoney(balance.totalDue)} due`
-    : "No unpaid balance found for this member.";
+    ? `미납 ${balance.unpaidMonths.length}개월 · ${formatMoney(balance.totalDue)} (${balance.unpaidMonths.length} unpaid month${balance.unpaidMonths.length === 1 ? "" : "s"})`
+    : MSG.noUnpaidBalance;
   elements.invoiceButton.disabled = balance.totalDue <= 0;
+  renderEmailButton(member, balance);
 
   elements.paymentMonth.value = status.currentMonth;
   elements.paymentAmount.value = Number(member.monthlyAmount || 0).toFixed(2);
@@ -261,6 +269,59 @@ function renderDetail() {
   elements.memberStart.value = member.startDate || "";
   elements.memberInactive.checked = Boolean(member.inactive);
 }
+
+// The reminder button is a mailto: link, so clicking it opens the computer's
+// own mail program (Outlook) with the email already written. The email uses
+// the late-fee balance, so overdue months include the one-time late fee.
+function renderEmailButton(member, balance) {
+  const ready = Boolean(member.email) && balance.totalDue > 0;
+  elements.emailButton.classList.toggle("disabled", !ready);
+  if (ready) {
+    const lateBalance = getLateFeeBalance(member, state.store.payments);
+    const { subject, body } = buildReminderEmail(member, lateBalance);
+    elements.emailButton.href = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  } else {
+    elements.emailButton.removeAttribute("href");
+  }
+}
+
+function explainDisabledEmail(event) {
+  if (elements.emailButton.hasAttribute("href")) {
+    return;
+  }
+  event.preventDefault();
+  const member = selectedMember();
+  if (!member) {
+    return;
+  }
+  const balance = getMemberBalance(member, state.store.payments);
+  showToast(balance.totalDue <= 0 ? MSG.noBalanceToRemind : MSG.noEmailOnFile);
+}
+
+function renderQuickPay(member, status) {
+  const button = elements.quickPayButton;
+  const amount = Number(member.monthlyAmount || 0);
+  const paidThisMonth = status.paidMonths.has(status.currentMonth);
+
+  button.classList.toggle("done", paidThisMonth);
+  if (paidThisMonth) {
+    button.disabled = true;
+    button.innerHTML = `<span lang="ko">✓ 이번 달 완납</span><small lang="en">This month is paid</small>`;
+  } else if (amount <= 0) {
+    button.disabled = true;
+    button.innerHTML = `<span lang="ko">월 회비를 먼저 입력하세요 →</span><small lang="en">Set the monthly amount first (right side)</small>`;
+  } else {
+    button.disabled = false;
+    button.innerHTML = `
+      <span lang="ko">이번 달 납부 완료 — ${formatMoney(amount)}</span>
+      <small lang="en">Mark ${formatMonthEn(status.currentMonth)} Paid</small>
+    `;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
 
 function showDashboard() {
   state.view = "dashboard";
@@ -279,6 +340,10 @@ function selectMember(memberId) {
   state.view = "member";
   render();
 }
+
+// ---------------------------------------------------------------------------
+// Derived data
+// ---------------------------------------------------------------------------
 
 function memberRows() {
   return state.store.members
@@ -311,13 +376,15 @@ function rosterSummaryMarkup(row) {
 }
 
 function rosterMemberMarkup(row) {
-  const lastPaid = row.status.lastPaidMonth ? `Last paid ${formatMonth(row.status.lastPaidMonth)}` : "No payments recorded";
+  const lastPaid = row.status.lastPaidMonth
+    ? `마지막 납부 ${formatMonthKo(row.status.lastPaidMonth)}`
+    : "납부 기록 없음";
   const dueText = row.balance.totalDue > 0
-    ? `${formatMoney(row.balance.totalDue)} due · ${row.balance.unpaidMonths.length} month${row.balance.unpaidMonths.length === 1 ? "" : "s"}`
-    : "No balance due";
+    ? `${formatMoney(row.balance.totalDue)} · 미납 ${row.balance.unpaidMonths.length}개월`
+    : "미납 없음";
   return `
     <button class="roster-member" type="button" data-member-id="${escapeHtml(row.member.id)}">
-      <span class="status-badge status-${row.status.level}">${escapeHtml(row.status.label)}</span>
+      <span class="status-badge status-${row.status.level}">${STATUS_LABELS[row.status.level].ko}<small lang="en">${STATUS_LABELS[row.status.level].en}</small></span>
       <strong>${escapeHtml(row.member.name)}</strong>
       <span>${escapeHtml(lastPaid)}</span>
       <span>${escapeHtml(dueText)}</span>
@@ -325,55 +392,46 @@ function rosterMemberMarkup(row) {
   `;
 }
 
+// ---------------------------------------------------------------------------
+// CSV import and export
+// ---------------------------------------------------------------------------
+
 async function prepareCsvImport(file, kind) {
   if (!file) {
     return;
   }
   const parsed = parseCsv(await file.text());
   if (parsed.records.length === 0) {
-    showToast("That CSV did not have any rows to import.");
+    showToast(MSG.csvEmpty);
     return;
   }
 
   const aliases = kind === "members" ? MEMBER_FIELD_ALIASES : PAYMENT_FIELD_ALIASES;
   const guessed = guessColumnMap(parsed.headers, aliases);
   state.mapping = { kind, parsed, aliases, map: guessed };
-  elements.mappingTitle.textContent = kind === "members" ? "Match Member Columns" : "Match Payment Columns";
-  elements.mappingHelp.textContent =
-    kind === "members"
-      ? "Name is required. The other fields can be left blank."
-      : "The app will try to match payments by ID, email, phone, or name.";
+  elements.mappingTitle.textContent = kind === "members" ? MSG.mapMembersTitle : MSG.mapPaymentsTitle;
+  elements.mappingReassure.textContent = kind === "members" ? MSG.membersImportSafe : MSG.paymentsImportSafe;
+  elements.mappingHelp.textContent = kind === "members" ? MSG.mapMembersHelp : MSG.mapPaymentsHelp;
   renderMappingFields();
   elements.mappingDialog.showModal();
 }
 
 function renderMappingFields() {
   const required = state.mapping.kind === "members" ? ["name"] : ["amount"];
-  const labels = {
-    name: "Member name",
-    startDate: "Contract start date",
-    monthlyAmount: "Monthly amount",
-    email: "Email",
-    phone: "Phone",
-    parentName: "Parent or guardian",
-    externalId: "Member ID",
-    amount: "Payment amount",
-    paidAt: "Payment date",
-    month: "Payment month"
-  };
 
   elements.mappingFields.innerHTML = "";
   Object.keys(state.mapping.aliases).forEach((field) => {
+    const label = FIELD_LABELS[field];
     const wrapper = document.createElement("div");
     wrapper.className = "form-row";
     const select = document.createElement("select");
     select.name = field;
     select.required = required.includes(field);
-    select.innerHTML = `<option value="">Not in this CSV</option>${state.mapping.parsed.headers
+    select.innerHTML = `<option value="">이 파일에 없음 · Not in this CSV</option>${state.mapping.parsed.headers
       .map((header) => `<option value="${escapeHtml(header)}">${escapeHtml(header)}</option>`)
       .join("")}`;
     select.value = state.mapping.map[field] || "";
-    wrapper.innerHTML = `<label>${labels[field]}${required.includes(field) ? " (needed)" : ""}</label>`;
+    wrapper.innerHTML = `<label>${label.ko} <small lang="en">${label.en}</small>${required.includes(field) ? " (필수 · needed)" : ""}</label>`;
     wrapper.append(select);
     elements.mappingFields.append(wrapper);
   });
@@ -388,13 +446,15 @@ function finishMappingImport(event) {
     const result = importMembersFromRecords(state.mapping.parsed.records, columnMap, state.store);
     state.store = result.store;
     state.selectedId = result.imported[0]?.id || state.selectedId;
-    saveStore(`Imported ${result.imported.length} members`);
-    showToast(`Imported ${result.imported.length} members. ${result.skipped.length} rows skipped.`);
+    const message = MSG.importedMembers(result.added.length, result.updated.length, result.skipped.length);
+    saveStore(message);
+    showToast(message);
   } else {
     const result = importPaymentsFromRecords(state.mapping.parsed.records, columnMap, state.store);
     state.store = result.store;
-    saveStore(`Imported ${result.matches.length} payments`);
-    showToast(`Imported ${result.matches.length} payments. ${result.unmatched.length} rows need checking.`);
+    const message = MSG.importedPayments(result.matches.length, result.duplicates.length, result.unmatched.length);
+    saveStore(message);
+    showToast(message);
   }
 
   state.mapping = null;
@@ -403,6 +463,40 @@ function finishMappingImport(event) {
   elements.paymentCsv.value = "";
   render();
 }
+
+function exportBackup() {
+  const csv = toCsv(exportStoreRows(state.store));
+  if (!csv) {
+    showToast(MSG.nothingToExport);
+    return;
+  }
+  downloadCsv(csv, `master-lee-payment-backup-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function exportNextYearRoster() {
+  const rows = exportRosterRows(state.store);
+  if (rows.length === 0) {
+    showToast(MSG.noActiveMembers);
+    return;
+  }
+  const nextYear = new Date().getFullYear() + 1;
+  downloadCsv(toCsv(rows), `wmac-members-${nextYear}.csv`);
+  showToast(MSG.rosterSaved(nextYear, rows.length));
+}
+
+function downloadCsv(csv, filename) {
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Member and payment actions
+// ---------------------------------------------------------------------------
 
 function addNewMember() {
   const member = {
@@ -417,10 +511,30 @@ function addNewMember() {
     inactive: false
   };
   state.store = upsertMember(state.store, member);
-  saveStore("New member added");
+  saveStore(MSG.newMemberAdded);
   selectMember(member.id);
   elements.memberName.focus();
   elements.memberName.select();
+}
+
+function quickPayCurrentMonth() {
+  const member = selectedMember();
+  if (!member) {
+    return;
+  }
+  const status = getMemberStatus(member, state.store.payments);
+  const amount = Number(member.monthlyAmount || 0);
+  if (status.paidMonths.has(status.currentMonth) || amount <= 0) {
+    return;
+  }
+  state.store = addPayment(state.store, {
+    memberId: member.id,
+    month: status.currentMonth,
+    amount
+  });
+  saveStore(MSG.paymentSaved);
+  showToast(MSG.paymentSavedFor(member.name, formatMonthBi(status.currentMonth)));
+  render();
 }
 
 function savePayment(event) {
@@ -434,8 +548,8 @@ function savePayment(event) {
     month: elements.paymentMonth.value,
     amount: elements.paymentAmount.value
   });
-  saveStore("Payment saved");
-  showToast(`Saved ${formatMonth(elements.paymentMonth.value)} payment for ${member.name}.`);
+  saveStore(MSG.paymentSaved);
+  showToast(MSG.paymentSavedFor(member.name, formatMonthBi(elements.paymentMonth.value)));
   render();
 }
 
@@ -455,25 +569,143 @@ function saveMember(event) {
     startDate: elements.memberStart.value,
     inactive: elements.memberInactive.checked
   });
-  saveStore("Member saved");
-  showToast("Member information saved.");
+  saveStore(MSG.memberSaved);
+  showToast(MSG.memberSavedToast);
   render();
 }
 
-function exportBackup() {
-  const csv = toCsv(exportStoreRows(state.store));
-  if (!csv) {
-    showToast("There is no data to export yet.");
+// ---------------------------------------------------------------------------
+// Year-end report
+// ---------------------------------------------------------------------------
+
+function openYearDialog() {
+  const thisYear = new Date().getFullYear();
+  elements.yearLastButton.innerHTML = `<span lang="ko">${thisYear - 1}년 보고서</span><small lang="en">${thisYear - 1} Report (last year)</small>`;
+  elements.yearThisButton.innerHTML = `<span lang="ko">${thisYear}년 보고서</span><small lang="en">${thisYear} Report (this year)</small>`;
+  elements.yearDialog.showModal();
+}
+
+function runYearReport(year) {
+  elements.yearDialog.close();
+  const report = getYearRevenue(state.store, year);
+  if (report.paymentCount === 0) {
+    showToast(MSG.noPaymentsForYear(year));
     return;
   }
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `master-lee-payment-backup-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+
+  const monthRows = report.monthly
+    .map((row) => {
+      const monthNumber = Number(row.month.split("-")[1]);
+      const englishMonth = new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", { month: "long" });
+      return `
+        <tr>
+          <td>${monthNumber}월 <span class="en">${englishMonth}</span></td>
+          <td class="num">${row.count}</td>
+          <td class="money">${formatMoney(row.total)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const memberRows = report.byMember
+    .map((entry) => `
+      <tr>
+        <td>${escapeHtml(entry.name)}</td>
+        <td class="num">${entry.count}</td>
+        <td class="money">${formatMoney(entry.total)}</td>
+      </tr>
+    `)
+    .join("");
+
+  const reportHtml = `<!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8">
+        <title>${year}년 연말 보고서 · Year-End Report</title>
+        <style>
+          body { margin: 0; background: #eef1f4; color: #1f2933; font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", Arial, sans-serif; }
+          .page { width: min(820px, calc(100vw - 32px)); margin: 24px auto; padding: 46px; background: #fff; box-shadow: 0 18px 42px rgba(31, 41, 51, .14); }
+          header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; border-bottom: 3px solid #22577a; padding-bottom: 24px; }
+          img { width: 92px; height: 92px; object-fit: contain; }
+          h1 { margin: 0 0 8px; font-size: 34px; }
+          h2 { margin: 32px 0 8px; font-size: 22px; }
+          p { margin: 0; color: #637083; }
+          .meta { text-align: right; color: #637083; line-height: 1.45; }
+          .totals { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
+          .totals div { padding: 18px; border: 1px solid #d9ded6; border-radius: 8px; background: #f7f4ef; }
+          .totals span { display: block; color: #637083; font-size: 15px; }
+          .totals strong { font-size: 32px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          th, td { padding: 12px 10px; border-bottom: 1px solid #d9ded6; text-align: left; }
+          th { color: #637083; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+          td .en { color: #637083; font-size: 14px; }
+          .num, .money { text-align: right; }
+          tfoot td { border-top: 3px solid #22577a; border-bottom: 0; font-weight: 800; font-size: 20px; }
+          .note { margin-top: 34px; padding: 18px; background: #f7f4ef; color: #1f2933; }
+          .actions { width: min(820px, calc(100vw - 32px)); margin: 0 auto 24px; text-align: right; }
+          button { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 8px; background: #22577a; color: white; font-weight: 700; cursor: pointer; }
+          @media print {
+            body { background: #fff; }
+            .page { width: auto; margin: 0; box-shadow: none; }
+            .actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header>
+            <div>
+              <h1>World Martial Arts Center</h1>
+              <p>${year}년 연말 결산 보고서 · ${year} Year-End Revenue Report</p>
+            </div>
+            <div class="meta">
+              <img src="${new URL("assets/wmac-logo.jpeg", import.meta.url).href}" alt="World Martial Arts Center logo">
+              <div>작성일 Generated: ${new Date().toLocaleDateString()}</div>
+            </div>
+          </header>
+
+          <div class="totals">
+            <div><span>총 수입 · Total Revenue</span><strong>${formatMoney(report.totalRevenue)}</strong></div>
+            <div><span>납부 건수 · Payments Received</span><strong>${report.paymentCount}</strong></div>
+          </div>
+
+          <h2>월별 수입 · Revenue by Month</h2>
+          <table>
+            <thead>
+              <tr><th>월 Month</th><th class="num">건수 Payments</th><th class="money">금액 Amount</th></tr>
+            </thead>
+            <tbody>${monthRows}</tbody>
+            <tfoot>
+              <tr><td>합계 Total</td><td class="num">${report.paymentCount}</td><td class="money">${formatMoney(report.totalRevenue)}</td></tr>
+            </tfoot>
+          </table>
+
+          <h2>회원별 수입 · Revenue by Member</h2>
+          <table>
+            <thead>
+              <tr><th>회원 Member</th><th class="num">건수 Payments</th><th class="money">금액 Amount</th></tr>
+            </thead>
+            <tbody>${memberRows}</tbody>
+          </table>
+
+          <div class="note">납부 월 기준으로 계산했습니다. 세무 자료로 보관하세요.<br>Totals are grouped by the month each payment was for. Keep this report for tax records.</div>
+        </main>
+        <div class="actions"><button type="button" onclick="window.print()">인쇄 · Print or Save PDF</button></div>
+      </body>
+    </html>`;
+
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    showToast(MSG.popupBlocked);
+    return;
+  }
+  reportWindow.document.write(reportHtml);
+  reportWindow.document.close();
 }
+
+// ---------------------------------------------------------------------------
+// Invoice
+// ---------------------------------------------------------------------------
 
 function generateInvoice() {
   const member = selectedMember();
@@ -483,7 +715,7 @@ function generateInvoice() {
 
   const balance = getMemberBalance(member, state.store.payments);
   if (balance.totalDue <= 0) {
-    showToast("This member does not have a balance to invoice.");
+    showToast(MSG.noBalanceToInvoice);
     return;
   }
 
@@ -491,24 +723,24 @@ function generateInvoice() {
   const rows = balance.unpaidMonths
     .map((month) => `
       <tr>
-        <td>${formatMonth(month)}</td>
-        <td>Monthly training tuition</td>
+        <td>${formatMonthBi(month)}</td>
+        <td>월 회비 · Monthly training tuition</td>
         <td class="money">${formatMoney(balance.monthlyAmount)}</td>
       </tr>
     `)
     .join("");
-  const contactLines = [member.parentName && `Parent/guardian: ${member.parentName}`, formatPhone(member.phone), member.email]
+  const contactLines = [member.parentName && `보호자 Parent/guardian: ${member.parentName}`, formatPhone(member.phone), member.email]
     .filter(Boolean)
     .map((line) => `<div>${escapeHtml(line)}</div>`)
     .join("");
 
   const invoiceHtml = `<!doctype html>
-    <html>
+    <html lang="ko">
       <head>
         <meta charset="utf-8">
-        <title>Invoice - ${escapeHtml(member.name)}</title>
+        <title>청구서 Invoice - ${escapeHtml(member.name)}</title>
         <style>
-          body { margin: 0; background: #eef1f4; color: #1f2933; font-family: Arial, Helvetica, sans-serif; }
+          body { margin: 0; background: #eef1f4; color: #1f2933; font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", Arial, sans-serif; }
           .page { width: min(820px, calc(100vw - 32px)); margin: 24px auto; padding: 46px; background: #fff; box-shadow: 0 18px 42px rgba(31, 41, 51, .14); }
           header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; border-bottom: 3px solid #22577a; padding-bottom: 24px; }
           img { width: 92px; height: 92px; object-fit: contain; }
@@ -537,60 +769,56 @@ function generateInvoice() {
           <header>
             <div>
               <h1>World Martial Arts Center</h1>
-              <p>Member tuition invoice</p>
+              <p>회비 청구서 · Member tuition invoice</p>
             </div>
             <div class="meta">
               <img src="${new URL("assets/wmac-logo.jpeg", import.meta.url).href}" alt="World Martial Arts Center logo">
-              <div>Invoice date: ${invoiceDate.toLocaleDateString()}</div>
+              <div>청구 날짜 Invoice date: ${invoiceDate.toLocaleDateString()}</div>
             </div>
           </header>
 
           <section class="billto">
-            <h2>Bill To</h2>
+            <h2>받는 분 · Bill To</h2>
             <strong>${escapeHtml(member.name)}</strong>
             ${contactLines}
           </section>
 
           <section>
-            <h2>Amount Needed</h2>
+            <h2>청구 내역 · Amount Due</h2>
             <table>
               <thead>
-                <tr><th>Month</th><th>Description</th><th class="money">Amount</th></tr>
+                <tr><th>월 Month</th><th>내용 Description</th><th class="money">금액 Amount</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
-            <div class="total">Total due: ${formatMoney(balance.totalDue)}</div>
+            <div class="total">합계 Total due: ${formatMoney(balance.totalDue)}</div>
           </section>
 
-          <div class="note">Please bring this account current at your next class or contact the front desk if a payment was already made.</div>
+          <div class="note">다음 수업 시간에 회비를 정리해 주시거나, 이미 납부하셨다면 데스크에 알려 주세요.<br>Please bring this account current at your next class or contact the front desk if a payment was already made.</div>
         </main>
-        <div class="actions"><button type="button" onclick="window.print()">Print or Save PDF</button></div>
+        <div class="actions"><button type="button" onclick="window.print()">인쇄 · Print or Save PDF</button></div>
       </body>
     </html>`;
 
   const invoiceWindow = window.open("", "_blank");
   if (!invoiceWindow) {
-    showToast("The browser blocked the invoice window. Allow pop-ups for this app and try again.");
+    showToast(MSG.popupBlocked);
     return;
   }
   invoiceWindow.document.write(invoiceHtml);
   invoiceWindow.document.close();
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function selectedMember() {
   return state.store.members.find((member) => member.id === state.selectedId);
 }
 
 function formatMoney(value) {
-  return Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
-}
-
-function formatMonth(month) {
-  if (!month) {
-    return "";
-  }
-  const [year, monthNumber] = month.split("-").map(Number);
-  return new Date(year, monthNumber - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 function formatPhone(phone) {
@@ -607,7 +835,7 @@ function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.remove("hidden");
   window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => elements.toast.classList.add("hidden"), 4200);
+  showToast.timer = window.setTimeout(() => elements.toast.classList.add("hidden"), 5000);
 }
 
 function escapeHtml(value) {

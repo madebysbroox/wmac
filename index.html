@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Master Lee Payment Tracker</title>
+    <title>회비 관리 · Payment Tracker</title>
     <link rel="stylesheet" href="src/styles.css">
   </head>
   <body>
@@ -11,71 +11,86 @@
       <div class="brand-lockup">
         <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
         <div>
-          <h1>Payment Tracker</h1>
-          <p id="saveStatus">Saved on this computer</p>
+          <h1>회비 관리 <small lang="en">Payment Tracker</small></h1>
+          <p id="saveStatus">이 컴퓨터에 저장됨 · Saved on this computer</p>
         </div>
       </div>
-      <div class="top-actions">
-        <button id="dashboardButton" class="button secondary" type="button">Dashboard</button>
-        <label class="button secondary" for="memberCsv">Import Members</label>
-        <input id="memberCsv" class="hidden" type="file" accept=".csv,text/csv">
-        <label class="button secondary" for="paymentCsv">Import Payments</label>
-        <input id="paymentCsv" class="hidden" type="file" accept=".csv,text/csv">
-        <button id="exportButton" class="button secondary" type="button">Export Backup</button>
-      </div>
+      <button id="dashboardButton" class="button secondary bi" type="button">
+        <span lang="ko">처음 화면</span><small lang="en">Home</small>
+      </button>
     </header>
 
     <main class="layout">
-      <section class="sidebar" aria-label="Members">
+      <section class="sidebar" aria-label="회원 Members">
         <div class="search-block">
-          <label for="searchInput">Find a member</label>
-          <input id="searchInput" type="search" autocomplete="off" placeholder="Type a name">
+          <label for="searchInput">회원 찾기 <small lang="en">Find a Member</small></label>
+          <input id="searchInput" type="search" autocomplete="off" placeholder="이름 입력 · Type a name">
         </div>
-        <button id="addMemberButton" class="button primary full" type="button">Add New Member</button>
+        <button id="addMemberButton" class="button primary full bi" type="button">
+          <span lang="ko">＋ 새 회원 추가</span><small lang="en">Add New Member</small>
+        </button>
         <div class="summary-row">
-          <button id="paidCount" class="summary-link status-paid" type="button">0 paid</button>
-          <button id="watchCount" class="summary-link status-watch" type="button">0 attention</button>
-          <button id="lateCount" class="summary-link status-late" type="button">0 behind</button>
+          <button id="paidCount" class="summary-link status-paid" type="button"></button>
+          <button id="watchCount" class="summary-link status-watch" type="button"></button>
+          <button id="lateCount" class="summary-link status-late" type="button"></button>
         </div>
         <div id="memberList" class="member-list" role="list"></div>
+
+        <div class="file-tools">
+          <h3>파일 · 백업 <small lang="en">Files &amp; Backup</small></h3>
+          <label class="button tool bi" for="memberCsv">
+            <span lang="ko">회원 명단 가져오기</span><small lang="en">Import Members CSV</small>
+          </label>
+          <input id="memberCsv" class="hidden" type="file" accept=".csv,text/csv">
+          <label class="button tool bi" for="paymentCsv">
+            <span lang="ko">결제 내역 가져오기</span><small lang="en">Import Payments CSV</small>
+          </label>
+          <input id="paymentCsv" class="hidden" type="file" accept=".csv,text/csv">
+          <button id="exportButton" class="button tool bi" type="button">
+            <span lang="ko">백업 파일 저장</span><small lang="en">Export Backup CSV</small>
+          </button>
+          <button id="yearReportButton" class="button tool bi" type="button">
+            <span lang="ko">연말 보고서 (세금)</span><small lang="en">Year-End Tax Report</small>
+          </button>
+          <button id="nextYearCsvButton" class="button tool bi" type="button">
+            <span lang="ko">새해 회원 명단 저장</span><small lang="en">New Year Roster CSV</small>
+          </button>
+        </div>
       </section>
 
-      <section class="detail" aria-label="Workspace">
+      <section class="detail" aria-label="작업 공간 Workspace">
         <div id="dashboardView" class="dashboard-view">
           <div class="dashboard-header">
-            <div>
-              <p class="eyebrow">30,000-foot view</p>
-              <h2>Member Payment Field</h2>
-            </div>
+            <h2>회비 현황 <small lang="en">Payment Overview</small></h2>
             <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
           </div>
 
           <div class="metric-grid">
             <button id="dashboardPaid" class="metric-card status-paid" type="button">
-              <span>Paid up</span>
+              <span>완납 <small lang="en">Paid Up</small></span>
               <strong>0</strong>
             </button>
             <button id="dashboardWatch" class="metric-card status-watch" type="button">
-              <span>Needs attention</span>
+              <span>확인 필요 <small lang="en">Needs Attention</small></span>
               <strong>0</strong>
             </button>
             <button id="dashboardLate" class="metric-card status-late" type="button">
-              <span>Behind</span>
+              <span>미납 <small lang="en">Behind</small></span>
               <strong>0</strong>
             </button>
             <div class="metric-card neutral">
-              <span>Estimated amount due</span>
+              <span>미납 총액 <small lang="en">Total Unpaid</small></span>
               <strong id="dashboardDue">$0.00</strong>
             </div>
           </div>
 
           <div class="overview-grid">
             <section class="overview-panel">
-              <h3>Field Snapshot</h3>
+              <h3>한눈에 보기 <small lang="en">At a Glance</small></h3>
               <div id="fieldSnapshot" class="snapshot-list"></div>
             </section>
             <section class="overview-panel">
-              <h3>Highest Balance</h3>
+              <h3>미납액 많은 회원 <small lang="en">Owes the Most</small></h3>
               <div id="highestBalanceList" class="snapshot-list"></div>
             </section>
           </div>
@@ -84,8 +99,8 @@
         <div id="rosterView" class="roster-view hidden">
           <div class="roster-header">
             <div>
-              <button id="backToDashboard" class="text-button" type="button">Back to dashboard</button>
-              <h2 id="rosterTitle">Members</h2>
+              <button id="backToDashboard" class="text-button" type="button">← 처음 화면 · Home</button>
+              <h2 id="rosterTitle"></h2>
               <p id="rosterHelp"></p>
             </div>
           </div>
@@ -93,8 +108,8 @@
         </div>
 
         <div id="emptyState" class="empty-state hidden">
-          <h2>Choose a member</h2>
-          <p>Type the first few letters of a name, then click the member.</p>
+          <h2>회원을 선택하세요 <small lang="en">Choose a Member</small></h2>
+          <p>이름 몇 글자를 입력한 후, 회원을 누르세요.<br><span lang="en">Type a few letters of a name, then click the member.</span></p>
         </div>
 
         <div id="memberDetail" class="hidden detail-grid">
@@ -103,83 +118,108 @@
               <div>
                 <h2 id="detailName"></h2>
                 <p id="detailContact"></p>
+                <p id="detailDueDay" class="due-day"></p>
               </div>
               <span id="statusBadge" class="status-badge"></span>
             </div>
 
             <div id="latestPaid" class="latest-paid"></div>
 
-            <h3>Recent Months</h3>
+            <button id="quickPayButton" class="button pay bi" type="button"></button>
+
+            <h3>최근 4개월 <small lang="en">Recent Months</small></h3>
             <div id="monthStrip" class="month-strip"></div>
 
             <section class="invoice-panel">
               <div>
-                <h3>Invoice</h3>
+                <h3>청구서 · 알림 <small lang="en">Invoice &amp; Reminder</small></h3>
                 <p id="invoiceSummary"></p>
               </div>
-              <button id="invoiceButton" class="button secondary" type="button">Generate Invoice</button>
+              <div class="invoice-actions">
+                <button id="invoiceButton" class="button secondary bi" type="button">
+                  <span lang="ko">청구서 만들기</span><small lang="en">Generate Invoice</small>
+                </button>
+                <a id="emailButton" class="button secondary bi">
+                  <span lang="ko">알림 이메일 쓰기</span><small lang="en">Email Reminder (Outlook)</small>
+                </a>
+              </div>
             </section>
 
             <form id="paymentForm" class="payment-form">
-              <h3>Record a Payment</h3>
+              <h3>다른 달 회비 입력 <small lang="en">Record a Different Month</small></h3>
               <div class="form-row">
-                <label for="paymentMonth">Payment month</label>
+                <label for="paymentMonth">납부 월 <small lang="en">Payment month</small></label>
                 <input id="paymentMonth" type="month" required>
               </div>
               <div class="form-row">
-                <label for="paymentAmount">Amount</label>
+                <label for="paymentAmount">금액 <small lang="en">Amount</small></label>
                 <input id="paymentAmount" type="number" min="0" step="0.01" required>
               </div>
-              <button class="button primary large" type="submit">Save Payment</button>
+              <button class="button primary large bi" type="submit">
+                <span lang="ko">회비 저장</span><small lang="en">Save Payment</small>
+              </button>
             </form>
           </section>
 
           <aside class="edit-panel">
-            <h3>Member Information</h3>
+            <h3>회원 정보 <small lang="en">Member Information</small></h3>
             <form id="memberForm">
               <div class="form-row">
-                <label for="memberName">Name</label>
+                <label for="memberName">이름 <small lang="en">Name</small></label>
                 <input id="memberName" required>
               </div>
               <div class="form-row">
-                <label for="memberPhone">Phone</label>
+                <label for="memberPhone">전화번호 <small lang="en">Phone</small></label>
                 <input id="memberPhone">
               </div>
               <div class="form-row">
-                <label for="memberEmail">Email</label>
+                <label for="memberEmail">이메일 <small lang="en">Email</small></label>
                 <input id="memberEmail" type="email">
               </div>
               <div class="form-row">
-                <label for="memberParent">Parent or guardian</label>
+                <label for="memberParent">부모/보호자 <small lang="en">Parent or guardian</small></label>
                 <input id="memberParent">
               </div>
               <div class="form-row">
-                <label for="memberAmount">Monthly amount</label>
+                <label for="memberAmount">월 회비 <small lang="en">Monthly amount</small></label>
                 <input id="memberAmount" type="number" min="0" step="0.01">
               </div>
               <div class="form-row">
-                <label for="memberStart">Contract start</label>
+                <label for="memberStart">등록일 <small lang="en">Contract start</small></label>
                 <input id="memberStart" type="date">
               </div>
               <label class="check-row">
                 <input id="memberInactive" type="checkbox">
-                Inactive member
+                쉬는 회원 <small lang="en">Inactive member</small>
               </label>
-              <button class="button secondary full" type="submit">Save Member Info</button>
+              <button class="button secondary full bi" type="submit">
+                <span lang="ko">회원 정보 저장</span><small lang="en">Save Member Info</small>
+              </button>
             </form>
           </aside>
         </div>
       </section>
     </main>
 
+    <dialog id="yearDialog">
+      <h2>연말 보고서 <small lang="en">Year-End Report</small></h2>
+      <p>어느 해의 보고서를 만들까요? · Which year do you want?</p>
+      <menu class="year-menu">
+        <button id="yearLastButton" class="button primary bi" type="button"></button>
+        <button id="yearThisButton" class="button secondary bi" type="button"></button>
+        <button id="cancelYearDialog" class="button secondary" type="button">취소 · Cancel</button>
+      </menu>
+    </dialog>
+
     <dialog id="mappingDialog">
       <form method="dialog" id="mappingForm">
-        <h2 id="mappingTitle">Match CSV Columns</h2>
-        <p id="mappingHelp">Choose which columns match each field. Leave unknown fields blank.</p>
+        <h2 id="mappingTitle"></h2>
+        <p id="mappingReassure" class="reassure"></p>
+        <p id="mappingHelp"></p>
         <div id="mappingFields" class="mapping-fields"></div>
         <menu>
-          <button class="button secondary" value="cancel" type="button" id="cancelMapping">Cancel</button>
-          <button class="button primary" value="default">Import</button>
+          <button class="button secondary" value="cancel" type="button" id="cancelMapping">취소 · Cancel</button>
+          <button class="button primary" value="default">가져오기 · Import</button>
         </menu>
       </form>
     </dialog>
