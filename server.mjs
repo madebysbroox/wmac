@@ -1,10 +1,11 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, normalize, relative, resolve } from "node:path";
+import { dirname, extname, join, normalize, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
-const root = resolve(process.cwd());
+const root = dirname(fileURLToPath(import.meta.url));
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
