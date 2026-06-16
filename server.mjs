@@ -1,7 +1,8 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, extname, join, normalize, relative, resolve } from "node:path";
+import { dirname, extname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveStaticFilePath } from "./src/static-path.js";
 
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
@@ -18,9 +19,8 @@ const mimeTypes = {
 };
 
 const server = createServer((request, response) => {
-  const requestedPath = decodeURIComponent(new URL(request.url, `http://localhost:${port}`).pathname);
-  const safePath = normalize(requestedPath).replace(/^(\.\.[/\\])+/, "");
-  const filePath = resolve(join(root, safePath === "/" ? "index.html" : safePath));
+  const requestedPath = new URL(request.url, `http://localhost:${port}`).pathname;
+  const filePath = resolveStaticFilePath(root, requestedPath);
   const relativePath = relative(root, filePath);
 
   if (relativePath.startsWith("..") || relativePath === ".." || !existsSync(filePath)) {
