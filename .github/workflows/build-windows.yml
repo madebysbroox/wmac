@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -28,6 +31,30 @@ jobs:
 
       - name: Build Windows installer
         run: npm run package:win -- --publish never
+
+      - name: Publish public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "windows-installer"
+          $title = "Payment Tracker Windows Installer"
+          $notes = "Download the installer below. This release is updated automatically from the latest successful Windows build."
+          $installer = Get-ChildItem -Path release -Filter "*.exe" | Select-Object -First 1
+
+          if (-not $installer) {
+            throw "No installer found in release/*.exe"
+          }
+
+          git tag -f $tag
+          git push origin "refs/tags/$tag" --force
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $installer.FullName --clobber
+            gh release edit $tag --title $title --notes $notes --latest
+          } else {
+            gh release create $tag $installer.FullName --title $title --notes $notes --latest
+          }
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
