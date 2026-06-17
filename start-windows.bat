@@ -21,6 +21,5 @@ echo  Keep this black window open while using the app.
 echo  You can minimize it. Close it when you are done for the day.
 echo.
 
-start "" /min cmd /c "timeout /t 2 /nobreak >nul & start http://localhost:4173"
 node server.mjs
 pause
