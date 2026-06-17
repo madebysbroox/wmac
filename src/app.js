@@ -18,6 +18,7 @@ import {
   upsertMember
 } from "./data.js";
 import {
+  DEFAULT_EMAIL_TEMPLATE,
   FIELD_LABELS,
   MSG,
   ROSTER_TITLES,
@@ -30,6 +31,7 @@ import {
 } from "./i18n.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
+const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
 
 // ---------------------------------------------------------------------------
 // State and element lookup
@@ -40,7 +42,8 @@ const state = {
   selectedId: "",
   view: "dashboard",
   statusFilter: "all",
-  mapping: null
+  mapping: null,
+  review: null
 };
 
 const elements = {};
@@ -57,7 +60,10 @@ const elements = {};
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
   "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
-  "yearLastButton", "yearThisButton", "cancelYearDialog"
+  "yearLastButton", "yearThisButton", "cancelYearDialog", "paymentReviewDialog",
+  "reviewTitle", "reviewHelp", "reviewMonthList", "reviewTotal", "emailSubjectInput",
+  "emailBodyInput", "emailPreview", "saveEmailTemplateButton", "resetEmailTemplateButton",
+  "generateSelectedInvoiceButton", "openSelectedEmailButton", "cancelPaymentReview"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
@@ -80,8 +86,8 @@ elements.dashboardWatch.addEventListener("click", () => showRoster("watch"));
 elements.dashboardLate.addEventListener("click", () => showRoster("late"));
 elements.backToDashboard.addEventListener("click", showDashboard);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
-elements.invoiceButton.addEventListener("click", generateInvoice);
-elements.emailButton.addEventListener("click", explainDisabledEmail);
+elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
+elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
 elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
@@ -91,6 +97,14 @@ elements.yearLastButton.addEventListener("click", () => runYearReport(new Date()
 elements.yearThisButton.addEventListener("click", () => runYearReport(new Date().getFullYear()));
 elements.cancelYearDialog.addEventListener("click", () => elements.yearDialog.close());
 elements.nextYearCsvButton.addEventListener("click", exportNextYearRoster);
+elements.reviewMonthList.addEventListener("change", updatePaymentReview);
+elements.emailSubjectInput.addEventListener("input", updatePaymentReview);
+elements.emailBodyInput.addEventListener("input", updatePaymentReview);
+elements.saveEmailTemplateButton.addEventListener("click", saveEmailTemplateFromReview);
+elements.resetEmailTemplateButton.addEventListener("click", resetEmailTemplateInReview);
+elements.generateSelectedInvoiceButton.addEventListener("click", generateSelectedInvoice);
+elements.openSelectedEmailButton.addEventListener("click", openSelectedEmail);
+elements.cancelPaymentReview.addEventListener("click", () => elements.paymentReviewDialog.close());
 
 render();
 
@@ -270,32 +284,12 @@ function renderDetail() {
   elements.memberInactive.checked = Boolean(member.inactive);
 }
 
-// The reminder button is a mailto: link, so clicking it opens the computer's
-// own mail program (Outlook) with the email already written. The email uses
-// the late-fee balance, so overdue months include the one-time late fee.
+// The reminder button opens a review step first, so Master Lee can choose the
+// months and adjust the message before the computer's mail program opens.
 function renderEmailButton(member, balance) {
-  const ready = Boolean(member.email) && balance.totalDue > 0;
+  const ready = balance.totalDue > 0;
   elements.emailButton.classList.toggle("disabled", !ready);
-  if (ready) {
-    const lateBalance = getLateFeeBalance(member, state.store.payments);
-    const { subject, body } = buildReminderEmail(member, lateBalance);
-    elements.emailButton.href = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  } else {
-    elements.emailButton.removeAttribute("href");
-  }
-}
-
-function explainDisabledEmail(event) {
-  if (elements.emailButton.hasAttribute("href")) {
-    return;
-  }
-  event.preventDefault();
-  const member = selectedMember();
-  if (!member) {
-    return;
-  }
-  const balance = getMemberBalance(member, state.store.payments);
-  showToast(balance.totalDue <= 0 ? MSG.noBalanceToRemind : MSG.noEmailOnFile);
+  elements.emailButton.setAttribute("aria-disabled", String(!ready));
 }
 
 function renderQuickPay(member, status) {
@@ -707,25 +701,169 @@ function runYearReport(year) {
 // Invoice
 // ---------------------------------------------------------------------------
 
-function generateInvoice() {
+function openPaymentReview(mode) {
   const member = selectedMember();
   if (!member) {
     return;
   }
 
-  const balance = getMemberBalance(member, state.store.payments);
-  if (balance.totalDue <= 0) {
-    showToast(MSG.noBalanceToInvoice);
+  const balance = getLateFeeBalance(member, state.store.payments);
+  if (balance.lines.length === 0 || balance.totalDue <= 0) {
+    showToast(mode === "email" ? MSG.noBalanceToRemind : MSG.noBalanceToInvoice);
     return;
   }
 
+  state.review = {
+    mode,
+    memberId: member.id,
+    balance,
+    selectedMonths: new Set(balance.lines.map((line) => line.month))
+  };
+  const title = mode === "email"
+    ? "알림 이메일 확인 · Review Reminder Email"
+    : "청구서 확인 · Review Invoice";
+  elements.reviewTitle.textContent = title;
+  elements.reviewHelp.textContent =
+    "청구서나 이메일에 넣을 미납 월을 선택하세요. 이메일 문구는 아래에서 바로 수정할 수 있습니다.";
+  elements.reviewMonthList.innerHTML = balance.lines.map((line) => monthChoiceMarkup(line)).join("");
+  const template = loadEmailTemplate();
+  elements.emailSubjectInput.value = template.subject;
+  elements.emailBodyInput.value = template.body.replace(/\r\n/g, "\n");
+  updatePaymentReview();
+  elements.paymentReviewDialog.showModal();
+}
+
+function updatePaymentReview() {
+  if (!state.review) {
+    return;
+  }
+  const member = state.store.members.find((item) => item.id === state.review.memberId);
+  if (!member) {
+    return;
+  }
+
+  state.review.selectedMonths = new Set(
+    Array.from(elements.reviewMonthList.querySelectorAll("input[type='checkbox']:checked")).map((input) => input.value)
+  );
+  const selectedBalance = selectedReviewBalance();
+  const selectedCount = selectedBalance.lines.length;
+  elements.reviewTotal.textContent = selectedCount
+    ? `${selectedCount}개월 선택 · ${formatMoney(selectedBalance.totalDue)} selected`
+    : "선택된 월이 없습니다 · No months selected";
+  elements.generateSelectedInvoiceButton.disabled = selectedCount === 0;
+  elements.openSelectedEmailButton.disabled = selectedCount === 0 || !member.email;
+
+  const template = {
+    subject: elements.emailSubjectInput.value,
+    body: elements.emailBodyInput.value
+  };
+  const { subject, body } = buildReminderEmail(member, selectedBalance, template);
+  elements.emailPreview.textContent = `Subject: ${subject}\n\n${body.replace(/\r\n/g, "\n")}`;
+}
+
+function selectedReviewBalance() {
+  const selected = state.review?.selectedMonths || new Set();
+  const lines = (state.review?.balance.lines || []).filter((line) => selected.has(line.month));
+  const baseDue = lines.reduce((sum, line) => sum + line.amount, 0);
+  const feeDue = lines.reduce((sum, line) => sum + line.lateFee, 0);
+  return {
+    monthlyAmount: state.review?.balance.monthlyAmount || 0,
+    lines,
+    baseDue,
+    feeDue,
+    totalDue: baseDue + feeDue
+  };
+}
+
+function saveEmailTemplateFromReview() {
+  const template = {
+    subject: elements.emailSubjectInput.value,
+    body: elements.emailBodyInput.value.replace(/\n/g, "\r\n")
+  };
+  localStorage.setItem(EMAIL_TEMPLATE_KEY, JSON.stringify(template));
+  showToast("이메일 문구가 저장되었습니다. · Email wording saved.");
+  updatePaymentReview();
+}
+
+function resetEmailTemplateInReview() {
+  localStorage.removeItem(EMAIL_TEMPLATE_KEY);
+  elements.emailSubjectInput.value = DEFAULT_EMAIL_TEMPLATE.subject;
+  elements.emailBodyInput.value = DEFAULT_EMAIL_TEMPLATE.body.replace(/\r\n/g, "\n");
+  showToast("기본 이메일 문구로 되돌렸습니다. · Restored the default email wording.");
+  updatePaymentReview();
+}
+
+function generateSelectedInvoice() {
+  const member = selectedMember();
+  if (!member || !state.review) {
+    return;
+  }
+  const balance = selectedReviewBalance();
+  if (balance.lines.length === 0) {
+    showToast("미납 월을 하나 이상 선택하세요. · Select at least one unpaid month.");
+    return;
+  }
+  elements.paymentReviewDialog.close();
+  generateInvoice(member, balance);
+}
+
+function openSelectedEmail() {
+  const member = selectedMember();
+  if (!member || !state.review) {
+    return;
+  }
+  if (!member.email) {
+    showToast(MSG.noEmailOnFile);
+    return;
+  }
+  const balance = selectedReviewBalance();
+  if (balance.lines.length === 0) {
+    showToast("미납 월을 하나 이상 선택하세요. · Select at least one unpaid month.");
+    return;
+  }
+  const template = {
+    subject: elements.emailSubjectInput.value,
+    body: elements.emailBodyInput.value
+  };
+  const { subject, body } = buildReminderEmail(member, balance, template);
+  window.location.href = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function loadEmailTemplate() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(EMAIL_TEMPLATE_KEY));
+    if (saved?.subject && saved?.body) {
+      return saved;
+    }
+  } catch {
+    return DEFAULT_EMAIL_TEMPLATE;
+  }
+  return DEFAULT_EMAIL_TEMPLATE;
+}
+
+function monthChoiceMarkup(line) {
+  const fee = line.lateFee > 0 ? ` + ${formatMoney(line.lateFee)} late fee` : "";
+  return `
+    <label class="month-choice">
+      <input type="checkbox" value="${escapeHtml(line.month)}" checked>
+      <span>
+        <strong>${formatMonthBi(line.month)}</strong>
+        <small>${formatMoney(line.amount)}${fee} = ${formatMoney(line.total)}</small>
+      </span>
+    </label>
+  `;
+}
+
+function generateInvoice(member, balance) {
   const invoiceDate = new Date();
-  const rows = balance.unpaidMonths
-    .map((month) => `
+  const rows = balance.lines
+    .map((line) => `
       <tr>
-        <td>${formatMonthBi(month)}</td>
+        <td>${formatMonthBi(line.month)}</td>
         <td>월 회비 · Monthly training tuition</td>
-        <td class="money">${formatMoney(balance.monthlyAmount)}</td>
+        <td class="money">${formatMoney(line.amount)}</td>
+        <td class="money">${line.lateFee > 0 ? formatMoney(line.lateFee) : "-"}</td>
+        <td class="money">${formatMoney(line.total)}</td>
       </tr>
     `)
     .join("");
@@ -787,7 +925,7 @@ function generateInvoice() {
             <h2>청구 내역 · Amount Due</h2>
             <table>
               <thead>
-                <tr><th>월 Month</th><th>내용 Description</th><th class="money">금액 Amount</th></tr>
+                <tr><th>월 Month</th><th>내용 Description</th><th class="money">회비 Payment</th><th class="money">연체료 Late Fee</th><th class="money">금액 Amount</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>

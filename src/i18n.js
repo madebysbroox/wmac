@@ -107,10 +107,32 @@ export function formatMonthBi(month) {
 
 export const MASTER_LEE_PHONE = "(540) 347-7266";
 
+export const DEFAULT_EMAIL_TEMPLATE = {
+  subject: "World Martial Arts Center Payment Reminder — {{memberName}}",
+  body: [
+    "Hello {{recipientName}},",
+    "",
+    "This is a friendly payment reminder from World Martial Arts Center.",
+    "",
+    "Unpaid months for {{memberName}}:",
+    "{{paymentLines}}",
+    "",
+    "Total due: {{totalDue}}",
+    "{{lateFeeNote}}",
+    "{{collectionNote}}",
+    "",
+    `The best next step is a quick phone call: please call Master Lee at ${MASTER_LEE_PHONE}. Keeping an open line of communication means we can always find a solution together.`,
+    "",
+    "Thank you!",
+    "",
+    "World Martial Arts Center"
+  ].join("\r\n")
+};
+
 // A polite reminder email in plain English, ready to drop into a mailto: link
 // so the computer's own mail program (Outlook) opens it pre-filled.
 // Takes the late-fee balance from getLateFeeBalance in data.js.
-export function buildReminderEmail(member, balance) {
+export function buildReminderEmail(member, balance, template = DEFAULT_EMAIL_TEMPLATE) {
   const money = (value) => Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
   const dueText = (isoDate) => {
     const [year, month, day] = isoDate.split("-").map(Number);
@@ -122,36 +144,31 @@ export function buildReminderEmail(member, balance) {
       ? `${label}: ${money(line.amount)} + ${money(line.lateFee)} late fee* = ${money(line.total)}`
       : `${label}: ${money(line.amount)}`;
   });
+  const lateFeeNote = balance.feeDue > 0
+    ? `\r\n* Payments are due each month on the same day of the month as the signing date. A one-time late fee of 5% or $5 (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
+    : "";
+  const collectionNote = balance.lines.length >= 2
+    ? "\r\nPlease note: accounts that fall 3 or more months behind may be sent to a collection agency. We would much rather work something out together, so please reach out before it ever comes to that."
+    : "";
 
-  const subject = `World Martial Arts Center Payment Reminder — ${member.name}`;
-  const body = [
-    `Hello ${member.parentName || member.name},`,
-    "",
-    "This is a friendly payment reminder from World Martial Arts Center.",
-    "",
-    `Unpaid months for ${member.name}:`,
-    ...monthLines,
-    "",
-    `Total due: ${money(balance.totalDue)}`,
-    ...(balance.feeDue > 0
-      ? [
-          "",
-          `* Payments are due each month on the same day of the month as the signing date. A one-time late fee of 5% or $5 (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
-        ]
-      : []),
-    ...(balance.lines.length >= 2
-      ? [
-          "",
-          "Please note: accounts that fall 3 or more months behind may be sent to a collection agency. We would much rather work something out together, so please reach out before it ever comes to that."
-        ]
-      : []),
-    "",
-    `The best next step is a quick phone call: please call Master Lee at ${MASTER_LEE_PHONE}. Keeping an open line of communication means we can always find a solution together.`,
-    "",
-    "Thank you!",
-    "",
-    "World Martial Arts Center"
-  ].join("\r\n");
+  const values = {
+    memberName: member.name,
+    recipientName: member.parentName || member.name,
+    paymentLines: monthLines.join("\r\n"),
+    totalDue: money(balance.totalDue),
+    lateFeeNote,
+    collectionNote,
+    phone: MASTER_LEE_PHONE
+  };
+  const subject = fillTemplate(template.subject || DEFAULT_EMAIL_TEMPLATE.subject, values);
+  const body = fillTemplate(template.body || DEFAULT_EMAIL_TEMPLATE.body, values)
+    .replace(/\n/g, "\r\n")
+    .replace(/\r\r\n/g, "\r\n")
+    .replace(/\r\n{3,}/g, "\r\n\r\n");
 
   return { subject, body };
+}
+
+function fillTemplate(template, values) {
+  return String(template).replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? "");
 }

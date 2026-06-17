@@ -139,9 +139,9 @@
                 <button id="invoiceButton" class="button secondary bi" type="button">
                   <span lang="ko">청구서 만들기</span><small lang="en">Generate Invoice</small>
                 </button>
-                <a id="emailButton" class="button secondary bi">
+                <button id="emailButton" class="button secondary bi" type="button">
                   <span lang="ko">알림 이메일 쓰기</span><small lang="en">Email Reminder (Outlook)</small>
-                </a>
+                </button>
               </div>
             </section>
 
@@ -208,6 +208,44 @@
         <button id="yearLastButton" class="button primary bi" type="button"></button>
         <button id="yearThisButton" class="button secondary bi" type="button"></button>
         <button id="cancelYearDialog" class="button secondary" type="button">취소 · Cancel</button>
+      </menu>
+    </dialog>
+
+    <dialog id="paymentReviewDialog" class="review-dialog">
+      <h2 id="reviewTitle"></h2>
+      <p id="reviewHelp" class="dialog-help"></p>
+
+      <section class="review-section">
+        <h3>포함할 미납 월 <small lang="en">Unpaid Months to Include</small></h3>
+        <div id="reviewMonthList" class="month-choice-list"></div>
+        <strong id="reviewTotal" class="review-total"></strong>
+      </section>
+
+      <section class="review-section email-editor">
+        <h3>이메일 문구 <small lang="en">Email Wording</small></h3>
+        <div class="form-row">
+          <label for="emailSubjectInput">제목 <small lang="en">Subject</small></label>
+          <input id="emailSubjectInput">
+        </div>
+        <div class="form-row">
+          <label for="emailBodyInput">내용 <small lang="en">Body template</small></label>
+          <textarea id="emailBodyInput" rows="12"></textarea>
+        </div>
+        <div class="template-help">
+          사용 가능: <code>{{memberName}}</code>, <code>{{recipientName}}</code>, <code>{{paymentLines}}</code>, <code>{{totalDue}}</code>, <code>{{lateFeeNote}}</code>, <code>{{collectionNote}}</code>, <code>{{phone}}</code>
+        </div>
+        <div class="template-actions">
+          <button id="saveEmailTemplateButton" class="button secondary" type="button">이 문구 저장 · Save Wording</button>
+          <button id="resetEmailTemplateButton" class="button secondary" type="button">기본 문구 · Default</button>
+        </div>
+        <h3>미리보기 <small lang="en">Preview</small></h3>
+        <pre id="emailPreview" class="email-preview"></pre>
+      </section>
+
+      <menu>
+        <button id="cancelPaymentReview" class="button secondary" type="button">닫기 · Close</button>
+        <button id="generateSelectedInvoiceButton" class="button secondary" type="button">청구서 만들기 · Generate Invoice</button>
+        <button id="openSelectedEmailButton" class="button primary" type="button">이메일 열기 · Open Email</button>
       </menu>
     </dialog>
 

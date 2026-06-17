@@ -35,7 +35,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -257,7 +258,8 @@ a.button {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 54px;
   padding: 10px 12px;
@@ -269,9 +271,16 @@ select {
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus {
   outline: 3px solid #8ab6d6;
   outline-offset: 2px;
+}
+
+textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .form-row {
@@ -717,10 +726,16 @@ button:focus {
 
 dialog {
   width: min(680px, calc(100vw - 30px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
   border: 0;
   border-radius: 8px;
   padding: 24px;
   box-shadow: var(--shadow);
+}
+
+dialog.review-dialog {
+  width: min(980px, calc(100vw - 30px));
 }
 
 dialog::backdrop {
@@ -748,6 +763,92 @@ dialog::backdrop {
   display: grid;
   gap: 14px;
   margin: 18px 0;
+}
+
+.dialog-help {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.review-section {
+  margin: 18px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.month-choice-list {
+  display: grid;
+  gap: 10px;
+}
+
+.month-choice {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 70px;
+  padding: 12px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+}
+
+.month-choice input {
+  width: 26px;
+  min-height: 26px;
+}
+
+.month-choice strong,
+.month-choice small {
+  display: block;
+}
+
+.month-choice small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.review-total {
+  display: block;
+  margin-top: 12px;
+  color: var(--blue);
+  font-size: 22px;
+}
+
+.template-help {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.template-help code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #eef1f4;
+  color: var(--ink);
+}
+
+.template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.email-preview {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafb;
+  color: var(--ink);
+  white-space: pre-wrap;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
 }
 
 menu {
