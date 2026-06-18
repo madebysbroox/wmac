@@ -13,9 +13,12 @@ import {
   guessColumnMap,
   importMembersFromRecords,
   importPaymentsFromRecords,
+  pendingSquarePaymentsForMember,
   parseCsv,
   removePayment,
   searchMembers,
+  squarePaymentMonth,
+  suggestedSquareMember,
   toCsv,
   upsertMember
 } from "./data.js";
@@ -46,18 +49,22 @@ const state = {
   view: "dashboard",
   statusFilter: "all",
   mapping: null,
-  review: null
+  review: null,
+  squarePayments: [],
+  squareConfigured: false,
+  squareError: ""
 };
 
 const elements = {};
 [
-  "saveStatus", "homeTab", "membersTab", "appLayout", "memberSidebar",
+  "saveStatus", "homeTab", "membersTab", "squareTab", "appLayout", "memberSidebar",
   "memberCsv", "paymentCsv", "exportButton",
-  "searchInput", "addMemberButton", "paidCount", "watchCount", "lateCount",
-  "memberList", "dashboardView", "dashboardPaid", "dashboardWatch", "dashboardLate",
+  "searchInput", "addMemberButton", "paidCount", "pendingCount", "watchCount", "lateCount",
+  "memberList", "dashboardView", "dashboardPaid", "dashboardPending", "dashboardWatch", "dashboardLate",
   "dashboardMonthLabel", "dashboardDelinquentCount", "dashboardPastDue", "dashboardTenDaysLate",
   "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
-  "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "rosterView",
+  "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "squareView", "squareStatusLine",
+  "syncSquareButton", "squareSummary", "squarePayments", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
   "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
@@ -81,18 +88,22 @@ const elements = {};
 
 elements.homeTab.addEventListener("click", showDashboard);
 elements.membersTab.addEventListener("click", showMembers);
+elements.squareTab.addEventListener("click", showSquare);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
 elements.exportButton.addEventListener("click", exportBackup);
 elements.searchInput.addEventListener("input", render);
 elements.addMemberButton.addEventListener("click", addNewMember);
 elements.paidCount.addEventListener("click", () => showRoster("paid"));
+elements.pendingCount.addEventListener("click", () => showRoster("pending"));
 elements.watchCount.addEventListener("click", () => showRoster("watch"));
 elements.lateCount.addEventListener("click", () => showRoster("late"));
 elements.dashboardPaid.addEventListener("click", () => showRoster("paid"));
+elements.dashboardPending.addEventListener("click", () => showRoster("pending"));
 elements.dashboardWatch.addEventListener("click", () => showRoster("watch"));
 elements.dashboardLate.addEventListener("click", () => showRoster("late"));
 elements.backToDashboard.addEventListener("click", showDashboard);
+elements.syncSquareButton.addEventListener("click", syncSquarePayments);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
@@ -118,6 +129,7 @@ elements.installUpdateButton.addEventListener("click", installAppUpdate);
 
 initAppUpdates();
 render();
+loadSquarePayments();
 
 // ---------------------------------------------------------------------------
 // Storage
@@ -210,6 +222,7 @@ function render() {
   renderPageShell();
   renderSummary();
   renderDashboard();
+  renderSquare();
   renderRoster();
   renderMemberList();
   renderDetail();
@@ -217,18 +230,23 @@ function render() {
 
 function renderPageShell() {
   const isHome = state.page === "home";
+  const isSquare = state.page === "square";
   elements.appLayout.classList.toggle("home-layout", isHome);
-  elements.appLayout.classList.toggle("members-layout", !isHome);
-  elements.memberSidebar.classList.toggle("hidden", isHome);
+  elements.appLayout.classList.toggle("members-layout", !isHome && !isSquare);
+  elements.appLayout.classList.toggle("square-layout", isSquare);
+  elements.memberSidebar.classList.toggle("hidden", isHome || isSquare);
   elements.homeTab.classList.toggle("active", isHome);
-  elements.membersTab.classList.toggle("active", !isHome);
+  elements.membersTab.classList.toggle("active", state.page === "members");
+  elements.squareTab.classList.toggle("active", isSquare);
   elements.homeTab.setAttribute("aria-current", isHome ? "page" : "false");
-  elements.membersTab.setAttribute("aria-current", isHome ? "false" : "page");
+  elements.membersTab.setAttribute("aria-current", state.page === "members" ? "page" : "false");
+  elements.squareTab.setAttribute("aria-current", isSquare ? "page" : "false");
 }
 
 function renderSummary() {
   const counts = statusCounts();
   elements.paidCount.innerHTML = `완납 ${counts.paid}명 <small lang="en">paid</small>`;
+  elements.pendingCount.innerHTML = `대기 ${counts.pending}명 <small lang="en">pending</small>`;
   elements.watchCount.innerHTML = `확인 필요 ${counts.watch}명 <small lang="en">attention</small>`;
   elements.lateCount.innerHTML = `미납 ${counts.late}명 <small lang="en">behind</small>`;
 }
@@ -246,6 +264,7 @@ function renderDashboard() {
   const currentRate = activeTotal ? Math.round((counts.paid / activeTotal) * 100) : 0;
 
   elements.dashboardPaid.querySelector("strong").textContent = counts.paid;
+  elements.dashboardPending.querySelector("strong").textContent = counts.pending;
   elements.dashboardWatch.querySelector("strong").textContent = counts.watch;
   elements.dashboardLate.querySelector("strong").textContent = counts.late;
   elements.dashboardMonthLabel.textContent = `${formatMonthBi(summary.currentMonth)} · ${activeTotal} active member${activeTotal === 1 ? "" : "s"}`;
@@ -279,6 +298,50 @@ function renderDashboard() {
   });
 }
 
+function renderSquare() {
+  elements.squareView.classList.toggle("hidden", state.view !== "square");
+  if (state.view !== "square") {
+    return;
+  }
+
+  const pending = state.squarePayments.filter((payment) => payment.status === "pending" || payment.status === "needs_match");
+  const approved = state.squarePayments.filter((payment) => payment.status === "approved");
+  const ignored = state.squarePayments.filter((payment) => payment.status === "ignored");
+  const configuredText = state.squareConfigured
+    ? "스퀘어 연결됨 · Square connection ready"
+    : "스퀘어 인증은 아직 설정되지 않았습니다 · Square credentials not configured yet";
+  elements.squareStatusLine.textContent = state.squareError || `${configuredText} · ${pending.length} pending`;
+  elements.squareSummary.innerHTML = `
+    <div class="metric-card status-pending"><span>대기 <small lang="en">Pending</small></span><strong>${pending.length}</strong></div>
+    <div class="metric-card status-paid"><span>승인됨 <small lang="en">Approved</small></span><strong>${approved.length}</strong></div>
+    <div class="metric-card neutral"><span>보류/무시 <small lang="en">Ignored</small></span><strong>${ignored.length}</strong></div>
+  `;
+
+  if (state.squarePayments.length === 0) {
+    elements.squarePayments.innerHTML = `
+      <div class="empty-state compact square-empty">
+        <h3>아직 스퀘어 결제가 없습니다 <small lang="en">No Square payments yet</small></h3>
+        <p>웹훅이 들어오거나 인증 후 동기화를 실행하면 여기에 표시됩니다.</p>
+      </div>
+    `;
+    return;
+  }
+
+  elements.squarePayments.innerHTML = state.squarePayments.map((payment) => squarePaymentMarkup(payment)).join("");
+  elements.squarePayments.querySelectorAll("[data-square-approve]").forEach((button) => {
+    button.addEventListener("click", () => approveSquarePayment(button.dataset.squareApprove));
+  });
+  elements.squarePayments.querySelectorAll("[data-square-ignore]").forEach((button) => {
+    button.addEventListener("click", () => ignoreSquarePayment(button.dataset.squareIgnore));
+  });
+  elements.squarePayments.querySelectorAll("[data-square-member]").forEach((select) => {
+    select.addEventListener("change", () => setSquarePaymentMember(select.dataset.squareMember, select.value));
+  });
+  elements.squarePayments.querySelectorAll("[data-square-month]").forEach((input) => {
+    input.addEventListener("change", () => setSquarePaymentMonth(input.dataset.squareMonth, input.value));
+  });
+}
+
 function renderRoster() {
   elements.rosterView.classList.toggle("hidden", state.view !== "roster");
   if (state.view !== "roster") {
@@ -308,7 +371,7 @@ function renderMemberList() {
   }
 
   members.forEach((member) => {
-    const status = getMemberStatus(member, state.store.payments);
+    const status = displayedMemberStatus(member);
     const button = document.createElement("button");
     button.type = "button";
     button.className = `member-item ${member.id === state.selectedId ? "active" : ""}`;
@@ -329,7 +392,7 @@ function renderDetail() {
     return;
   }
 
-  const status = getMemberStatus(member, state.store.payments);
+  const status = displayedMemberStatus(member);
   const balance = getMemberBalance(member, state.store.payments);
   elements.detailInitials.textContent = initialsFor(member.name);
   elements.detailName.textContent = member.name;
@@ -437,6 +500,13 @@ function showRoster(statusFilter) {
   render();
 }
 
+function showSquare() {
+  state.page = "square";
+  state.view = "square";
+  render();
+  loadSquarePayments();
+}
+
 function selectMember(memberId) {
   state.selectedId = memberId;
   state.page = "members";
@@ -463,7 +533,7 @@ function memberRows() {
     .filter((member) => !member.inactive)
     .map((member) => ({
       member,
-      status: getMemberStatus(member, state.store.payments),
+      status: displayedMemberStatus(member),
       balance: getMemberBalance(member, state.store.payments)
     }))
     .sort((a, b) => a.member.name.localeCompare(b.member.name));
@@ -475,8 +545,20 @@ function statusCounts(rows = memberRows()) {
       counts[row.status.level] += 1;
       return counts;
     },
-    { paid: 0, watch: 0, late: 0 }
+    { paid: 0, pending: 0, watch: 0, late: 0 }
   );
+}
+
+function displayedMemberStatus(member) {
+  const pending = pendingSquarePaymentsForMember(state.squarePayments, member);
+  if (pending.length > 0) {
+    return {
+      ...getMemberStatus(member, state.store.payments),
+      level: "pending",
+      label: "Pending Square"
+    };
+  }
+  return getMemberStatus(member, state.store.payments);
 }
 
 function rosterSummaryMarkup(row) {
@@ -503,6 +585,65 @@ function rosterMemberMarkup(row) {
       <span>${escapeHtml(dueText)}</span>
     </button>
   `;
+}
+
+function squarePaymentMarkup(payment) {
+  const suggested = state.store.members.find((member) => member.id === payment.memberId || member.id === payment.suggestedMemberId)
+    || suggestedSquareMember(payment, state.store.members);
+  const selectedMemberId = payment.memberId || payment.suggestedMemberId || suggested?.id || "";
+  const month = squarePaymentMonth(payment);
+  const statusClass = payment.status === "approved" ? "status-paid" : payment.status === "ignored" ? "neutral" : "status-pending";
+  const canApprove = (payment.status === "pending" || payment.status === "needs_match") && selectedMemberId && month;
+  const options = [
+    `<option value="">회원 선택 · Choose member</option>`,
+    ...state.store.members
+      .filter((member) => !member.inactive)
+      .map((member) => `<option value="${escapeHtml(member.id)}"${member.id === selectedMemberId ? " selected" : ""}>${escapeHtml(member.name)}</option>`)
+  ].join("");
+  const buyerLine = [payment.buyerName, payment.buyerEmail, formatPhone(payment.buyerPhone)].filter(Boolean).join(" · ") || "고객 정보 없음 · No customer details";
+  const statusLabel = payment.status === "needs_match" ? "회원 선택 필요 · Needs match" : squareStatusLabel(payment.status);
+
+  return `
+    <article class="square-payment ${statusClass}">
+      <div class="square-payment-main">
+        <div>
+          <span class="status-badge ${statusClass}">${statusLabel}</span>
+          <h3>${formatMoney(Number(payment.amountCents || 0) / 100)} <small lang="en">${escapeHtml(payment.currency || "USD")}</small></h3>
+          <p>${escapeHtml(buyerLine)}</p>
+          <p>${escapeHtml(payment.paidAt || payment.createdAt || "")}${payment.receiptNumber ? ` · Receipt ${escapeHtml(payment.receiptNumber)}` : ""}</p>
+        </div>
+        <div class="square-payment-controls">
+          <label>
+            회원 <small lang="en">Member</small>
+            <select data-square-member="${escapeHtml(payment.id)}"${payment.status === "approved" ? " disabled" : ""}>${options}</select>
+          </label>
+          <label>
+            납부 월 <small lang="en">Payment month</small>
+            <input data-square-month="${escapeHtml(payment.id)}" type="month" value="${escapeHtml(month)}"${payment.status === "approved" ? " disabled" : ""}>
+          </label>
+        </div>
+      </div>
+      <div class="square-payment-actions">
+        ${payment.receiptUrl ? `<a class="button secondary bi" href="${escapeHtml(payment.receiptUrl)}" target="_blank" rel="noreferrer"><span lang="ko">영수증</span><small lang="en">Receipt</small></a>` : ""}
+        <button class="button primary bi" type="button" data-square-approve="${escapeHtml(payment.id)}"${canApprove ? "" : " disabled"}>
+          <span lang="ko">승인</span><small lang="en">Approve</small>
+        </button>
+        <button class="button secondary bi" type="button" data-square-ignore="${escapeHtml(payment.id)}"${payment.status === "approved" ? " disabled" : ""}>
+          <span lang="ko">무시</span><small lang="en">Ignore</small>
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function squareStatusLabel(status) {
+  if (status === "approved") {
+    return "승인됨 · Approved";
+  }
+  if (status === "ignored") {
+    return "무시됨 · Ignored";
+  }
+  return "대기 · Pending";
 }
 
 // ---------------------------------------------------------------------------
@@ -605,6 +746,136 @@ function downloadCsv(csv, filename) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Square payment staging
+// ---------------------------------------------------------------------------
+
+async function loadSquarePayments() {
+  try {
+    const response = await fetch("/api/square/payments");
+    if (!response.ok) {
+      throw new Error("Square staging API unavailable.");
+    }
+    const data = await response.json();
+    state.squarePayments = (data.payments || []).map((payment) => ({
+      ...payment,
+      suggestedMemberId: payment.suggestedMemberId || suggestedSquareMember(payment, state.store.members)?.id || ""
+    }));
+    state.squareConfigured = Boolean(data.configured);
+    state.squareError = "";
+  } catch {
+    state.squarePayments = [];
+    state.squareConfigured = false;
+    state.squareError = "스퀘어 대기 결제 저장소에 연결할 수 없습니다 · Square staging store is not available";
+  }
+  render();
+}
+
+async function syncSquarePayments() {
+  elements.syncSquareButton.disabled = true;
+  try {
+    const response = await fetch("/api/square/sync", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.nextStep || data.error || "Square sync failed.");
+    }
+    state.squarePayments = data.payments || [];
+    state.squareConfigured = Boolean(data.configured);
+    state.squareError = "";
+    showToast(`스퀘어 결제 ${data.imported || 0}건 확인 · Checked ${data.imported || 0} Square payments`);
+  } catch (error) {
+    state.squareError = `${error.message} · Authentication can be added when ready.`;
+    showToast(state.squareError);
+  } finally {
+    elements.syncSquareButton.disabled = false;
+    render();
+  }
+}
+
+function setSquarePaymentMember(paymentId, memberId) {
+  state.squarePayments = state.squarePayments.map((payment) => {
+    if (payment.id !== paymentId) {
+      return payment;
+    }
+    return {
+      ...payment,
+      memberId,
+      suggestedMemberId: memberId,
+      status: memberId && payment.status === "needs_match" ? "pending" : payment.status
+    };
+  });
+  render();
+}
+
+function setSquarePaymentMonth(paymentId, paymentMonth) {
+  state.squarePayments = state.squarePayments.map((payment) =>
+    payment.id === paymentId ? { ...payment, paymentMonth } : payment
+  );
+  render();
+}
+
+async function approveSquarePayment(paymentId) {
+  const payment = state.squarePayments.find((item) => item.id === paymentId);
+  const memberId = payment?.memberId || payment?.suggestedMemberId;
+  const member = state.store.members.find((item) => item.id === memberId);
+  const month = squarePaymentMonth(payment);
+  if (!payment || !member || !month) {
+    showToast("회원과 납부 월을 먼저 선택하세요. · Choose a member and payment month first.");
+    return;
+  }
+
+  const amount = Number(payment.amountCents || 0) / 100;
+  state.store = addPayment(state.store, {
+    memberId: member.id,
+    month,
+    amount,
+    paidAt: payment.paidAt,
+    source: "square"
+  });
+  saveStore(MSG.paymentSaved);
+  await saveSquareStatus(payment.id, {
+    status: "approved",
+    memberId: member.id,
+    suggestedMemberId: member.id,
+    paymentMonth: month
+  });
+  showToast(`${member.name} — ${formatMonthBi(month)} 스퀘어 결제 승인됨 · Square payment approved`);
+  render();
+}
+
+async function ignoreSquarePayment(paymentId) {
+  await saveSquareStatus(paymentId, { status: "ignored", ignoredReason: "manual-review" });
+  showToast("스퀘어 결제를 무시했습니다 · Square payment ignored");
+  render();
+}
+
+async function saveSquareStatus(paymentId, patch) {
+  const current = state.squarePayments.find((payment) => payment.id === paymentId);
+  state.squarePayments = state.squarePayments.map((payment) =>
+    payment.id === paymentId ? { ...payment, ...patch } : payment
+  );
+
+  try {
+    const response = await fetch("/api/square/payments/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: paymentId, ...patch })
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.payment) {
+        state.squarePayments = state.squarePayments.map((payment) =>
+          payment.id === paymentId ? data.payment : payment
+        );
+      }
+    }
+  } catch {
+    state.squarePayments = state.squarePayments.map((payment) =>
+      payment.id === paymentId ? { ...current, ...patch } : payment
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

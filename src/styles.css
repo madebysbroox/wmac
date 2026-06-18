@@ -497,6 +497,11 @@ textarea {
   color: var(--green);
 }
 
+.status-pending {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
 .status-watch {
   background: var(--amber-soft);
   color: var(--amber);
@@ -1714,6 +1719,114 @@ dialog::backdrop {
   background: var(--navy);
 }
 
+/* ------------------------------------------------------------------------
+   Square review
+------------------------------------------------------------------------- */
+
+.square-view {
+  min-height: calc(100vh - 72px);
+}
+
+.square-header {
+  margin-bottom: 22px;
+}
+
+.square-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.square-toolbar h3,
+.square-toolbar p {
+  margin-bottom: 0;
+}
+
+.square-toolbar p {
+  color: var(--muted);
+}
+
+.square-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compact-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.square-payments {
+  display: grid;
+  gap: 14px;
+}
+
+.square-payment {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.square-payment-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.82fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.square-payment h3 {
+  margin: 12px 0 6px;
+  font-size: 28px;
+}
+
+.square-payment p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.square-payment-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.72fr);
+  gap: 12px;
+}
+
+.square-payment-controls label {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+}
+
+.square-payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.square-payment .status-badge {
+  display: inline-block;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.square-empty {
+  min-height: 320px;
+}
+
+.status-badge.status-pending {
+  color: #f2d9a5;
+}
+
 @media (max-width: 1120px) {
   body {
     grid-template-columns: 224px minmax(0, 1fr);
@@ -1724,9 +1837,17 @@ dialog::backdrop {
   }
 
   .layout.members-layout,
+  .layout.square-layout,
   .detail-grid,
   .command-grid,
   .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .square-payment-main,
+  .square-payment-controls,
+  .square-toolbar {
+    display: grid;
     grid-template-columns: 1fr;
   }
 

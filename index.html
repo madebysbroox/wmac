@@ -24,6 +24,9 @@
       <button id="membersTab" class="page-tab" type="button">
         <span lang="ko">회원</span><small lang="en">Members</small>
       </button>
+      <button id="squareTab" class="page-tab" type="button">
+        <span lang="ko">스퀘어</span><small lang="en">Square</small>
+      </button>
     </nav>
 
     <main id="appLayout" class="layout home-layout">
@@ -37,6 +40,7 @@
         </button>
         <div class="summary-row">
           <button id="paidCount" class="summary-link status-paid" type="button"></button>
+          <button id="pendingCount" class="summary-link status-pending" type="button"></button>
           <button id="watchCount" class="summary-link status-watch" type="button"></button>
           <button id="lateCount" class="summary-link status-late" type="button"></button>
         </div>
@@ -133,6 +137,10 @@
               <span>완납 <small lang="en">Paid Up</small></span>
               <strong>0</strong>
             </button>
+            <button id="dashboardPending" class="metric-card status-pending" type="button">
+              <span>대기 <small lang="en">Pending</small></span>
+              <strong>0</strong>
+            </button>
             <button id="dashboardWatch" class="metric-card status-watch" type="button">
               <span>확인 필요 <small lang="en">Needs Attention</small></span>
               <strong>0</strong>
@@ -153,6 +161,29 @@
               <div id="highestBalanceList" class="snapshot-list"></div>
             </section>
           </div>
+        </div>
+
+        <div id="squareView" class="square-view hidden">
+          <div class="dashboard-header square-header">
+            <div>
+              <h2>스퀘어 결제 확인 <small lang="en">Square Payment Review</small></h2>
+              <p id="squareStatusLine">스퀘어 연결 상태 확인 중 · Checking Square connection</p>
+            </div>
+            <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
+          </div>
+
+          <div class="square-toolbar">
+            <div>
+              <h3>승인 대기 결제 <small lang="en">Payments Waiting for Approval</small></h3>
+              <p>스퀘어에서 들어온 결제를 확인한 뒤 회원 기록에 넣으세요. · Review Square payments before they update member records.</p>
+            </div>
+            <button id="syncSquareButton" class="button primary bi" type="button">
+              <span lang="ko">스퀘어에서 가져오기</span><small lang="en">Sync Square</small>
+            </button>
+          </div>
+
+          <div id="squareSummary" class="metric-grid square-metrics"></div>
+          <div id="squarePayments" class="square-payments"></div>
         </div>
 
         <div id="rosterView" class="roster-view hidden">

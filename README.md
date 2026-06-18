@@ -34,6 +34,31 @@ The everyday workflow needs only the left side of the screen:
 
 The home screen (처음 화면) shows who is paid, who needs attention, and who is behind — click any card to see that list of members.
 
+## Square Payment Review · 스퀘어 결제 확인
+
+The **스퀘어 (Square)** tab is a manual staging area for payments reported by Square. Square-reported payments stay separate from member payment history until someone reviews and approves them.
+
+- Pending Square payments show the amount, date, receipt details, suggested member match, and payment month.
+- If the suggested match is wrong or missing, choose the correct member before approving.
+- **승인 (Approve)** records that payment in the normal member payment history and marks the Square item approved, so it is not applied twice.
+- **무시 (Ignore)** keeps the Square item out of member records.
+- Members with a staged Square payment show a short **대기 (Pending)** status until the payment is approved or ignored.
+
+Square authentication is intentionally separate from the daily workflow. When credentials are ready, start the server with:
+
+```bash
+SQUARE_ACCESS_TOKEN=... npm start
+```
+
+Optional production webhook settings:
+
+```bash
+SQUARE_WEBHOOK_SIGNATURE_KEY=...
+SQUARE_WEBHOOK_NOTIFICATION_URL=https://your-public-url.example.com/api/square/webhook
+```
+
+Square requires a public HTTPS webhook URL. The local app stores staged webhook/payment data in `data/square-payments.json`, which is ignored by Git so real payment data stays local.
+
 ## Files & Backup · 파일 · 백업
 
 These less-frequent actions live at the bottom of the left sidebar:

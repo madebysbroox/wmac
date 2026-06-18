@@ -5,6 +5,7 @@ import { LATE_FEE_GRACE_DAYS } from "./data.js";
 
 export const STATUS_LABELS = {
   paid: { ko: "완납", en: "Paid up" },
+  pending: { ko: "대기", en: "Pending" },
   watch: { ko: "확인 필요", en: "Needs attention" },
   late: { ko: "미납", en: "Behind" }
 };
@@ -12,6 +13,7 @@ export const STATUS_LABELS = {
 export const ROSTER_TITLES = {
   all: { ko: "전체 회원", en: "All Members" },
   paid: { ko: "완납 회원", en: "Paid Up Members" },
+  pending: { ko: "대기 회원", en: "Pending Square Payments" },
   watch: { ko: "확인 필요 회원", en: "Needs Attention" },
   late: { ko: "미납 회원", en: "Behind on Payments" }
 };

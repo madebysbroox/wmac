@@ -10,9 +10,13 @@ import {
   guessColumnMap,
   importMembersFromRecords,
   importPaymentsFromRecords,
+  normalizeSquarePayment,
+  pendingSquarePaymentsForMember,
   parseCsv,
   removePayment,
   searchMembers,
+  squarePaymentMonth,
+  suggestedSquareMember,
   toCsv
 } from "../src/data.js";
 
@@ -219,4 +223,57 @@ test("dashboard summary separates late money, at-risk current month, and healthy
   assert.equal(summary.paidThisYear, 210);
   assert.equal(summary.expectedCurrentMonthFromUpToDate, 100);
   assert.equal(summary.delinquentMembers, 1);
+});
+
+test("normalizes Square payments and suggests a member match", () => {
+  const memberImport = importMembersFromRecords(
+    [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
+    { name: "Name", email: "Email", monthlyAmount: "Amount" },
+    createEmptyStore()
+  );
+  const event = {
+    type: "payment.updated",
+    event_id: "evt_123",
+    data: {
+      object: {
+        payment: {
+          id: "pay_123",
+          status: "COMPLETED",
+          created_at: "2026-06-15T14:30:00Z",
+          total_money: { amount: 12000, currency: "USD" },
+          buyer_email_address: "sam@example.com",
+          receipt_url: "https://squareup.com/receipt/preview/pay_123"
+        }
+      }
+    }
+  };
+
+  const squarePayment = normalizeSquarePayment(event, memberImport.store.members);
+
+  assert.equal(squarePayment.id, "pay_123");
+  assert.equal(squarePayment.amountCents, 12000);
+  assert.equal(squarePayment.status, "pending");
+  assert.equal(squarePaymentMonth(squarePayment), "2026-06");
+  assert.equal(suggestedSquareMember(squarePayment, memberImport.store.members).name, "Sam Park");
+});
+
+test("pending Square payments can be attached to a member without becoming real payments", () => {
+  const memberImport = importMembersFromRecords(
+    [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
+    { name: "Name", email: "Email", monthlyAmount: "Amount" },
+    createEmptyStore()
+  );
+  const member = memberImport.store.members[0];
+  const squarePayment = normalizeSquarePayment(
+    {
+      id: "pay_pending",
+      amountCents: 12000,
+      paidAt: "2026-06-15",
+      buyerEmail: "sam@example.com"
+    },
+    memberImport.store.members
+  );
+
+  assert.equal(memberImport.store.payments.length, 0);
+  assert.equal(pendingSquarePaymentsForMember([squarePayment], member).length, 1);
 });

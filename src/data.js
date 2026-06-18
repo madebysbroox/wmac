@@ -27,6 +27,14 @@ export function createEmptyStore() {
   };
 }
 
+export function createEmptySquareStore() {
+  return {
+    version: 1,
+    payments: [],
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -235,6 +243,132 @@ export function findPaymentMember(record, columnMap, members) {
     (phone && member.phone === phone) ||
     (name && normalize(member.name) === name)
   );
+}
+
+export function suggestedSquareMember(squarePayment, members) {
+  const email = clean(squarePayment.buyerEmail).toLowerCase();
+  const phone = cleanPhone(squarePayment.buyerPhone);
+  const name = normalize(squarePayment.buyerName);
+  const customerId = clean(squarePayment.customerId);
+
+  return members.find((member) =>
+    (customerId && member.externalId === customerId) ||
+    (email && member.email === email) ||
+    (phone && member.phone === phone) ||
+    (name && normalize(member.name) === name)
+  ) || null;
+}
+
+export function squarePaymentMonth(squarePayment) {
+  return normalizeMonth(squarePayment?.paymentMonth) || monthFromDate(squarePayment?.paidAt || squarePayment?.createdAt);
+}
+
+export function pendingSquarePaymentsForMember(squarePayments, member) {
+  return (squarePayments || []).filter((payment) =>
+    payment.status === "pending" &&
+    (payment.memberId === member.id || payment.suggestedMemberId === member.id)
+  );
+}
+
+export function normalizeSquarePayment(input, members = []) {
+  const payment = input?.data?.object?.payment || input?.payment || input || {};
+  const amount = Number(payment.total_money?.amount ?? payment.amount_money?.amount ?? input?.amountCents ?? 0);
+  const buyerEmail = clean(payment.buyer_email_address || payment.buyerEmail || input?.buyerEmail).toLowerCase();
+  const buyerPhone = cleanPhone(payment.buyer_phone_number || payment.buyerPhone || input?.buyerPhone);
+  const buyerName = clean(payment.buyerName || input?.buyerName);
+  const createdAt = clean(payment.created_at || payment.createdAt || input?.createdAt) || new Date().toISOString();
+  const paidAt = normalizeDate(payment.created_at || payment.createdAt || input?.paidAt || input?.createdAt) || new Date().toISOString().slice(0, 10);
+  const candidate = {
+    id: clean(payment.id || input?.squarePaymentId || input?.id),
+    squarePaymentId: clean(payment.id || input?.squarePaymentId || input?.id),
+    squareEventId: clean(input?.event_id || input?.eventId),
+    sourceEventType: clean(input?.type || input?.sourceEventType),
+    status: clean(input?.status) || "pending",
+    squareStatus: clean(payment.status || input?.squareStatus),
+    amountCents: Number.isFinite(amount) ? amount : 0,
+    currency: clean(payment.total_money?.currency || payment.amount_money?.currency || input?.currency) || "USD",
+    paidAt,
+    createdAt,
+    updatedAt: clean(payment.updated_at || payment.updatedAt || input?.updatedAt) || createdAt,
+    buyerName,
+    buyerEmail,
+    buyerPhone,
+    customerId: clean(payment.customer_id || payment.customerId || input?.customerId),
+    receiptUrl: clean(payment.receipt_url || payment.receiptUrl || input?.receiptUrl),
+    receiptNumber: clean(payment.receipt_number || payment.receiptNumber || input?.receiptNumber),
+    locationId: clean(payment.location_id || payment.locationId || input?.locationId),
+    orderId: clean(payment.order_id || payment.orderId || input?.orderId),
+    note: clean(payment.note || input?.note),
+    paymentMonth: normalizeMonth(input?.paymentMonth) || monthFromDate(payment.created_at || payment.createdAt || input?.paidAt || input?.createdAt),
+    memberId: clean(input?.memberId),
+    suggestedMemberId: clean(input?.suggestedMemberId),
+    approvedAt: clean(input?.approvedAt),
+    approvedBy: clean(input?.approvedBy),
+    ignoredAt: clean(input?.ignoredAt),
+    ignoredReason: clean(input?.ignoredReason),
+    raw: input?.raw || input
+  };
+
+  if (!candidate.id) {
+    candidate.id = cryptoId("sqpay");
+    candidate.squarePaymentId = candidate.id;
+  }
+
+  const suggested = candidate.memberId
+    ? members.find((member) => member.id === candidate.memberId)
+    : suggestedSquareMember(candidate, members);
+  candidate.suggestedMemberId = candidate.suggestedMemberId || suggested?.id || "";
+  if (!candidate.memberId && candidate.suggestedMemberId) {
+    candidate.memberId = candidate.suggestedMemberId;
+  }
+  if (candidate.status === "pending" && !candidate.suggestedMemberId) {
+    candidate.status = "needs_match";
+  }
+
+  return candidate;
+}
+
+export function upsertSquarePayment(squareStore, squarePayment) {
+  const existing = (squareStore.payments || []).find((payment) => payment.id === squarePayment.id || payment.squarePaymentId === squarePayment.squarePaymentId);
+  const nextPayment = {
+    ...existing,
+    ...squarePayment,
+    status: existing?.status && ["approved", "ignored"].includes(existing.status) ? existing.status : squarePayment.status,
+    approvedAt: existing?.approvedAt || squarePayment.approvedAt || "",
+    approvedBy: existing?.approvedBy || squarePayment.approvedBy || "",
+    ignoredAt: existing?.ignoredAt || squarePayment.ignoredAt || "",
+    ignoredReason: existing?.ignoredReason || squarePayment.ignoredReason || ""
+  };
+  const payments = (squareStore.payments || []).filter((payment) => payment.id !== nextPayment.id && payment.squarePaymentId !== nextPayment.squarePaymentId);
+  payments.push(nextPayment);
+  return {
+    ...squareStore,
+    payments: payments.sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt))),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function updateSquarePaymentStatus(squareStore, paymentId, patch) {
+  let found = false;
+  const payments = (squareStore.payments || []).map((payment) => {
+    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId) {
+      return payment;
+    }
+    found = true;
+    return {
+      ...payment,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    };
+  });
+  return {
+    store: {
+      ...squareStore,
+      payments,
+      updatedAt: new Date().toISOString()
+    },
+    found
+  };
 }
 
 export function searchMembers(members, query) {
