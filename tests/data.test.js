@@ -10,6 +10,7 @@ import {
   importMembersFromRecords,
   importPaymentsFromRecords,
   parseCsv,
+  removePayment,
   searchMembers,
   toCsv
 } from "../src/data.js";
@@ -124,6 +125,21 @@ test("imports payment CSV by email and exports backup rows", () => {
   const csv = toCsv(rows);
   assert.match(csv, /Sam Park/);
   assert.match(csv, /2026-06/);
+});
+
+test("removing a payment marks that month unpaid again", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-06-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  let store = addPayment(imported.store, { memberId: imported.store.members[0].id, month: "2026-06", amount: 120 });
+  assert.equal(getMemberStatus(store.members[0], store.payments, new Date("2026-06-08")).level, "paid");
+
+  store = removePayment(store, store.members[0].id, "2026-06");
+
+  assert.equal(getMemberStatus(store.members[0], store.payments, new Date("2026-06-08")).level, "watch");
+  assert.deepEqual(getMemberBalance(store.members[0], store.payments, new Date("2026-06-08")).unpaidMonths, ["2026-06"]);
 });
 
 test("calculates invoice balance from unpaid months", () => {

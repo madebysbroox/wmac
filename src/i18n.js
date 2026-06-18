@@ -45,6 +45,7 @@ export const MSG = {
   noMembersInGroup: "이 그룹에는 회원이 없습니다. · This group is empty right now.",
   noPaymentsYet: "납부 기록이 없습니다 · No payments recorded yet",
   noUnpaidBalance: "미납 금액이 없습니다. · No unpaid balance for this member.",
+  paymentRemoved: "납부 기록 삭제됨 · Payment marked unpaid",
   allClear: "미납 없음 · All clear",
   mapMembersTitle: "회원 명단 항목 맞추기 · Match Member Columns",
   mapPaymentsTitle: "결제 내역 항목 맞추기 · Match Payment Columns",
@@ -62,7 +63,8 @@ export const MSG = {
     `새 회원 ${addedCount}명 추가, 기존 회원 ${updatedCount}명 정보 채움 (${skipped}줄 건너뜀). 납부 기록은 그대로입니다. · Added ${addedCount} new members and filled in details for ${updatedCount} existing members (${skipped} rows skipped). Payment history untouched.`,
   importedPayments: (addedCount, duplicateCount, unmatched) =>
     `결제 ${addedCount}건 추가, 이미 기록된 ${duplicateCount}건 건너뜀 (${unmatched}건 확인 필요). · Added ${addedCount} payments, skipped ${duplicateCount} already recorded, ${unmatched} rows need checking.`,
-  paymentSavedFor: (name, month) => `${name} — ${month} 회비를 저장했습니다. · Payment saved.`
+  paymentSavedFor: (name, month) => `${name} — ${month} 회비를 저장했습니다. · Payment saved.`,
+  paymentRemovedFor: (name, month) => `${name} — ${month} 납부 기록을 삭제했습니다. · Marked unpaid.`
 };
 
 // "완납 · Paid up" — for places that need plain text in both languages.

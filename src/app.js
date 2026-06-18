@@ -13,6 +13,7 @@ import {
   importMembersFromRecords,
   importPaymentsFromRecords,
   parseCsv,
+  removePayment,
   searchMembers,
   toCsv,
   upsertMember
@@ -328,8 +329,12 @@ function renderDetail() {
       <strong>${formatMonthKo(month.month)}</strong>
       <small lang="en">${formatMonthEn(month.month)}</small>
       <span>${month.paid ? "납부함 · Paid" : "미납 · Not paid"}</span>
+      ${month.paid ? `<button class="text-button mark-unpaid-button" type="button" data-month="${month.month}">미납으로 변경 · Mark unpaid</button>` : ""}
     `;
     elements.monthStrip.append(item);
+  });
+  elements.monthStrip.querySelectorAll("[data-month]").forEach((button) => {
+    button.addEventListener("click", () => markMonthUnpaid(button.dataset.month));
   });
 
   elements.invoiceSummary.textContent = balance.unpaidMonths.length
@@ -363,9 +368,10 @@ function renderQuickPay(member, status) {
   const paidThisMonth = status.paidMonths.has(status.currentMonth);
 
   button.classList.toggle("done", paidThisMonth);
+  button.classList.toggle("undo", paidThisMonth);
   if (paidThisMonth) {
-    button.disabled = true;
-    button.innerHTML = `<span lang="ko">✓ 이번 달 완납</span><small lang="en">This month is paid</small>`;
+    button.disabled = false;
+    button.innerHTML = `<span lang="ko">이번 달 미납으로 변경</span><small lang="en">Mark this month unpaid</small>`;
   } else if (amount <= 0) {
     button.disabled = true;
     button.innerHTML = `<span lang="ko">월 회비를 먼저 입력하세요 →</span><small lang="en">Set the monthly amount first (right side)</small>`;
@@ -583,7 +589,11 @@ function quickPayCurrentMonth() {
   }
   const status = getMemberStatus(member, state.store.payments);
   const amount = Number(member.monthlyAmount || 0);
-  if (status.paidMonths.has(status.currentMonth) || amount <= 0) {
+  if (status.paidMonths.has(status.currentMonth)) {
+    markMonthUnpaid(status.currentMonth);
+    return;
+  }
+  if (amount <= 0) {
     return;
   }
   state.store = addPayment(state.store, {
@@ -609,6 +619,18 @@ function savePayment(event) {
   });
   saveStore(MSG.paymentSaved);
   showToast(MSG.paymentSavedFor(member.name, formatMonthBi(elements.paymentMonth.value)));
+  render();
+}
+
+function markMonthUnpaid(month) {
+  const member = selectedMember();
+  if (!member || !month) {
+    return;
+  }
+
+  state.store = removePayment(state.store, member.id, month);
+  saveStore(MSG.paymentRemoved);
+  showToast(MSG.paymentRemovedFor(member.name, formatMonthBi(month)));
   render();
 }
 

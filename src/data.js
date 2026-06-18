@@ -266,6 +266,19 @@ export function addPayment(store, payment) {
   };
 }
 
+export function removePayment(store, memberId, month) {
+  const normalizedMonth = normalizeMonth(month);
+  if (!memberId || !normalizedMonth) {
+    return store;
+  }
+
+  return {
+    ...store,
+    payments: store.payments.filter((payment) => !(payment.memberId === memberId && payment.month === normalizedMonth)),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export function upsertMember(store, member) {
   const nextMember = {
     ...member,

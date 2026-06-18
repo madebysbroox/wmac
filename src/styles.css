@@ -206,6 +206,11 @@ a.button {
   opacity: 1;
 }
 
+.button.pay.undo {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 .text-button {
   min-height: 38px;
   padding: 0;
@@ -695,6 +700,12 @@ textarea {
 
 .month-box.unpaid span {
   color: var(--red);
+}
+
+.mark-unpaid-button {
+  margin-top: 10px;
+  color: var(--red);
+  font-size: 15px;
 }
 
 .invoice-panel {
