@@ -59,7 +59,7 @@ const elements = {};
   "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
   "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
-  "memberDetail", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
+  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
   "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberPhone", "memberEmail", "memberParent", "memberAmount", "memberStart",
@@ -332,6 +332,7 @@ function renderDetail() {
 
   const status = getMemberStatus(member, state.store.payments);
   const balance = getMemberBalance(member, state.store.payments);
+  elements.detailInitials.textContent = initialsFor(member.name);
   elements.detailName.textContent = member.name;
   elements.detailContact.textContent = [formatPhone(member.phone), member.email, member.parentName && `보호자 ${member.parentName}`]
     .filter(Boolean)
@@ -442,6 +443,16 @@ function selectMember(memberId) {
   state.page = "members";
   state.view = "member";
   render();
+}
+
+function initialsFor(name) {
+  return String(name || "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] || "")
+    .join("")
+    .toUpperCase() || "ML";
 }
 
 // ---------------------------------------------------------------------------
