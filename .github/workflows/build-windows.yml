@@ -38,11 +38,17 @@ jobs:
         run: |
           $tag = "windows-installer"
           $title = "Payment Tracker Windows Installer"
-          $notes = "Download the installer below. This release is updated automatically from the latest successful Windows build."
+          $notes = "Download the installer below. This release is updated automatically from the latest successful Windows build. The app also uses this release to check for updates."
           $installer = Get-ChildItem -Path release -Filter "*.exe" | Select-Object -First 1
+          $latest = Get-ChildItem -Path release -Filter "latest.yml" | Select-Object -First 1
+          $blockMap = Get-ChildItem -Path release -Filter "*.blockmap" | Select-Object -First 1
 
           if (-not $installer) {
             throw "No installer found in release/*.exe"
+          }
+
+          if (-not $latest) {
+            throw "No updater metadata found at release/latest.yml"
           }
 
           git tag -f $tag
@@ -50,14 +56,32 @@ jobs:
 
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $installer.FullName --clobber
             gh release edit $tag --title $title --notes $notes --latest
           } else {
-            gh release create $tag $installer.FullName --title $title --notes $notes --latest
+            gh release create $tag --title $title --notes $notes --latest
+          }
+
+          $existingAssets = gh release view $tag --json assets --jq ".assets[].name"
+          if ($existingAssets) {
+            foreach ($assetName in $existingAssets) {
+              gh release delete-asset $tag $assetName --yes
+            }
+          }
+
+          $assets = @($installer.FullName, $latest.FullName)
+          if ($blockMap) {
+            $assets += $blockMap.FullName
+          }
+
+          foreach ($asset in $assets) {
+            gh release upload $tag $asset --clobber
           }
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: payment-tracker-windows-installer
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/latest.yml
+            release/*.blockmap

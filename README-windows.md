@@ -39,6 +39,14 @@ This only needs to happen once. The data is saved on the computer afterward.
 3. Click the big paid button or open the invoice/email review.
 4. Close the app window when done.
 
+## Updates
+
+Use **파일 · 백업 (Files & Backup)** → **앱 업데이트 (App Updates)** → **업데이트 확인 (Check for Updates)**.
+
+If an update is available, the app downloads it from the public GitHub release. When the download is ready, click **재시작 후 설치 (Restart and Install)**.
+
+The first version that adds in-app updates must still be installed with the downloaded installer. After that, future updates can be pulled from inside the app.
+
 ## Invoice and Email Review
 
 When a member has unpaid months:

@@ -63,7 +63,8 @@ const elements = {};
   "yearLastButton", "yearThisButton", "cancelYearDialog", "paymentReviewDialog",
   "reviewTitle", "reviewHelp", "reviewMonthList", "reviewTotal", "emailSubjectInput",
   "emailBodyInput", "emailPreview", "saveEmailTemplateButton", "resetEmailTemplateButton",
-  "generateSelectedInvoiceButton", "openSelectedEmailButton", "cancelPaymentReview"
+  "generateSelectedInvoiceButton", "openSelectedEmailButton", "cancelPaymentReview",
+  "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
@@ -105,7 +106,10 @@ elements.resetEmailTemplateButton.addEventListener("click", resetEmailTemplateIn
 elements.generateSelectedInvoiceButton.addEventListener("click", generateSelectedInvoice);
 elements.openSelectedEmailButton.addEventListener("click", openSelectedEmail);
 elements.cancelPaymentReview.addEventListener("click", () => elements.paymentReviewDialog.close());
+elements.checkUpdateButton.addEventListener("click", checkForAppUpdate);
+elements.installUpdateButton.addEventListener("click", installAppUpdate);
 
+initAppUpdates();
 render();
 
 // ---------------------------------------------------------------------------
@@ -128,6 +132,67 @@ function saveStore(message = MSG.savedOnComputer) {
   state.store.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.store));
   elements.saveStatus.textContent = message;
+}
+
+// ---------------------------------------------------------------------------
+// Desktop app updates
+// ---------------------------------------------------------------------------
+
+function initAppUpdates() {
+  if (!window.paymentTrackerUpdates) {
+    return;
+  }
+
+  elements.updatePanel.classList.remove("hidden");
+  window.paymentTrackerUpdates.onStatus(renderUpdateStatus);
+  window.paymentTrackerUpdates.getStatus().then(renderUpdateStatus).catch(() => {
+    renderUpdateStatus({
+      status: "error",
+      message: "Could not read update status."
+    });
+  });
+}
+
+function checkForAppUpdate() {
+  if (!window.paymentTrackerUpdates) {
+    return;
+  }
+
+  elements.checkUpdateButton.disabled = true;
+  renderUpdateStatus({
+    status: "checking",
+    message: "Checking GitHub for updates..."
+  });
+  window.paymentTrackerUpdates.check().catch((error) => {
+    renderUpdateStatus({
+      status: "error",
+      message: `Update check failed: ${error.message}`
+    });
+  });
+}
+
+function installAppUpdate() {
+  if (!window.paymentTrackerUpdates) {
+    return;
+  }
+
+  elements.installUpdateButton.disabled = true;
+  renderUpdateStatus({
+    status: "installing",
+    message: "Restarting to install the update..."
+  });
+  window.paymentTrackerUpdates.install();
+}
+
+function renderUpdateStatus(updateStatus) {
+  if (!updateStatus) {
+    return;
+  }
+
+  const message = updateStatus.message || "Ready to check for updates.";
+  elements.updateStatus.textContent = message;
+  elements.checkUpdateButton.disabled = ["checking", "available", "downloading", "installing"].includes(updateStatus.status);
+  elements.installUpdateButton.classList.toggle("hidden", updateStatus.status !== "ready");
 }
 
 // ---------------------------------------------------------------------------
