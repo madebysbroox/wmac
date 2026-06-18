@@ -7,7 +7,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "test": "node --test tests/*.test.js",
+    "test": "node scripts/run-tests.mjs",
     "start": "node server.mjs",
     "desktop": "electron .",
     "package:win": "electron-builder --win nsis --x64",
