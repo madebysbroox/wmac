@@ -7,6 +7,7 @@ import {
   exportStoreRows,
   getMemberBalance,
   getLateFeeBalance,
+  getDashboardSummary,
   getMemberStatus,
   getYearRevenue,
   guessColumnMap,
@@ -41,6 +42,7 @@ const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
 const state = {
   store: loadStore(),
   selectedId: "",
+  page: "home",
   view: "dashboard",
   statusFilter: "all",
   mapping: null,
@@ -49,10 +51,13 @@ const state = {
 
 const elements = {};
 [
-  "saveStatus", "dashboardButton", "memberCsv", "paymentCsv", "exportButton",
+  "saveStatus", "dashboardButton", "homeTab", "membersTab", "appLayout", "memberSidebar",
+  "memberCsv", "paymentCsv", "exportButton",
   "searchInput", "addMemberButton", "paidCount", "watchCount", "lateCount",
   "memberList", "dashboardView", "dashboardPaid", "dashboardWatch", "dashboardLate",
-  "dashboardDue", "fieldSnapshot", "highestBalanceList", "rosterView",
+  "dashboardMonthLabel", "dashboardDelinquentCount", "dashboardPastDue", "dashboardTenDaysLate",
+  "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
+  "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
   "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
@@ -75,6 +80,8 @@ const elements = {};
 // ---------------------------------------------------------------------------
 
 elements.dashboardButton.addEventListener("click", showDashboard);
+elements.homeTab.addEventListener("click", showDashboard);
+elements.membersTab.addEventListener("click", showMembers);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
 elements.exportButton.addEventListener("click", exportBackup);
@@ -201,11 +208,23 @@ function renderUpdateStatus(updateStatus) {
 // ---------------------------------------------------------------------------
 
 function render() {
+  renderPageShell();
   renderSummary();
   renderDashboard();
   renderRoster();
   renderMemberList();
   renderDetail();
+}
+
+function renderPageShell() {
+  const isHome = state.page === "home";
+  elements.appLayout.classList.toggle("home-layout", isHome);
+  elements.appLayout.classList.toggle("members-layout", !isHome);
+  elements.memberSidebar.classList.toggle("hidden", isHome);
+  elements.homeTab.classList.toggle("active", isHome);
+  elements.membersTab.classList.toggle("active", !isHome);
+  elements.homeTab.setAttribute("aria-current", isHome ? "page" : "false");
+  elements.membersTab.setAttribute("aria-current", isHome ? "false" : "page");
 }
 
 function renderSummary() {
@@ -223,21 +242,28 @@ function renderDashboard() {
 
   const rows = memberRows();
   const counts = statusCounts(rows);
-  const totalDue = rows.reduce((sum, row) => sum + row.balance.totalDue, 0);
-  const activeTotal = rows.length;
-  const atRisk = counts.watch + counts.late;
+  const summary = getDashboardSummary(state.store);
+  const activeTotal = summary.activeMembers;
   const currentRate = activeTotal ? Math.round((counts.paid / activeTotal) * 100) : 0;
 
   elements.dashboardPaid.querySelector("strong").textContent = counts.paid;
   elements.dashboardWatch.querySelector("strong").textContent = counts.watch;
   elements.dashboardLate.querySelector("strong").textContent = counts.late;
-  elements.dashboardDue.textContent = formatMoney(totalDue);
+  elements.dashboardMonthLabel.textContent = `${formatMonthBi(summary.currentMonth)} · ${activeTotal} active member${activeTotal === 1 ? "" : "s"}`;
+  setAnimatedText(elements.dashboardDelinquentCount, `${summary.delinquentMembers}명`);
+  setAnimatedText(elements.dashboardPastDue, formatMoney(summary.pastDue));
+  setAnimatedText(elements.dashboardTenDaysLate, formatMoney(summary.tenDaysLate));
+  setAnimatedText(elements.dashboardDelinquentCurrent, formatMoney(summary.delinquentCurrentMonthRisk));
+  setAnimatedText(elements.dashboardActiveCount, `${activeTotal}명`);
+  setAnimatedText(elements.dashboardPaidMonth, formatMoney(summary.paidThisMonth));
+  setAnimatedText(elements.dashboardPaidYear, formatMoney(summary.paidThisYear));
+  setAnimatedText(elements.dashboardExpectedMonth, formatMoney(summary.expectedCurrentMonthFromUpToDate));
 
   elements.fieldSnapshot.innerHTML = `
     <div><span>활동 회원 <small lang="en">Active members</small></span><strong>${activeTotal}</strong></div>
     <div><span>이번 달 완납 <small lang="en">Paid this month</small></span><strong>${currentRate}%</strong></div>
-    <div><span>확인 필요 <small lang="en">Need follow-up</small></span><strong>${atRisk}</strong></div>
-    <div><span>쉬는 회원 <small lang="en">Inactive members</small></span><strong>${state.store.members.filter((member) => member.inactive).length}</strong></div>
+    <div><span>이번 달 아직 예상 <small lang="en">Expected from up-to-date</small></span><strong>${formatMoney(summary.expectedCurrentMonthFromUpToDate)}</strong></div>
+    <div><span>쉬는 회원 <small lang="en">Inactive members</small></span><strong>${summary.inactiveMembers}</strong></div>
   `;
 
   const highest = rows
@@ -389,12 +415,23 @@ function renderQuickPay(member, status) {
 // ---------------------------------------------------------------------------
 
 function showDashboard() {
+  state.page = "home";
   state.view = "dashboard";
   state.statusFilter = "all";
   render();
 }
 
+function showMembers() {
+  state.page = "members";
+  if (state.view === "dashboard") {
+    state.view = state.selectedId ? "member" : "roster";
+  }
+  render();
+  elements.searchInput.focus();
+}
+
 function showRoster(statusFilter) {
+  state.page = "members";
   state.view = "roster";
   state.statusFilter = statusFilter;
   render();
@@ -402,6 +439,7 @@ function showRoster(statusFilter) {
 
 function selectMember(memberId) {
   state.selectedId = memberId;
+  state.page = "members";
   state.view = "member";
   render();
 }
@@ -1044,6 +1082,20 @@ function selectedMember() {
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function setAnimatedText(element, nextText) {
+  if (!element || element.textContent === nextText) {
+    return;
+  }
+  const hadValue = element.textContent.trim() !== "";
+  element.textContent = nextText;
+  if (!hadValue) {
+    return;
+  }
+  element.classList.remove("value-updated");
+  void element.offsetWidth;
+  element.classList.add("value-updated");
 }
 
 function formatPhone(phone) {

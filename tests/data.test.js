@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   addPayment,
   createEmptyStore,
+  getDashboardSummary,
   exportStoreRows,
   getMemberBalance,
   getMemberStatus,
@@ -190,4 +191,32 @@ test("members with a future start date are not marked as missing payments", () =
   assert.deepEqual(status.recentMonths, []);
   assert.deepEqual(balance.unpaidMonths, []);
   assert.equal(balance.totalDue, 0);
+});
+
+test("dashboard summary separates late money, at-risk current month, and healthy cash flow", () => {
+  let store = createEmptyStore();
+  const imported = importMembersFromRecords(
+    [
+      { Name: "Older Balance", Amount: "120", Start: "2026-04-15" },
+      { Name: "Healthy Member", Amount: "100", Start: "2026-06-25" },
+      { Name: "Paid Member", Amount: "90", Start: "2026-06-01" }
+    ],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    store
+  );
+  store = imported.store;
+  const older = store.members.find((member) => member.name === "Older Balance");
+  const paid = store.members.find((member) => member.name === "Paid Member");
+  store = addPayment(store, { memberId: older.id, month: "2026-04", amount: 120 });
+  store = addPayment(store, { memberId: paid.id, month: "2026-06", amount: 90 });
+
+  const summary = getDashboardSummary(store, new Date("2026-06-18"));
+
+  assert.equal(summary.pastDue, 240);
+  assert.equal(summary.tenDaysLate, 120);
+  assert.equal(summary.delinquentCurrentMonthRisk, 120);
+  assert.equal(summary.paidThisMonth, 90);
+  assert.equal(summary.paidThisYear, 210);
+  assert.equal(summary.expectedCurrentMonthFromUpToDate, 100);
+  assert.equal(summary.delinquentMembers, 1);
 });

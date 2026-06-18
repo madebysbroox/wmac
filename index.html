@@ -20,8 +20,17 @@
       </button>
     </header>
 
-    <main class="layout">
-      <section class="sidebar" aria-label="회원 Members">
+    <nav class="page-tabs" aria-label="Primary pages">
+      <button id="homeTab" class="page-tab active" type="button">
+        <span lang="ko">홈</span><small lang="en">Home</small>
+      </button>
+      <button id="membersTab" class="page-tab" type="button">
+        <span lang="ko">회원</span><small lang="en">Members</small>
+      </button>
+    </nav>
+
+    <main id="appLayout" class="layout home-layout">
+      <section id="memberSidebar" class="sidebar" aria-label="회원 Members">
         <div class="search-block">
           <label for="searchInput">회원 찾기 <small lang="en">Find a Member</small></label>
           <input id="searchInput" type="search" autocomplete="off" placeholder="이름 입력 · Type a name">
@@ -71,11 +80,58 @@
       <section class="detail" aria-label="작업 공간 Workspace">
         <div id="dashboardView" class="dashboard-view">
           <div class="dashboard-header">
-            <h2>회비 현황 <small lang="en">Payment Overview</small></h2>
+            <div>
+              <h2>오늘의 회비 상황 <small lang="en">Today’s Payment Command Center</small></h2>
+              <p id="dashboardMonthLabel"></p>
+            </div>
             <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
           </div>
 
-          <div class="metric-grid">
+          <div class="command-grid">
+            <section class="command-panel risk-panel">
+              <div class="panel-heading">
+                <span>먼저 연락할 곳 <small lang="en">Follow-up Priority</small></span>
+                <strong id="dashboardDelinquentCount">0명</strong>
+              </div>
+              <div class="money-stack">
+                <div class="money-line primary-risk">
+                  <span>총 지난 미납 <small lang="en">Total Past-Due</small></span>
+                  <strong id="dashboardPastDue">$0.00</strong>
+                </div>
+                <div class="money-line">
+                  <span>10일 이상 늦음 <small lang="en">10+ Days Late</small></span>
+                  <strong id="dashboardTenDaysLate">$0.00</strong>
+                </div>
+                <div class="money-line">
+                  <span>그 회원들의 이번 달 위험 금액 <small lang="en">Current-Month Risk from Same Members</small></span>
+                  <strong id="dashboardDelinquentCurrent">$0.00</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="command-panel good-panel">
+              <div class="panel-heading">
+                <span>잘 들어온 회비 <small lang="en">Healthy Cash Flow</small></span>
+                <strong id="dashboardActiveCount">0명</strong>
+              </div>
+              <div class="money-stack">
+                <div class="money-line primary-good">
+                  <span>이번 달 받은 금액 <small lang="en">Paid This Month</small></span>
+                  <strong id="dashboardPaidMonth">$0.00</strong>
+                </div>
+                <div class="money-line">
+                  <span>올해 받은 금액 <small lang="en">Paid This Year</small></span>
+                  <strong id="dashboardPaidYear">$0.00</strong>
+                </div>
+                <div class="money-line">
+                  <span>정상 회원의 월말 예상 금액 <small lang="en">Expected by Month End from Up-to-Date Members</small></span>
+                  <strong id="dashboardExpectedMonth">$0.00</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="metric-grid compact-metrics">
             <button id="dashboardPaid" class="metric-card status-paid" type="button">
               <span>완납 <small lang="en">Paid Up</small></span>
               <strong>0</strong>
@@ -88,10 +144,6 @@
               <span>미납 <small lang="en">Behind</small></span>
               <strong>0</strong>
             </button>
-            <div class="metric-card neutral">
-              <span>미납 총액 <small lang="en">Total Unpaid</small></span>
-              <strong id="dashboardDue">$0.00</strong>
-            </div>
           </div>
 
           <div class="overview-grid">

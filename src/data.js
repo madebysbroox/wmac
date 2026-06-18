@@ -347,6 +347,61 @@ export function getMemberBalance(member, payments, today = new Date()) {
   };
 }
 
+export function getDashboardSummary(store, today = new Date()) {
+  const currentMonth = monthKey(today);
+  const currentYear = String(today.getFullYear());
+  const activeMembers = store.members.filter((member) => !member.inactive);
+  const payments = store.payments || [];
+
+  const paidThisMonth = payments
+    .filter((payment) => payment.month === currentMonth)
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const paidThisYear = payments
+    .filter((payment) => String(payment.month || "").startsWith(`${currentYear}-`))
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+
+  const rows = activeMembers.map((member) => {
+    const status = getMemberStatus(member, payments, today);
+    const balance = getMemberBalance(member, payments, today);
+    const lateFeeBalance = getLateFeeBalance(member, payments, today);
+    const overdueLines = lateFeeBalance.lines.filter((line) => line.daysLate > 0);
+    const tenDaysLateLines = lateFeeBalance.lines.filter((line) => line.daysLate >= LATE_FEE_GRACE_DAYS);
+    const olderTenDaysLateLines = tenDaysLateLines.filter((line) => line.month < currentMonth);
+    const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id).map((payment) => payment.month));
+    const currentMonthUnpaid = balance.unpaidMonths.includes(currentMonth) && !paidMonths.has(currentMonth);
+    const currentMonthLine = lateFeeBalance.lines.find((line) => line.month === currentMonth);
+    const currentMonthAlreadyLate = Number(currentMonthLine?.daysLate || 0) >= LATE_FEE_GRACE_DAYS;
+    const hasDelinquentPayment = olderTenDaysLateLines.length > 0;
+    return {
+      member,
+      status,
+      balance,
+      overdueDue: overdueLines.reduce((sum, line) => sum + line.amount, 0),
+      tenDaysLateDue: tenDaysLateLines.reduce((sum, line) => sum + line.amount, 0),
+      currentMonthUnpaidAmount: currentMonthUnpaid && !currentMonthAlreadyLate ? Number(member.monthlyAmount || 0) : 0,
+      hasDelinquentPayment
+    };
+  });
+
+  const delinquentRows = rows.filter((row) => row.hasDelinquentPayment);
+  const upToDateExpectedRows = rows.filter((row) => !row.hasDelinquentPayment && row.currentMonthUnpaidAmount > 0);
+
+  return {
+    currentMonth,
+    activeMembers: activeMembers.length,
+    inactiveMembers: store.members.length - activeMembers.length,
+    paidThisMonth,
+    paidThisYear,
+    pastDue: rows.reduce((sum, row) => sum + row.overdueDue, 0),
+    tenDaysLate: rows.reduce((sum, row) => sum + row.tenDaysLateDue, 0),
+    delinquentCurrentMonthRisk: delinquentRows.reduce((sum, row) => sum + row.currentMonthUnpaidAmount, 0),
+    expectedCurrentMonthFromUpToDate: upToDateExpectedRows.reduce((sum, row) => sum + row.currentMonthUnpaidAmount, 0),
+    delinquentMembers: delinquentRows.length,
+    upToDateExpectedMembers: upToDateExpectedRows.length,
+    rows
+  };
+}
+
 // Each month's payment is due on the same day of the month as the member's
 // signing (contract start) date, clamped for short months (signed the 31st
 // means due Feb 28). Once a payment is 10 or more days late it picks up a
