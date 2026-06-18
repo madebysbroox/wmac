@@ -1269,14 +1269,6 @@ h3 {
   font-size: 12.5px;
 }
 
-#dashboardButton {
-  justify-self: stretch;
-  background: linear-gradient(135deg, rgba(202, 160, 82, 0.22), rgba(202, 160, 82, 0.08));
-  border-color: rgba(202, 160, 82, 0.28);
-  color: #f2d9a5;
-  box-shadow: inset 3px 0 0 #caa052;
-}
-
 .page-tabs {
   display: grid;
   align-content: start;
@@ -1561,7 +1553,7 @@ button:focus {
 }
 
 .detail-grid {
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(520px, 1fr) minmax(300px, 340px);
   gap: 22px;
 }
 
@@ -1573,7 +1565,11 @@ button:focus {
 .detail-header {
   position: relative;
   overflow: hidden;
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) auto;
   align-items: center;
+  column-gap: 20px;
+  row-gap: 14px;
   margin: -24px -24px 22px;
   padding: 30px 32px;
   border-radius: 18px;
@@ -1607,6 +1603,11 @@ button:focus {
   min-width: 0;
 }
 
+.detail-copy h2,
+.detail-copy p {
+  overflow-wrap: anywhere;
+}
+
 .detail-header p,
 .due-day {
   color: #b9c5dc;
@@ -1617,8 +1618,9 @@ button:focus {
 }
 
 .status-badge {
-  margin-left: auto;
+  justify-self: end;
   min-width: 138px;
+  max-width: 100%;
   border: 1px solid currentColor;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -1727,6 +1729,15 @@ dialog::backdrop {
   .overview-grid {
     grid-template-columns: 1fr;
   }
+
+  .detail-header {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .detail-header .status-badge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1760,11 +1771,13 @@ dialog::backdrop {
   }
 
   .detail-header {
+    grid-template-columns: 1fr;
     justify-items: start;
+    padding: 24px;
   }
 
   .status-badge {
-    margin-left: 0;
+    justify-self: start;
   }
 
   .month-strip,

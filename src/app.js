@@ -51,7 +51,7 @@ const state = {
 
 const elements = {};
 [
-  "saveStatus", "dashboardButton", "homeTab", "membersTab", "appLayout", "memberSidebar",
+  "saveStatus", "homeTab", "membersTab", "appLayout", "memberSidebar",
   "memberCsv", "paymentCsv", "exportButton",
   "searchInput", "addMemberButton", "paidCount", "watchCount", "lateCount",
   "memberList", "dashboardView", "dashboardPaid", "dashboardWatch", "dashboardLate",
@@ -79,7 +79,6 @@ const elements = {};
 // Events
 // ---------------------------------------------------------------------------
 
-elements.dashboardButton.addEventListener("click", showDashboard);
 elements.homeTab.addEventListener("click", showDashboard);
 elements.membersTab.addEventListener("click", showMembers);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
