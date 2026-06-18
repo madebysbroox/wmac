@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI Concepts · Payment Tracker</title>
+<style>
+:root{
+  --bg:#0e1422;--surface:#161e30;--surface-2:#1d2738;--ink:#eef2fb;--muted:#9aa6c0;
+  --line:#283349;--accent:#6366f1;--r:18px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1c2845,#0e1422 60%);color:var(--ink);
+  font-family:"Segoe UI",system-ui,"Noto Sans KR",sans-serif;line-height:1.55;font-size:17px}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:48px 28px 80px}
+.kicker{display:inline-block;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8ea0ff;font-weight:800;margin-bottom:14px}
+h1{font-size:40px;margin:0 0 14px;letter-spacing:-1px;font-weight:800;line-height:1.1}
+.lede{color:var(--muted);max-width:720px;font-size:19px;margin:0 0 8px}
+.note{margin-top:26px;padding:18px 20px;border-radius:14px;background:rgba(99,102,241,.10);border:1px solid rgba(99,102,241,.32);color:#cdd4f5;font-size:15.5px;max-width:760px}
+.note b{color:#fff}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:40px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 24px 60px rgba(0,0,0,.35);transition:transform .15s ease,border-color .15s ease}
+.card:hover{transform:translateY(-4px);border-color:#46527a}
+.preview{position:relative;height:230px;overflow:hidden;border-bottom:1px solid var(--line);background:#fff}
+.preview iframe{position:absolute;top:0;left:0;width:1280px;height:820px;border:0;transform:scale(.36);transform-origin:top left;pointer-events:none}
+.preview .open{position:absolute;inset:0;display:block}
+.body{padding:20px 22px 24px;display:flex;flex-direction:column;gap:12px;flex:1}
+.body h2{margin:0;font-size:22px;font-weight:800}
+.body .tagline{color:#a9b6d6;font-size:14px;margin-top:-6px;font-weight:600}
+.body p{margin:0;color:var(--muted);font-size:14.5px}
+.sw{display:flex;gap:7px;margin-top:auto;padding-top:6px}
+.sw i{width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
+ul.feat{margin:0;padding-left:18px;color:var(--muted);font-size:14px}
+ul.feat li{margin:3px 0}
+.btn{display:inline-flex;align-items:center;gap:9px;justify-content:center;margin-top:8px;
+  background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;text-decoration:none;font-weight:800;
+  padding:13px;border-radius:12px;box-shadow:0 10px 24px rgba(79,70,229,.4)}
+.best{display:inline-block;margin-left:8px;font-size:11px;font-weight:800;letter-spacing:.5px;
+  background:rgba(52,211,153,.18);color:#6ee7b7;border:1px solid rgba(52,211,153,.4);padding:3px 9px;border-radius:999px;vertical-align:middle}
+.foot{margin-top:46px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:22px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.preview iframe{transform:scale(.5)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="kicker">Design Exploration · 2026</span>
+  <h1>A more professional Payment Tracker</h1>
+  <p class="lede">Three directions for refreshing the look and feel — same features and bilingual labels, a more polished, confident, modern presentation. Click any concept to open the full screen.</p>
+
+  <div class="note">
+    <b>Design principle kept in every option:</b> the daily user is an 80-year-old who types slowly, so “professional” here means <b>refined, not dense</b>. Text stays large, targets stay big, colors stay calm — we add hierarchy, depth, spacing, and brand polish rather than shrinking anything.
+  </div>
+
+  <div class="grid">
+    <!-- AURORA -->
+    <article class="card">
+      <div class="preview">
+        <iframe src="concept-aurora.html" title="Aurora preview" scrolling="no"></iframe>
+        <a class="open" href="concept-aurora.html" aria-label="Open Aurora"></a>
+      </div>
+      <div class="body">
+        <h2>1 · Aurora</h2>
+        <div class="tagline">Modern professional · SaaS dashboard</div>
+        <p>A clean app shell with a dark left navigation rail, indigo accent, and layered cards. Feels like a polished business tool.</p>
+        <ul class="feat">
+          <li>Left nav rail with icons</li>
+          <li>Hero KPI cards + avatars</li>
+          <li>Light slate canvas, soft shadows</li>
+        </ul>
+        <div class="sw"><i style="background:#4f46e5"></i><i style="background:#0d9488"></i><i style="background:#15803d"></i><i style="background:#b45309"></i><i style="background:#be3a36"></i><i style="background:#eef1f6"></i></div>
+        <a class="btn" href="concept-aurora.html">Open concept →</a>
+      </div>
+    </article>
+
+    <!-- DOJO -->
+    <article class="card">
+      <div class="preview">
+        <iframe src="concept-dojo.html" title="Dojo preview" scrolling="no"></iframe>
+        <a class="open" href="concept-dojo.html" aria-label="Open Heritage Dojo"></a>
+      </div>
+      <div class="body">
+        <h2>2 · Heritage Dojo</h2>
+        <div class="tagline">Premium · brand-forward</div>
+        <p>Deep navy and warm bronze that nod to the martial-arts identity. Shows the member detail screen with the big one-click pay action.</p>
+        <ul class="feat">
+          <li>Branded gradient banners</li>
+          <li>Serif display headings</li>
+          <li>Ivory canvas, gold accent</li>
+        </ul>
+        <div class="sw"><i style="background:#16233b"></i><i style="background:#b07d2b"></i><i style="background:#2f7d4f"></i><i style="background:#a83f37"></i><i style="background:#f6f3ec"></i><i style="background:#caa052"></i></div>
+        <a class="btn" href="concept-dojo.html">Open concept →</a>
+      </div>
+    </article>
+
+    <!-- CALM -->
+    <article class="card">
+      <div class="preview">
+        <iframe src="concept-calm.html" title="Calm preview" scrolling="no"></iframe>
+        <a class="open" href="concept-calm.html" aria-label="Open Calm Clarity"></a>
+      </div>
+      <div class="body">
+        <h2>3 · Calm Clarity <span class="best">Best for Master Lee</span></h2>
+        <div class="tagline">Accessibility-first · airy</div>
+        <p>Maximum readability: extra-large text and buttons, generous whitespace, a single calm teal accent. The gentlest learning curve.</p>
+        <ul class="feat">
+          <li>Big tabs + 54px+ tap targets</li>
+          <li>Friendly greeting & rounded cards</li>
+          <li>Soft teal, low visual noise</li>
+        </ul>
+        <div class="sw"><i style="background:#0f766e"></i><i style="background:#14b8a6"></i><i style="background:#15803d"></i><i style="background:#a35a07"></i><i style="background:#b23b34"></i><i style="background:#f3f7f7"></i></div>
+        <a class="btn" href="concept-calm.html">Open concept →</a>
+      </div>
+    </article>
+  </div>
+
+  <p class="foot">
+    These are static mockups (HTML/CSS only) using sample data — they don’t touch the live app or its data.
+    Pick a direction (or mix elements you like across them) and I’ll apply it to the real <code>index.html</code> / <code>src/styles.css</code>.
+    Native Windows font (Segoe UI) is used throughout; Korean fonts fall back automatically.
+  </p>
+</div>
+</body>
+</html>
