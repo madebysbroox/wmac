@@ -283,20 +283,21 @@ export function upsertMember(store, member) {
 
 export function getMemberStatus(member, payments, today = new Date()) {
   const currentMonth = monthKey(today);
+  const firstDueMonth = getFirstDueMonth(member, currentMonth);
+  const billableMonths = monthsInRange(firstDueMonth, currentMonth);
   const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id).map((payment) => payment.month));
-  const recentMonths = lastMonths(currentMonth, 4);
+  const recentMonths = billableMonths.slice(-4);
   const lastPaidMonth = Array.from(paidMonths).sort().at(-1) || "";
   const unpaidRecent = recentMonths.filter((month) => !paidMonths.has(month));
-  const firstDueMonth = member.startDate?.slice(0, 7) || currentMonth;
-  const monthsBehind = paidMonths.has(currentMonth)
-    ? 0
-    : lastPaidMonth
-      ? countMonthsBetween(lastPaidMonth, currentMonth)
-      : countMonthsBetween(firstDueMonth, currentMonth) + 1;
+  const unpaidBillableMonths = billableMonths.filter((month) => !paidMonths.has(month));
+  const currentMonthIsDue = billableMonths.includes(currentMonth);
+  const monthsBehind = currentMonthIsDue && !paidMonths.has(currentMonth)
+    ? unpaidBillableMonths.length
+    : 0;
 
   let level = "paid";
   let label = "Paid up";
-  if (!paidMonths.has(currentMonth)) {
+  if (currentMonthIsDue && !paidMonths.has(currentMonth)) {
     if (monthsBehind >= 3 || (lastPaidMonth && unpaidRecent.length >= 3)) {
       level = "late";
       label = "Behind";
@@ -318,7 +319,7 @@ export function getMemberStatus(member, payments, today = new Date()) {
 
 export function getUnpaidMonths(member, payments, today = new Date()) {
   const currentMonth = monthKey(today);
-  const firstDueMonth = member.startDate?.slice(0, 7) || currentMonth;
+  const firstDueMonth = getFirstDueMonth(member, currentMonth);
   const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id).map((payment) => payment.month));
   return monthsInRange(firstDueMonth, currentMonth).filter((month) => !paidMonths.has(month));
 }
@@ -512,14 +513,8 @@ function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function lastMonths(currentMonth, count) {
-  const [year, month] = currentMonth.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-  return Array.from({ length: count }, (_, index) => {
-    const item = new Date(date);
-    item.setMonth(date.getMonth() - index);
-    return monthKey(item);
-  }).reverse();
+function getFirstDueMonth(member, currentMonth) {
+  return member.startDate?.slice(0, 7) || currentMonth;
 }
 
 function monthsInRange(startMonth, endMonth) {
@@ -540,15 +535,6 @@ function monthsInRange(startMonth, endMonth) {
     date.setMonth(date.getMonth() + 1);
   }
   return months;
-}
-
-function countMonthsBetween(startMonth, endMonth) {
-  if (!startMonth || !endMonth) {
-    return 0;
-  }
-  const [startYear, start] = startMonth.split("-").map(Number);
-  const [endYear, end] = endMonth.split("-").map(Number);
-  return Math.max(0, (endYear - startYear) * 12 + (end - start));
 }
 
 function buildIdentityKey(member) {

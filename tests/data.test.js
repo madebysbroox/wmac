@@ -140,3 +140,38 @@ test("calculates invoice balance from unpaid months", () => {
   assert.deepEqual(balance.unpaidMonths, ["2026-05", "2026-06"]);
   assert.equal(balance.totalDue, 240);
 });
+
+test("does not count months before a member's start date as unpaid", () => {
+  let store = createEmptyStore();
+  const imported = importMembersFromRecords(
+    [{ Name: "New Student", Amount: "120", Start: "2026-06-08" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    store
+  );
+  store = imported.store;
+
+  const status = getMemberStatus(store.members[0], store.payments, new Date("2026-06-08"));
+  const balance = getMemberBalance(store.members[0], store.payments, new Date("2026-06-08"));
+
+  assert.deepEqual(status.recentMonths.map((month) => month.month), ["2026-06"]);
+  assert.deepEqual(balance.unpaidMonths, ["2026-06"]);
+  assert.equal(balance.totalDue, 120);
+});
+
+test("members with a future start date are not marked as missing payments", () => {
+  let store = createEmptyStore();
+  const imported = importMembersFromRecords(
+    [{ Name: "Future Student", Amount: "120", Start: "2026-07-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    store
+  );
+  store = imported.store;
+
+  const status = getMemberStatus(store.members[0], store.payments, new Date("2026-06-08"));
+  const balance = getMemberBalance(store.members[0], store.payments, new Date("2026-06-08"));
+
+  assert.equal(status.level, "paid");
+  assert.deepEqual(status.recentMonths, []);
+  assert.deepEqual(balance.unpaidMonths, []);
+  assert.equal(balance.totalDue, 0);
+});
