@@ -44,20 +44,30 @@ The **스퀘어 (Square)** tab is a manual staging area for payments reported by
 - **무시 (Ignore)** keeps the Square item out of member records.
 - Members with a staged Square payment show a short **대기 (Pending)** status until the payment is approved or ignored.
 
-Square authentication is intentionally separate from the daily workflow. When credentials are ready, start the server with:
+Square authentication is intentionally separate from the daily workflow. For the recommended AWS relay, start the local server with:
+
+```bash
+SQUARE_RELAY_BASE_URL=https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com \
+SQUARE_RELAY_SYNC_TOKEN=your-long-local-sync-token \
+npm start
+```
+
+Then use **스퀘어에서 가져오기 (Sync Square)** to pull pending relay payments into the local review screen.
+
+Optional direct Square API sync is still available if needed:
 
 ```bash
 SQUARE_ACCESS_TOKEN=... npm start
 ```
 
-Optional production webhook settings:
+Optional local webhook testing settings:
 
 ```bash
 SQUARE_WEBHOOK_SIGNATURE_KEY=...
 SQUARE_WEBHOOK_NOTIFICATION_URL=https://your-public-url.example.com/api/square/webhook
 ```
 
-Square requires a public HTTPS webhook URL. The local app stores staged webhook/payment data in `data/square-payments.json`, which is ignored by Git so real payment data stays local.
+Square requires a public HTTPS webhook URL. The recommended setup is the separate `wmac-square-webhook-relay` AWS project, which receives Square webhooks and lets this local app securely pull staged payments. The local app stores staged payment data in `data/square-payments.json`, which is ignored by Git so the review copy stays local.
 
 ## Files & Backup · 파일 · 백업
 

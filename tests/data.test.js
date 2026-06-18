@@ -257,6 +257,39 @@ test("normalizes Square payments and suggests a member match", () => {
   assert.equal(suggestedSquareMember(squarePayment, memberImport.store.members).name, "Sam Park");
 });
 
+test("normalizes Square relay payments from AWS staging", () => {
+  const memberImport = importMembersFromRecords(
+    [{ Name: "Sam Park", Email: "parent@example.com", Amount: "120" }],
+    { name: "Name", email: "Email", monthlyAmount: "Amount" },
+    createEmptyStore()
+  );
+  const squarePayment = normalizeSquarePayment(
+    {
+      paymentId: "pay_relay_123",
+      eventId: "event_relay_123",
+      eventType: "payment.updated",
+      status: "pending",
+      squareStatus: "COMPLETED",
+      amountCents: 12000,
+      currency: "USD",
+      buyerEmailAddress: "parent@example.com",
+      squareCreatedAt: "2026-06-08T14:00:00Z",
+      squareUpdatedAt: "2026-06-08T14:01:00Z",
+      receiptUrl: "https://squareup.com/receipt/preview/pay_relay_123"
+    },
+    memberImport.store.members
+  );
+
+  assert.equal(squarePayment.id, "pay_relay_123");
+  assert.equal(squarePayment.squareEventId, "event_relay_123");
+  assert.equal(squarePayment.sourceEventType, "payment.updated");
+  assert.equal(squarePayment.status, "pending");
+  assert.equal(squarePayment.squareStatus, "COMPLETED");
+  assert.equal(squarePayment.buyerEmail, "parent@example.com");
+  assert.equal(squarePayment.paidAt, "2026-06-08");
+  assert.equal(squarePayment.suggestedMemberId, memberImport.store.members[0].id);
+});
+
 test("pending Square payments can be attached to a member without becoming real payments", () => {
   const memberImport = importMembersFromRecords(
     [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],

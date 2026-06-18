@@ -183,11 +183,16 @@ async function receiveSquareWebhook(request, response) {
 }
 
 async function syncSquarePayments(response) {
+  if (squareRelayConfigured()) {
+    await syncSquareRelayPayments(response);
+    return;
+  }
+
   const token = process.env.SQUARE_ACCESS_TOKEN;
   if (!token) {
     json(response, 501, {
       error: "Square sync is not configured yet.",
-      nextStep: "Set SQUARE_ACCESS_TOKEN after Square credentials are ready."
+      nextStep: "Set SQUARE_RELAY_BASE_URL and SQUARE_RELAY_SYNC_TOKEN for the AWS relay, or set SQUARE_ACCESS_TOKEN for direct Square sync."
     });
     return;
   }
@@ -220,6 +225,67 @@ async function syncSquarePayments(response) {
   });
   await writeSquareStore(store);
   json(response, 200, { imported: body.payments?.length || 0, payments: store.payments, configured: true });
+}
+
+async function syncSquareRelayPayments(response) {
+  const relayBaseUrl = process.env.SQUARE_RELAY_BASE_URL.replace(/\/$/, "");
+  const token = process.env.SQUARE_RELAY_SYNC_TOKEN;
+  const relayResponse = await fetch(`${relayBaseUrl}/payments`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  const body = await relayResponse.json();
+  if (!relayResponse.ok) {
+    json(response, relayResponse.status, { error: "Square relay sync failed.", details: body });
+    return;
+  }
+
+  let store = await readSquareStore();
+  const payments = body.payments || [];
+  for (const payment of payments) {
+    store = upsertSquarePayment(store, normalizeSquarePayment({
+      ...payment,
+      sourceEventType: payment.eventType,
+      squarePaymentId: payment.squarePaymentId || payment.paymentId,
+      buyerEmail: payment.buyerEmail || payment.buyerEmailAddress,
+      createdAt: payment.createdAt || payment.squareCreatedAt || payment.receivedAt,
+      updatedAt: payment.updatedAt || payment.squareUpdatedAt || payment.receivedAt,
+      paidAt: payment.paidAt || payment.squareCreatedAt || payment.receivedAt,
+      squareStatus: payment.squareStatus || payment.status,
+      status: payment.localStatus || "pending"
+    }));
+  }
+  await writeSquareStore(store);
+
+  const delivered = [];
+  for (const payment of payments) {
+    const paymentId = payment.paymentId || payment.squarePaymentId || payment.id;
+    if (!paymentId) {
+      continue;
+    }
+    try {
+      const deliveredResponse = await fetch(`${relayBaseUrl}/payments/${encodeURIComponent(paymentId)}/delivered`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (deliveredResponse.ok) {
+        delivered.push(paymentId);
+      }
+    } catch {
+      // The local copy is saved. A later sync can mark the relay item delivered.
+    }
+  }
+
+  json(response, 200, {
+    imported: payments.length,
+    delivered: delivered.length,
+    payments: store.payments,
+    configured: true,
+    source: "relay"
+  });
 }
 
 async function readSquareStore() {
@@ -269,7 +335,11 @@ function validateSquareWebhook(request, rawBody) {
 }
 
 function squareConfigured() {
-  return Boolean(process.env.SQUARE_ACCESS_TOKEN || process.env.SQUARE_WEBHOOK_SIGNATURE_KEY);
+  return Boolean(squareRelayConfigured() || process.env.SQUARE_ACCESS_TOKEN || process.env.SQUARE_WEBHOOK_SIGNATURE_KEY);
+}
+
+function squareRelayConfigured() {
+  return Boolean(process.env.SQUARE_RELAY_BASE_URL && process.env.SQUARE_RELAY_SYNC_TOKEN);
 }
 
 function json(response, statusCode, body) {

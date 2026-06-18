@@ -273,23 +273,25 @@ export function pendingSquarePaymentsForMember(squarePayments, member) {
 export function normalizeSquarePayment(input, members = []) {
   const payment = input?.data?.object?.payment || input?.payment || input || {};
   const amount = Number(payment.total_money?.amount ?? payment.amount_money?.amount ?? input?.amountCents ?? 0);
-  const buyerEmail = clean(payment.buyer_email_address || payment.buyerEmail || input?.buyerEmail).toLowerCase();
+  const buyerEmail = clean(payment.buyer_email_address || payment.buyerEmail || payment.buyerEmailAddress || input?.buyerEmail || input?.buyerEmailAddress).toLowerCase();
   const buyerPhone = cleanPhone(payment.buyer_phone_number || payment.buyerPhone || input?.buyerPhone);
   const buyerName = clean(payment.buyerName || input?.buyerName);
-  const createdAt = clean(payment.created_at || payment.createdAt || input?.createdAt) || new Date().toISOString();
-  const paidAt = normalizeDate(payment.created_at || payment.createdAt || input?.paidAt || input?.createdAt) || new Date().toISOString().slice(0, 10);
+  const squareCreatedAt = payment.created_at || payment.createdAt || payment.squareCreatedAt || input?.squareCreatedAt;
+  const squareUpdatedAt = payment.updated_at || payment.updatedAt || payment.squareUpdatedAt || input?.squareUpdatedAt;
+  const createdAt = clean(squareCreatedAt || input?.createdAt || input?.receivedAt) || new Date().toISOString();
+  const paidAt = normalizeDate(squareCreatedAt || input?.paidAt || input?.createdAt || input?.receivedAt) || new Date().toISOString().slice(0, 10);
   const candidate = {
-    id: clean(payment.id || input?.squarePaymentId || input?.id),
-    squarePaymentId: clean(payment.id || input?.squarePaymentId || input?.id),
+    id: clean(payment.id || input?.paymentId || input?.squarePaymentId || input?.id),
+    squarePaymentId: clean(payment.id || input?.paymentId || input?.squarePaymentId || input?.id),
     squareEventId: clean(input?.event_id || input?.eventId),
-    sourceEventType: clean(input?.type || input?.sourceEventType),
+    sourceEventType: clean(input?.type || input?.sourceEventType || input?.eventType),
     status: clean(input?.status) || "pending",
-    squareStatus: clean(payment.status || input?.squareStatus),
+    squareStatus: clean(input?.squareStatus || payment.status),
     amountCents: Number.isFinite(amount) ? amount : 0,
     currency: clean(payment.total_money?.currency || payment.amount_money?.currency || input?.currency) || "USD",
     paidAt,
     createdAt,
-    updatedAt: clean(payment.updated_at || payment.updatedAt || input?.updatedAt) || createdAt,
+    updatedAt: clean(squareUpdatedAt || input?.updatedAt || input?.receivedAt) || createdAt,
     buyerName,
     buyerEmail,
     buyerPhone,
