@@ -71,6 +71,8 @@ Both import dialogs show a reassuring note explaining these rules before anythin
 - **연말 보고서 (Year-End Tax Report)** — pick a year (last year or this year) and get a printable report with total revenue, revenue by month, and revenue by member. Totals are grouped by the month each payment was for.
 - **새해 회원 명단 저장 (New Year Roster CSV)** — download a clean CSV of active members (no payment history, inactive members left out), named for the coming year and ready to re-import as a fresh start.
 
+In the installed desktop app, **앱 업데이트 (App Updates)** stays at the bottom of the main left sidebar so it is available from Home, Members, or Square.
+
 The app saves the working data in the browser on the same computer, so the member CSV does not need to be imported again every time.
 
 ## Code Layout

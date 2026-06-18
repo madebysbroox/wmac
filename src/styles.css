@@ -1275,9 +1275,10 @@ h3 {
 }
 
 .page-tabs {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
+  min-height: 0;
   padding: 0 16px 18px;
 }
 
@@ -1310,6 +1311,54 @@ h3 {
   background: linear-gradient(135deg, rgba(202, 160, 82, 0.22), rgba(202, 160, 82, 0.08));
   color: #f2d9a5;
   box-shadow: inset 3px 0 0 #caa052;
+}
+
+.nav-update-panel {
+  margin-top: auto;
+  padding: 18px 10px 4px;
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.nav-update-panel h3 {
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 15px;
+}
+
+.nav-update-panel h3 small {
+  display: block;
+  margin: 2px 0 0;
+  color: #8e9bb4;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.nav-update-panel p {
+  color: #9eabc2;
+  font-size: 12.5px;
+}
+
+.nav-update-panel .button {
+  min-height: 44px;
+  padding: 9px 12px;
+  border-width: 1px;
+  font-size: 14px;
+}
+
+.nav-update-panel .button.tool {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.11);
+  color: #eef3fb;
+}
+
+.nav-update-panel .button.primary {
+  background: #caa052;
+  color: #16233b;
+}
+
+.nav-update-panel .button.bi small {
+  font-size: 11px;
 }
 
 .layout {
@@ -1872,11 +1921,19 @@ dialog::backdrop {
 
   .page-tabs {
     display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
     padding: 0 16px 16px;
   }
 
   .page-tab {
     flex: 1;
+  }
+
+  .nav-update-panel {
+    flex: 1 0 100%;
+    margin-top: 8px;
+    padding: 12px 0 0;
   }
 
   .layout,
