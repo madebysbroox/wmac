@@ -35,6 +35,10 @@ export function createEmptySquareStore() {
   };
 }
 
+export function createEmptyProviderPaymentStore() {
+  return createEmptySquareStore();
+}
+
 export function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -206,7 +210,7 @@ export function importPaymentsFromRecords(records, columnMap, store) {
       return;
     }
 
-    if (payments.some((payment) => payment.memberId === member.id && payment.month === month)) {
+    if (payments.some((payment) => payment.memberId === member.id && payment.month === month && isTuitionPayment(payment))) {
       duplicates.push({ row: index + 2, member, month });
       return;
     }
@@ -217,7 +221,8 @@ export function importPaymentsFromRecords(records, columnMap, store) {
       month,
       amount,
       paidAt: normalizeDate(record[columnMap.paidAt]) || new Date().toISOString().slice(0, 10),
-      source: "payment-csv"
+      source: "payment-csv",
+      category: "tuition"
     };
     payments.push(payment);
     matches.push({ member, payment });
@@ -245,11 +250,11 @@ export function findPaymentMember(record, columnMap, members) {
   );
 }
 
-export function suggestedSquareMember(squarePayment, members) {
-  const email = clean(squarePayment.buyerEmail).toLowerCase();
-  const phone = cleanPhone(squarePayment.buyerPhone);
-  const name = normalize(squarePayment.buyerName);
-  const customerId = clean(squarePayment.customerId);
+export function suggestedPaymentMember(providerPayment, members) {
+  const email = clean(providerPayment.buyerEmail).toLowerCase();
+  const phone = cleanPhone(providerPayment.buyerPhone);
+  const name = normalize(providerPayment.buyerName);
+  const customerId = clean(providerPayment.customerId || providerPayment.externalCustomerId);
 
   return members.find((member) =>
     (customerId && member.externalId === customerId) ||
@@ -259,15 +264,39 @@ export function suggestedSquareMember(squarePayment, members) {
   ) || null;
 }
 
-export function squarePaymentMonth(squarePayment) {
-  return normalizeMonth(squarePayment?.paymentMonth) || monthFromDate(squarePayment?.paidAt || squarePayment?.createdAt);
+export function suggestedSquareMember(squarePayment, members) {
+  return suggestedPaymentMember(squarePayment, members);
 }
 
-export function pendingSquarePaymentsForMember(squarePayments, member) {
-  return (squarePayments || []).filter((payment) =>
+export function stagedPaymentMonth(providerPayment) {
+  return normalizeMonth(providerPayment?.paymentMonth) || monthFromDate(providerPayment?.paidAt || providerPayment?.createdAt);
+}
+
+export function squarePaymentMonth(squarePayment) {
+  return stagedPaymentMonth(squarePayment);
+}
+
+export function nextUnpaidTuitionMonth(member, payments, today = new Date()) {
+  const unpaidMonths = getUnpaidMonths(member, payments, today);
+  return unpaidMonths[0] || monthKey(today);
+}
+
+export function pendingStagedPaymentsForMember(providerPayments, member) {
+  return (providerPayments || []).filter((payment) =>
     payment.status === "pending" &&
     (payment.memberId === member.id || payment.suggestedMemberId === member.id)
   );
+}
+
+export function pendingSquarePaymentsForMember(squarePayments, member) {
+  return pendingStagedPaymentsForMember(squarePayments, member);
+}
+
+export function normalizeProviderPayment(input, members = [], provider = "square") {
+  if (provider === "worldpay") {
+    return normalizeWorldpayPayment(input, members);
+  }
+  return normalizeSquarePayment(input, members);
 }
 
 export function normalizeSquarePayment(input, members = []) {
@@ -281,12 +310,17 @@ export function normalizeSquarePayment(input, members = []) {
   const createdAt = clean(squareCreatedAt || input?.createdAt || input?.receivedAt) || new Date().toISOString();
   const paidAt = normalizeDate(squareCreatedAt || input?.paidAt || input?.createdAt || input?.receivedAt) || new Date().toISOString().slice(0, 10);
   const candidate = {
+    provider: "square",
+    providerLabel: "Square",
     id: clean(payment.id || input?.paymentId || input?.squarePaymentId || input?.id),
     squarePaymentId: clean(payment.id || input?.paymentId || input?.squarePaymentId || input?.id),
+    providerPaymentId: clean(payment.id || input?.paymentId || input?.squarePaymentId || input?.id),
     squareEventId: clean(input?.event_id || input?.eventId),
+    providerEventId: clean(input?.event_id || input?.eventId),
     sourceEventType: clean(input?.type || input?.sourceEventType || input?.eventType),
-    status: clean(input?.status) || "pending",
+    status: localReviewStatus(input) || "pending",
     squareStatus: clean(input?.squareStatus || payment.status),
+    providerStatus: clean(input?.squareStatus || payment.status),
     amountCents: Number.isFinite(amount) ? amount : 0,
     currency: clean(payment.total_money?.currency || payment.amount_money?.currency || input?.currency) || "USD",
     paidAt,
@@ -301,6 +335,8 @@ export function normalizeSquarePayment(input, members = []) {
     locationId: clean(payment.location_id || payment.locationId || input?.locationId),
     orderId: clean(payment.order_id || payment.orderId || input?.orderId),
     note: clean(payment.note || input?.note),
+    reviewNote: clean(input?.reviewNote),
+    paymentCategory: clean(input?.paymentCategory),
     paymentMonth: normalizeMonth(input?.paymentMonth) || monthFromDate(payment.created_at || payment.createdAt || input?.paidAt || input?.createdAt),
     memberId: clean(input?.memberId),
     suggestedMemberId: clean(input?.suggestedMemberId),
@@ -314,11 +350,12 @@ export function normalizeSquarePayment(input, members = []) {
   if (!candidate.id) {
     candidate.id = cryptoId("sqpay");
     candidate.squarePaymentId = candidate.id;
+    candidate.providerPaymentId = candidate.id;
   }
 
   const suggested = candidate.memberId
     ? members.find((member) => member.id === candidate.memberId)
-    : suggestedSquareMember(candidate, members);
+    : suggestedPaymentMember(candidate, members);
   candidate.suggestedMemberId = candidate.suggestedMemberId || suggested?.id || "";
   if (!candidate.memberId && candidate.suggestedMemberId) {
     candidate.memberId = candidate.suggestedMemberId;
@@ -330,30 +367,139 @@ export function normalizeSquarePayment(input, members = []) {
   return candidate;
 }
 
-export function upsertSquarePayment(squareStore, squarePayment) {
-  const existing = (squareStore.payments || []).find((payment) => payment.id === squarePayment.id || payment.squarePaymentId === squarePayment.squarePaymentId);
+export function normalizeWorldpayPayment(input, members = []) {
+  const payment = input?.transaction || input?.payment || input?.sale || input?.item || input || {};
+  const id = clean(
+    payment.id ||
+    payment.transactionId ||
+    payment.transaction_id ||
+    payment.paymentId ||
+    payment.payment_id ||
+    payment.worldpayPaymentId ||
+    payment.worldpayTransactionId ||
+    input?.transactionId ||
+    input?.paymentId ||
+    input?.id
+  );
+  const amountCents = amountToCents(
+    payment.amountCents ??
+    payment.amount_cents ??
+    payment.amount?.value ??
+    payment.amount?.amount ??
+    payment.authorizedAmount ??
+    payment.saleAmount ??
+    payment.totalAmount ??
+    payment.total ??
+    payment.amount ??
+    input?.amountCents ??
+    input?.amount
+  );
+  const createdSource = payment.transactionDate || payment.transaction_date || payment.createdAt || payment.created_at || payment.date || input?.paidAt || input?.createdAt || input?.receivedAt;
+  const paidAt = normalizeDate(createdSource) || new Date().toISOString().slice(0, 10);
+  const createdAt = clean(payment.createdAt || payment.created_at || createdSource || input?.createdAt || input?.receivedAt) || new Date().toISOString();
+  const buyerName = clean(payment.buyerName || payment.customerName || payment.customer?.name || payment.cardholderName || payment.cardHolderName || input?.buyerName);
+  const buyerEmail = clean(payment.buyerEmail || payment.customerEmail || payment.customer?.email || input?.buyerEmail || input?.buyerEmailAddress).toLowerCase();
+  const buyerPhone = cleanPhone(payment.buyerPhone || payment.customerPhone || payment.customer?.phone || input?.buyerPhone);
+  const notePieces = [
+    payment.note || input?.note,
+    payment.terminalId || payment.terminal_id ? `Terminal ${payment.terminalId || payment.terminal_id}` : "",
+    payment.batchId || payment.batch_id ? `Batch ${payment.batchId || payment.batch_id}` : "",
+    payment.cardBrand || payment.card?.brand ? `${payment.cardBrand || payment.card?.brand}${payment.last4 || payment.card?.last4 ? ` ••••${payment.last4 || payment.card?.last4}` : ""}` : ""
+  ].filter(Boolean);
+  const candidate = {
+    provider: "worldpay",
+    providerLabel: "Worldpay",
+    id: id || cryptoId("wppay"),
+    worldpayPaymentId: id,
+    providerPaymentId: id,
+    providerEventId: clean(payment.eventId || payment.event_id || input?.eventId),
+    sourceEventType: clean(input?.type || input?.sourceEventType || input?.eventType || payment.type),
+    status: clean(input?.localStatus || input?.local_status || input?.reviewStatus || input?.review_status) || "pending",
+    worldpayStatus: clean(input?.worldpayStatus || payment.status || payment.transactionStatus || payment.state),
+    providerStatus: clean(input?.worldpayStatus || payment.status || payment.transactionStatus || payment.state),
+    amountCents,
+    currency: clean(payment.currency || payment.amount?.currency || payment.currencyCode || input?.currency) || "USD",
+    paidAt,
+    createdAt,
+    updatedAt: clean(payment.updatedAt || payment.updated_at || input?.updatedAt || input?.receivedAt) || createdAt,
+    buyerName,
+    buyerEmail,
+    buyerPhone,
+    customerId: clean(payment.customerId || payment.customer_id || payment.customer?.id || input?.customerId),
+    externalCustomerId: clean(payment.customerReference || payment.customer_reference || payment.customer?.reference || input?.externalCustomerId),
+    receiptUrl: clean(payment.receiptUrl || payment.receipt_url || input?.receiptUrl),
+    receiptNumber: clean(payment.receiptNumber || payment.receipt_number || payment.reference || payment.merchantReference || payment.transactionReference || input?.receiptNumber),
+    locationId: clean(payment.locationId || payment.location_id || payment.storeId || payment.store_id || input?.locationId),
+    terminalId: clean(payment.terminalId || payment.terminal_id || input?.terminalId),
+    batchId: clean(payment.batchId || payment.batch_id || input?.batchId),
+    orderId: clean(payment.orderId || payment.order_id || payment.merchantOrderId || input?.orderId),
+    note: clean(notePieces.join(" · ")),
+    reviewNote: clean(input?.reviewNote),
+    paymentCategory: clean(input?.paymentCategory),
+    paymentMonth: normalizeMonth(input?.paymentMonth) || monthFromDate(createdSource),
+    memberId: clean(input?.memberId),
+    suggestedMemberId: clean(input?.suggestedMemberId),
+    approvedAt: clean(input?.approvedAt),
+    approvedBy: clean(input?.approvedBy),
+    ignoredAt: clean(input?.ignoredAt),
+    ignoredReason: clean(input?.ignoredReason),
+    raw: input?.raw || input
+  };
+
+  const suggested = candidate.memberId
+    ? members.find((member) => member.id === candidate.memberId)
+    : suggestedPaymentMember(candidate, members);
+  candidate.suggestedMemberId = candidate.suggestedMemberId || suggested?.id || "";
+  if (!candidate.memberId && candidate.suggestedMemberId) {
+    candidate.memberId = candidate.suggestedMemberId;
+  }
+  if (candidate.status === "pending" && !candidate.suggestedMemberId) {
+    candidate.status = "needs_match";
+  }
+
+  return candidate;
+}
+
+export function upsertProviderPayment(providerStore, providerPayment) {
+  const existing = (providerStore.payments || []).find((payment) =>
+    payment.id === providerPayment.id ||
+    (providerPayment.squarePaymentId && payment.squarePaymentId === providerPayment.squarePaymentId) ||
+    (providerPayment.worldpayPaymentId && payment.worldpayPaymentId === providerPayment.worldpayPaymentId) ||
+    (providerPayment.providerPaymentId && payment.providerPaymentId === providerPayment.providerPaymentId)
+  );
   const nextPayment = {
     ...existing,
-    ...squarePayment,
-    status: existing?.status && ["approved", "ignored"].includes(existing.status) ? existing.status : squarePayment.status,
-    approvedAt: existing?.approvedAt || squarePayment.approvedAt || "",
-    approvedBy: existing?.approvedBy || squarePayment.approvedBy || "",
-    ignoredAt: existing?.ignoredAt || squarePayment.ignoredAt || "",
-    ignoredReason: existing?.ignoredReason || squarePayment.ignoredReason || ""
+    ...providerPayment,
+    status: existing?.status && ["approved", "ignored"].includes(existing.status) ? existing.status : providerPayment.status,
+    approvedAt: existing?.approvedAt || providerPayment.approvedAt || "",
+    approvedBy: existing?.approvedBy || providerPayment.approvedBy || "",
+    ignoredAt: existing?.ignoredAt || providerPayment.ignoredAt || "",
+    ignoredReason: existing?.ignoredReason || providerPayment.ignoredReason || "",
+    reviewNote: existing?.reviewNote || providerPayment.reviewNote || "",
+    paymentCategory: existing?.paymentCategory || providerPayment.paymentCategory || ""
   };
-  const payments = (squareStore.payments || []).filter((payment) => payment.id !== nextPayment.id && payment.squarePaymentId !== nextPayment.squarePaymentId);
+  const payments = (providerStore.payments || []).filter((payment) =>
+    payment.id !== nextPayment.id &&
+    (!nextPayment.squarePaymentId || payment.squarePaymentId !== nextPayment.squarePaymentId) &&
+    (!nextPayment.worldpayPaymentId || payment.worldpayPaymentId !== nextPayment.worldpayPaymentId) &&
+    (!nextPayment.providerPaymentId || payment.providerPaymentId !== nextPayment.providerPaymentId)
+  );
   payments.push(nextPayment);
   return {
-    ...squareStore,
+    ...providerStore,
     payments: payments.sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt))),
     updatedAt: new Date().toISOString()
   };
 }
 
-export function updateSquarePaymentStatus(squareStore, paymentId, patch) {
+export function upsertSquarePayment(squareStore, squarePayment) {
+  return upsertProviderPayment(squareStore, squarePayment);
+}
+
+export function updateProviderPaymentStatus(providerStore, paymentId, patch) {
   let found = false;
-  const payments = (squareStore.payments || []).map((payment) => {
-    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId) {
+  const payments = (providerStore.payments || []).map((payment) => {
+    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId && payment.worldpayPaymentId !== paymentId && payment.providerPaymentId !== paymentId) {
       return payment;
     }
     found = true;
@@ -365,12 +511,16 @@ export function updateSquarePaymentStatus(squareStore, paymentId, patch) {
   });
   return {
     store: {
-      ...squareStore,
+      ...providerStore,
       payments,
       updatedAt: new Date().toISOString()
     },
     found
   };
+}
+
+export function updateSquarePaymentStatus(squareStore, paymentId, patch) {
+  return updateProviderPaymentStatus(squareStore, paymentId, patch);
 }
 
 export function searchMembers(members, query) {
@@ -386,18 +536,37 @@ export function searchMembers(members, query) {
 }
 
 export function addPayment(store, payment) {
+  const category = payment.category === "one-off" ? "one-off" : "tuition";
   const nextPayment = {
     id: cryptoId("pay"),
     memberId: payment.memberId,
     month: normalizeMonth(payment.month),
     amount: Number(payment.amount) || 0,
     paidAt: payment.paidAt || new Date().toISOString().slice(0, 10),
-    source: payment.source || "manual"
+    source: payment.source || "manual",
+    category,
+    note: clean(payment.note),
+    squarePaymentId: clean(payment.squarePaymentId),
+    worldpayPaymentId: clean(payment.worldpayPaymentId),
+    providerPaymentId: clean(payment.providerPaymentId || payment.squarePaymentId || payment.worldpayPaymentId),
+    paymentProvider: clean(payment.paymentProvider || payment.source)
   };
+  const existingPayments = store.payments.filter((item) => {
+    if (nextPayment.squarePaymentId && item.squarePaymentId === nextPayment.squarePaymentId) {
+      return false;
+    }
+    if (nextPayment.worldpayPaymentId && item.worldpayPaymentId === nextPayment.worldpayPaymentId) {
+      return false;
+    }
+    if (nextPayment.providerPaymentId && item.providerPaymentId === nextPayment.providerPaymentId) {
+      return false;
+    }
+    return !(category === "tuition" && isTuitionPayment(item) && item.memberId === nextPayment.memberId && item.month === nextPayment.month);
+  });
 
   return {
     ...store,
-    payments: [...store.payments.filter((item) => !(item.memberId === nextPayment.memberId && item.month === nextPayment.month)), nextPayment],
+    payments: [...existingPayments, nextPayment],
     updatedAt: new Date().toISOString()
   };
 }
@@ -410,7 +579,7 @@ export function removePayment(store, memberId, month) {
 
   return {
     ...store,
-    payments: store.payments.filter((payment) => !(payment.memberId === memberId && payment.month === normalizedMonth)),
+    payments: store.payments.filter((payment) => !(isTuitionPayment(payment) && payment.memberId === memberId && payment.month === normalizedMonth)),
     updatedAt: new Date().toISOString()
   };
 }
@@ -434,7 +603,7 @@ export function getMemberStatus(member, payments, today = new Date()) {
   const currentMonth = monthKey(today);
   const firstDueMonth = getFirstDueMonth(member, currentMonth);
   const billableMonths = monthsInRange(firstDueMonth, currentMonth);
-  const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id).map((payment) => payment.month));
+  const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
   const recentMonths = billableMonths.slice(-4);
   const lastPaidMonth = Array.from(paidMonths).sort().at(-1) || "";
   const unpaidRecent = recentMonths.filter((month) => !paidMonths.has(month));
@@ -469,7 +638,7 @@ export function getMemberStatus(member, payments, today = new Date()) {
 export function getUnpaidMonths(member, payments, today = new Date()) {
   const currentMonth = monthKey(today);
   const firstDueMonth = getFirstDueMonth(member, currentMonth);
-  const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id).map((payment) => payment.month));
+  const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
   return monthsInRange(firstDueMonth, currentMonth).filter((month) => !paidMonths.has(month));
 }
 
@@ -503,7 +672,7 @@ export function getDashboardSummary(store, today = new Date()) {
     const overdueLines = lateFeeBalance.lines.filter((line) => line.daysLate > 0);
     const tenDaysLateLines = lateFeeBalance.lines.filter((line) => line.daysLate >= LATE_FEE_GRACE_DAYS);
     const olderTenDaysLateLines = tenDaysLateLines.filter((line) => line.month < currentMonth);
-    const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id).map((payment) => payment.month));
+    const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
     const currentMonthUnpaid = balance.unpaidMonths.includes(currentMonth) && !paidMonths.has(currentMonth);
     const currentMonthLine = lateFeeBalance.lines.find((line) => line.month === currentMonth);
     const currentMonthAlreadyLate = Number(currentMonthLine?.daysLate || 0) >= LATE_FEE_GRACE_DAYS;
@@ -652,8 +821,17 @@ function memberRow(member, payment) {
     "Payment Month": payment?.month || "",
     "Payment Amount": payment ? moneyText(payment.amount) : "",
     "Paid Date": payment?.paidAt || "",
-    "Payment Source": payment?.source || ""
+    "Payment Source": payment?.source || "",
+    "Payment Category": payment ? payment.category || "tuition" : "",
+    "Payment Note": payment?.note || "",
+    "Square Payment ID": payment?.squarePaymentId || "",
+    "Worldpay Payment ID": payment?.worldpayPaymentId || "",
+    "Provider Payment ID": payment?.providerPaymentId || ""
   };
+}
+
+function isTuitionPayment(payment) {
+  return !payment?.category || payment.category === "tuition";
 }
 
 function escapeCsvCell(value) {
@@ -679,6 +857,32 @@ function normalize(value) {
 function parseMoney(value) {
   const amount = Number(clean(value).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function localReviewStatus(input) {
+  const status = clean(input?.localStatus || input?.local_status || input?.reviewStatus || input?.review_status || input?.status);
+  return ["pending", "needs_match", "approved", "ignored"].includes(status) ? status : "";
+}
+
+function amountToCents(value) {
+  if (value && typeof value === "object") {
+    return amountToCents(value.value ?? value.amount);
+  }
+
+  const text = clean(value);
+  if (!text) {
+    return 0;
+  }
+
+  const numeric = Number(text.replace(/[^0-9.-]/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+
+  if (/^\s*-?\d+\s*$/.test(text) && Math.abs(numeric) > 999) {
+    return Math.round(numeric);
+  }
+  return Math.round(numeric * 100);
 }
 
 function normalizeDate(value) {

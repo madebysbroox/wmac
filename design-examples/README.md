@@ -29,3 +29,11 @@ Pick one direction (or mix elements across them) and the chosen look can be
 applied to the production `index.html` and `src/styles.css`. Segoe UI (the
 native Windows font) is used throughout, with Korean fonts falling back
 automatically.
+
+## Card Payment Review focused samples
+
+These are newer mockups focused on the Square + Worldpay review workflow:
+
+- `concept-card-review-command.html` — **Payment Command**: two-pane review queue + selected payment detail; recommended for safest manual review.
+- `concept-card-review-kanban.html` — **Review Board**: columns for ready, needs match, and recently approved; good for batching many payments.
+- `concept-card-review-ledger.html` — **Review Ledger**: table-style layout for fast scanning; good if the workflow feels spreadsheet-like.

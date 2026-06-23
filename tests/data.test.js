@@ -7,10 +7,13 @@ import {
   exportStoreRows,
   getMemberBalance,
   getMemberStatus,
+  getYearRevenue,
   guessColumnMap,
   importMembersFromRecords,
   importPaymentsFromRecords,
   normalizeSquarePayment,
+  normalizeWorldpayPayment,
+  nextUnpaidTuitionMonth,
   pendingSquarePaymentsForMember,
   parseCsv,
   removePayment,
@@ -225,6 +228,48 @@ test("dashboard summary separates late money, at-risk current month, and healthy
   assert.equal(summary.delinquentMembers, 1);
 });
 
+test("one-off Square payments count as revenue without marking tuition paid", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-06-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  let store = addPayment(imported.store, {
+    memberId: member.id,
+    month: "2026-06",
+    amount: 45,
+    paidAt: "2026-06-12",
+    source: "square",
+    category: "one-off",
+    squarePaymentId: "sq-one-off"
+  });
+
+  assert.equal(getMemberStatus(member, store.payments, new Date("2026-06-18")).level, "watch");
+  assert.deepEqual(getMemberBalance(member, store.payments, new Date("2026-06-18")).unpaidMonths, ["2026-06"]);
+
+  const summary = getDashboardSummary(store, new Date("2026-06-18"));
+  assert.equal(summary.paidThisMonth, 45);
+  assert.equal(summary.paidThisYear, 45);
+
+  const report = getYearRevenue(store, "2026");
+  assert.equal(report.totalRevenue, 45);
+  assert.equal(report.byMember[0].total, 45);
+
+  store = addPayment(store, {
+    memberId: member.id,
+    month: "2026-06",
+    amount: 120,
+    paidAt: "2026-06-15",
+    source: "square",
+    category: "tuition",
+    squarePaymentId: "sq-tuition"
+  });
+
+  assert.equal(getMemberStatus(member, store.payments, new Date("2026-06-18")).level, "paid");
+  assert.equal(getDashboardSummary(store, new Date("2026-06-18")).paidThisMonth, 165);
+});
+
 test("normalizes Square payments and suggests a member match", () => {
   const memberImport = importMembersFromRecords(
     [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
@@ -309,4 +354,46 @@ test("pending Square payments can be attached to a member without becoming real 
 
   assert.equal(memberImport.store.payments.length, 0);
   assert.equal(pendingSquarePaymentsForMember([squarePayment], member).length, 1);
+});
+
+test("normalizes Worldpay POS transactions for manual review", () => {
+  const memberImport = importMembersFromRecords(
+    [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
+    { name: "Name", email: "Email", monthlyAmount: "Amount" },
+    createEmptyStore()
+  );
+
+  const worldpayPayment = normalizeWorldpayPayment(
+    {
+      transactionId: "wp_123",
+      amount: { value: "120.00", currency: "USD" },
+      transactionDate: "2026-06-12T16:00:00Z",
+      customerEmail: "sam@example.com",
+      terminalId: "TERM-7",
+      batchId: "B-42",
+      status: "approved"
+    },
+    memberImport.store.members
+  );
+
+  assert.equal(worldpayPayment.provider, "worldpay");
+  assert.equal(worldpayPayment.id, "wp_123");
+  assert.equal(worldpayPayment.amountCents, 12000);
+  assert.equal(worldpayPayment.paidAt, "2026-06-12");
+  assert.equal(worldpayPayment.paymentMonth, "2026-06");
+  assert.equal(worldpayPayment.status, "pending");
+  assert.equal(worldpayPayment.suggestedMemberId, memberImport.store.members[0].id);
+  assert.match(worldpayPayment.note, /Terminal TERM-7/);
+});
+
+test("finds the next unpaid tuition month for card payment review", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const store = addPayment(imported.store, { memberId: member.id, month: "2026-04", amount: 120 });
+
+  assert.equal(nextUnpaidTuitionMonth(member, store.payments, new Date("2026-06-12")), "2026-05");
 });

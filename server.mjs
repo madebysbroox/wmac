@@ -6,10 +6,11 @@ import { createServer } from "node:http";
 import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  createEmptySquareStore,
+  createEmptyProviderPaymentStore,
   normalizeSquarePayment,
-  updateSquarePaymentStatus,
-  upsertSquarePayment
+  normalizeWorldpayPayment,
+  updateProviderPaymentStatus,
+  upsertProviderPayment
 } from "./src/data.js";
 import { resolveStaticFilePath } from "./src/static-path.js";
 
@@ -18,6 +19,7 @@ const host = process.env.HOST || "127.0.0.1";
 const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(root, "data");
 const squareStorePath = join(dataDir, "square-payments.json");
+const worldpayStorePath = join(dataDir, "worldpay-payments.json");
 const maxPortAttempts = 20;
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -31,8 +33,9 @@ const mimeTypes = {
 };
 
 const server = createServer(async (request, response) => {
-  if (new URL(request.url, `http://localhost:${preferredPort}`).pathname.startsWith("/api/square/")) {
-    await handleSquareApi(request, response);
+  const apiPath = new URL(request.url, `http://localhost:${preferredPort}`).pathname;
+  if (apiPath.startsWith("/api/square/") || apiPath.startsWith("/api/worldpay/")) {
+    await handlePaymentProviderApi(request, response);
     return;
   }
 
@@ -111,44 +114,73 @@ function notFoundMessage(requestedPath, filePath) {
   ].join("\n");
 }
 
-async function handleSquareApi(request, response) {
+async function handlePaymentProviderApi(request, response) {
   const url = new URL(request.url, `http://localhost:${preferredPort}`);
+  const provider = url.pathname.startsWith("/api/worldpay/") ? "worldpay" : "square";
   try {
-    if (request.method === "GET" && url.pathname === "/api/square/payments") {
-      const store = await readSquareStore();
+    if (request.method === "GET" && url.pathname === `/api/${provider}/payments`) {
+      const store = await readProviderStore(provider);
       json(response, 200, {
-        configured: squareConfigured(),
+        configured: providerConfigured(provider),
         payments: store.payments,
         updatedAt: store.updatedAt
       });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/api/square/payments/status") {
+    if (request.method === "POST" && url.pathname === `/api/${provider}/payments/status`) {
       const body = await readJsonBody(request);
-      const store = await readSquareStore();
-      const patch = {
-        status: body.status,
-        memberId: body.memberId || "",
-        suggestedMemberId: body.suggestedMemberId || body.memberId || "",
-        paymentMonth: body.paymentMonth || "",
-        approvedAt: body.status === "approved" ? new Date().toISOString() : "",
-        approvedBy: body.status === "approved" ? "local-review" : "",
-        ignoredAt: body.status === "ignored" ? new Date().toISOString() : "",
-        ignoredReason: body.ignoredReason || ""
-      };
-      const result = updateSquarePaymentStatus(store, body.id, patch);
+      const store = await readProviderStore(provider);
+      const patch = {};
+      if ("status" in body) {
+        patch.status = body.status;
+      }
+      if ("memberId" in body) {
+        patch.memberId = body.memberId || "";
+      }
+      if ("suggestedMemberId" in body || "memberId" in body) {
+        patch.suggestedMemberId = body.suggestedMemberId || body.memberId || "";
+      }
+      if ("paymentMonth" in body) {
+        patch.paymentMonth = body.paymentMonth || "";
+      }
+      if ("paymentCategory" in body) {
+        patch.paymentCategory = body.paymentCategory || "";
+      }
+      if ("reviewNote" in body) {
+        patch.reviewNote = body.reviewNote || "";
+      }
+      if (body.status === "approved") {
+        patch.approvedAt = new Date().toISOString();
+        patch.approvedBy = "local-review";
+      }
+      if (body.status === "ignored") {
+        patch.ignoredAt = new Date().toISOString();
+        patch.ignoredReason = body.ignoredReason || "";
+      }
+      const result = updateProviderPaymentStatus(store, body.id, patch);
       if (!result.found) {
-        json(response, 404, { error: "Square payment not found." });
+        json(response, 404, { error: `${providerLabel(provider)} payment not found.` });
         return;
       }
-      await writeSquareStore(result.store);
-      json(response, 200, { payment: result.store.payments.find((payment) => payment.id === body.id || payment.squarePaymentId === body.id) });
+      await writeProviderStore(provider, result.store);
+      json(response, 200, {
+        payment: result.store.payments.find((payment) =>
+          payment.id === body.id ||
+          payment.squarePaymentId === body.id ||
+          payment.worldpayPaymentId === body.id ||
+          payment.providerPaymentId === body.id
+        )
+      });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/api/square/sync") {
-      await syncSquarePayments(response);
+    if (request.method === "POST" && url.pathname === `/api/${provider}/sync`) {
+      if (provider === "worldpay") {
+        await syncWorldpayPayments(response);
+      } else {
+        await syncSquarePayments(response);
+      }
       return;
     }
 
@@ -157,9 +189,9 @@ async function handleSquareApi(request, response) {
       return;
     }
 
-    json(response, 404, { error: "Square API route not found." });
+    json(response, 404, { error: `${providerLabel(provider)} API route not found.` });
   } catch (error) {
-    json(response, 500, { error: error.message || "Square API error." });
+    json(response, 500, { error: error.message || `${providerLabel(provider)} API error.` });
   }
 }
 
@@ -177,8 +209,8 @@ async function receiveSquareWebhook(request, response) {
   }
 
   const squarePayment = normalizeSquarePayment(event);
-  const store = upsertSquarePayment(await readSquareStore(), squarePayment);
-  await writeSquareStore(store);
+  const store = upsertProviderPayment(await readProviderStore("square"), squarePayment);
+  await writeProviderStore("square", store);
   json(response, 200, { received: true, staged: true, id: squarePayment.id });
 }
 
@@ -219,11 +251,11 @@ async function syncSquarePayments(response) {
     return;
   }
 
-  let store = await readSquareStore();
+  let store = await readProviderStore("square");
   (body.payments || []).forEach((payment) => {
-    store = upsertSquarePayment(store, normalizeSquarePayment({ payment }));
+    store = upsertProviderPayment(store, normalizeSquarePayment({ payment }));
   });
-  await writeSquareStore(store);
+  await writeProviderStore("square", store);
   json(response, 200, { imported: body.payments?.length || 0, payments: store.payments, configured: true });
 }
 
@@ -241,10 +273,10 @@ async function syncSquareRelayPayments(response) {
     return;
   }
 
-  let store = await readSquareStore();
+  let store = await readProviderStore("square");
   const payments = body.payments || [];
   for (const payment of payments) {
-    store = upsertSquarePayment(store, normalizeSquarePayment({
+    store = upsertProviderPayment(store, normalizeSquarePayment({
       ...payment,
       sourceEventType: payment.eventType,
       squarePaymentId: payment.squarePaymentId || payment.paymentId,
@@ -256,7 +288,7 @@ async function syncSquareRelayPayments(response) {
       status: payment.localStatus || "pending"
     }));
   }
-  await writeSquareStore(store);
+  await writeProviderStore("square", store);
 
   const delivered = [];
   for (const payment of payments) {
@@ -288,22 +320,85 @@ async function syncSquareRelayPayments(response) {
   });
 }
 
-async function readSquareStore() {
+async function syncWorldpayPayments(response) {
+  if (worldpayRelayConfigured()) {
+    await syncWorldpayRelayPayments(response);
+    return;
+  }
+
+  const url = process.env.WORLDPAY_TRANSACTIONS_URL;
+  if (!url) {
+    json(response, 501, {
+      error: "Worldpay sync is not configured yet.",
+      nextStep: "Set WORLDPAY_RELAY_BASE_URL and WORLDPAY_RELAY_SYNC_TOKEN, or set WORLDPAY_TRANSACTIONS_URL with WORLDPAY_ACCESS_TOKEN/WORLDPAY_BASIC_AUTH for the POS transaction export endpoint."
+    });
+    return;
+  }
+
+  const headers = worldpayAuthHeaders();
+  const worldpayResponse = await fetch(url, { headers });
+  const body = await worldpayResponse.json();
+  if (!worldpayResponse.ok) {
+    json(response, worldpayResponse.status, { error: "Worldpay sync failed.", details: body });
+    return;
+  }
+
+  const payments = extractPaymentList(body);
+  let store = await readProviderStore("worldpay");
+  for (const payment of payments) {
+    store = upsertProviderPayment(store, normalizeWorldpayPayment(payment));
+  }
+  await writeProviderStore("worldpay", store);
+  json(response, 200, { imported: payments.length, payments: store.payments, configured: true, source: "direct" });
+}
+
+async function syncWorldpayRelayPayments(response) {
+  const relayBaseUrl = process.env.WORLDPAY_RELAY_BASE_URL.replace(/\/$/, "");
+  const token = process.env.WORLDPAY_RELAY_SYNC_TOKEN;
+  const relayResponse = await fetch(`${relayBaseUrl}/payments`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  const body = await relayResponse.json();
+  if (!relayResponse.ok) {
+    json(response, relayResponse.status, { error: "Worldpay relay sync failed.", details: body });
+    return;
+  }
+
+  const payments = extractPaymentList(body);
+  let store = await readProviderStore("worldpay");
+  for (const payment of payments) {
+    store = upsertProviderPayment(store, normalizeWorldpayPayment({
+      ...payment,
+      localStatus: payment.localStatus || payment.local_status || "pending"
+    }));
+  }
+  await writeProviderStore("worldpay", store);
+  json(response, 200, { imported: payments.length, payments: store.payments, configured: true, source: "relay" });
+}
+
+async function readProviderStore(provider) {
+  const storePath = providerStorePath(provider);
   try {
-    const text = await readFile(squareStorePath, "utf8");
+    const text = await readFile(storePath, "utf8");
     const parsed = JSON.parse(text);
     if (Array.isArray(parsed.payments)) {
       return parsed;
     }
   } catch {
-    return createEmptySquareStore();
+    return createEmptyProviderPaymentStore();
   }
-  return createEmptySquareStore();
+  return createEmptyProviderPaymentStore();
 }
 
-async function writeSquareStore(store) {
+async function writeProviderStore(provider, store) {
   await mkdir(dataDir, { recursive: true });
-  await writeFile(squareStorePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  await writeFile(providerStorePath(provider), `${JSON.stringify(store, null, 2)}\n`, "utf8");
+}
+
+function providerStorePath(provider) {
+  return provider === "worldpay" ? worldpayStorePath : squareStorePath;
 }
 
 async function readRawBody(request) {
@@ -334,12 +429,48 @@ function validateSquareWebhook(request, rawBody) {
   return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
-function squareConfigured() {
+function providerConfigured(provider) {
+  if (provider === "worldpay") {
+    return Boolean(worldpayRelayConfigured() || process.env.WORLDPAY_TRANSACTIONS_URL);
+  }
   return Boolean(squareRelayConfigured() || process.env.SQUARE_ACCESS_TOKEN || process.env.SQUARE_WEBHOOK_SIGNATURE_KEY);
 }
 
 function squareRelayConfigured() {
   return Boolean(process.env.SQUARE_RELAY_BASE_URL && process.env.SQUARE_RELAY_SYNC_TOKEN);
+}
+
+function worldpayRelayConfigured() {
+  return Boolean(process.env.WORLDPAY_RELAY_BASE_URL && process.env.WORLDPAY_RELAY_SYNC_TOKEN);
+}
+
+function worldpayAuthHeaders() {
+  const headers = {};
+  if (process.env.WORLDPAY_ACCESS_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.WORLDPAY_ACCESS_TOKEN}`;
+  } else if (process.env.WORLDPAY_BASIC_AUTH) {
+    headers.Authorization = `Basic ${Buffer.from(process.env.WORLDPAY_BASIC_AUTH).toString("base64")}`;
+  }
+  if (process.env.WORLDPAY_ACCEPT) {
+    headers.Accept = process.env.WORLDPAY_ACCEPT;
+  }
+  return headers;
+}
+
+function extractPaymentList(body) {
+  if (Array.isArray(body)) {
+    return body;
+  }
+  for (const key of ["payments", "transactions", "items", "data", "results"]) {
+    if (Array.isArray(body?.[key])) {
+      return body[key];
+    }
+  }
+  return body ? [body] : [];
+}
+
+function providerLabel(provider) {
+  return provider === "worldpay" ? "Worldpay" : "Square";
 }
 
 function json(response, statusCode, body) {

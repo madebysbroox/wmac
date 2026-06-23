@@ -25,7 +25,7 @@
         <span lang="ko">회원</span><small lang="en">Members</small>
       </button>
       <button id="squareTab" class="page-tab" type="button">
-        <span lang="ko">스퀘어</span><small lang="en">Square</small>
+        <span lang="ko">카드 결제</span><small lang="en">Card Payments</small>
       </button>
       <div id="updatePanel" class="update-panel nav-update-panel hidden">
         <h3>앱 업데이트 <small lang="en">App Updates</small></h3>
@@ -166,8 +166,8 @@
         <div id="squareView" class="square-view hidden">
           <div class="dashboard-header square-header">
             <div>
-              <h2>스퀘어 결제 확인 <small lang="en">Square Payment Review</small></h2>
-              <p id="squareStatusLine">스퀘어 연결 상태 확인 중 · Checking Square connection</p>
+              <h2>카드 결제 확인 <small lang="en">Card Payment Review</small></h2>
+              <p id="squareStatusLine">Square / Worldpay 연결 상태 확인 중 · Checking card payment connections</p>
             </div>
             <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
           </div>
@@ -175,15 +175,30 @@
           <div class="square-toolbar">
             <div>
               <h3>승인 대기 결제 <small lang="en">Payments Waiting for Approval</small></h3>
-              <p>스퀘어에서 들어온 결제를 확인한 뒤 회원 기록에 넣으세요. · Review Square payments before they update member records.</p>
+              <p>Square 또는 Worldpay에서 들어온 결제를 확인하고 회원/월/메모를 선택한 뒤 회원 기록에 넣으세요. · Review card payments before they update member records.</p>
             </div>
-            <button id="syncSquareButton" class="button primary bi" type="button">
-              <span lang="ko">스퀘어에서 가져오기</span><small lang="en">Sync Square</small>
-            </button>
+            <div class="square-toolbar-actions">
+              <button id="syncSquareButton" class="button primary bi" type="button">
+                <span lang="ko">스퀘어에서 가져오기</span><small lang="en">Sync Square</small>
+              </button>
+              <button id="syncWorldpayButton" class="button primary bi" type="button">
+                <span lang="ko">Worldpay에서 가져오기</span><small lang="en">Sync Worldpay</small>
+              </button>
+            </div>
           </div>
 
           <div id="squareSummary" class="metric-grid square-metrics"></div>
-          <div id="squarePayments" class="square-payments"></div>
+
+          <div class="review-shell">
+            <div class="review-queue">
+              <div class="review-queue-head">
+                <h3>검토 대기 목록 <small lang="en">Review Queue</small></h3>
+                <p id="squareQueueHelp">최신순 · Newest first</p>
+              </div>
+              <div id="squarePayments" class="square-payments"></div>
+            </div>
+            <div id="squareDetail" class="review-detail"></div>
+          </div>
         </div>
 
         <div id="rosterView" class="roster-view hidden">

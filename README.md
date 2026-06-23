@@ -34,15 +34,18 @@ The everyday workflow needs only the left side of the screen:
 
 The home screen (처음 화면) shows who is paid, who needs attention, and who is behind — click any card to see that list of members.
 
-## Square Payment Review · 스퀘어 결제 확인
+## Card Payment Review · 카드 결제 확인
 
-The **스퀘어 (Square)** tab is a manual staging area for payments reported by Square. Square-reported payments stay separate from member payment history until someone reviews and approves them.
+The **카드 결제 (Card Payments)** tab is a manual staging area for payments reported by Square or Worldpay POS. Provider-reported payments stay separate from member payment history until someone reviews and approves them.
 
-- Pending Square payments show the amount, date, receipt details, suggested member match, and payment month.
+- Pending card payments show the amount, date, receipt/terminal details, suggested member match, payment month, and a review note field.
 - If the suggested match is wrong or missing, choose the correct member before approving.
-- **승인 (Approve)** records that payment in the normal member payment history and marks the Square item approved, so it is not applied twice.
-- **무시 (Ignore)** keeps the Square item out of member records.
-- Members with a staged Square payment show a short **대기 (Pending)** status until the payment is approved or ignored.
+- **다음 미납 월 (Next Owed Month)** moves the payment to the oldest month that member still owes; if nothing is overdue, it uses the current/payment month.
+- Add a note such as `gear`, `certification`, or `special payment` before approving; the note is saved with the member payment.
+- **회비 승인 (Tuition)** records that payment as the member's monthly tuition and marks the provider item approved, so it is not applied twice.
+- **기타 매출 (Other Sale)** records that payment as one-off member revenue for the month. It is included in monthly and year-end revenue totals, but it does not mark that month's tuition paid.
+- **무시 (Ignore)** keeps the provider item out of member records.
+- Members with a staged Square/Worldpay payment show a short **대기 (Pending)** status until the payment is approved or ignored.
 
 Square authentication is intentionally separate from the daily workflow. For the recommended AWS relay, start the local server with:
 
@@ -69,6 +72,24 @@ SQUARE_WEBHOOK_NOTIFICATION_URL=https://your-public-url.example.com/api/square/w
 
 Square requires a public HTTPS webhook URL. The recommended setup is the separate `wmac-square-webhook-relay` AWS project, which receives Square webhooks and lets this local app securely pull staged payments. The local app stores staged payment data in `data/square-payments.json`, which is ignored by Git so the review copy stays local.
 
+Worldpay can be configured the same way if a relay/export endpoint is available:
+
+```bash
+WORLDPAY_RELAY_BASE_URL=https://YOUR_WORLDPAY_RELAY.example.com \
+WORLDPAY_RELAY_SYNC_TOKEN=your-long-local-sync-token \
+npm start
+```
+
+Or point the app at a JSON transaction export endpoint:
+
+```bash
+WORLDPAY_TRANSACTIONS_URL=https://YOUR_WORLDPAY_EXPORT_ENDPOINT \
+WORLDPAY_ACCESS_TOKEN=... \
+npm start
+```
+
+The Worldpay sync accepts common JSON shapes such as `payments`, `transactions`, `items`, `data`, or `results`, normalizes them into the same manual review queue, and stores the local review copy in `data/worldpay-payments.json`.
+
 ## Files & Backup · 파일 · 백업
 
 These less-frequent actions live at the bottom of the left sidebar:
@@ -81,7 +102,7 @@ Both import dialogs show a reassuring note explaining these rules before anythin
 - **연말 보고서 (Year-End Tax Report)** — pick a year (last year or this year) and get a printable report with total revenue, revenue by month, and revenue by member. Totals are grouped by the month each payment was for.
 - **새해 회원 명단 저장 (New Year Roster CSV)** — download a clean CSV of active members (no payment history, inactive members left out), named for the coming year and ready to re-import as a fresh start.
 
-In the installed desktop app, **앱 업데이트 (App Updates)** stays at the bottom of the main left sidebar so it is available from Home, Members, or Square.
+In the installed desktop app, **앱 업데이트 (App Updates)** stays at the bottom of the main left sidebar so it is available from Home, Members, or Card Payments.
 
 The app saves the working data in the browser on the same computer, so the member CSV does not need to be imported again every time.
 
