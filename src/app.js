@@ -20,6 +20,7 @@ import {
   upsertMember
 } from "./data.js";
 import {
+  DEFAULT_BROADCAST_TEMPLATE,
   DEFAULT_EMAIL_TEMPLATE,
   FIELD_LABELS,
   MSG,
@@ -34,6 +35,10 @@ import {
 
 const STORAGE_KEY = "master-lee-payment-tracker";
 const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
+const BROADCAST_TEMPLATE_KEY = "master-lee-payment-tracker-broadcast-template";
+// Windows/Outlook truncate very long mailto: links. Past this many characters
+// we steer Master Lee to the "Copy Addresses" button instead of a broken draft.
+const MAILTO_SAFE_LENGTH = 1900;
 
 // ---------------------------------------------------------------------------
 // State and element lookup
@@ -70,7 +75,11 @@ const elements = {};
   "reviewTitle", "reviewHelp", "reviewMonthList", "reviewTotal", "emailSubjectInput",
   "emailBodyInput", "emailPreview", "saveEmailTemplateButton", "resetEmailTemplateButton",
   "generateSelectedInvoiceButton", "openSelectedEmailButton", "cancelPaymentReview",
-  "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton"
+  "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton",
+  "emailAllButton", "broadcastDialog", "broadcastRecipients", "broadcastCount",
+  "broadcastActiveOnly", "broadcastSelectAll", "broadcastClear", "broadcastSubject",
+  "broadcastBody", "saveBroadcastTemplateButton", "resetBroadcastTemplateButton",
+  "cancelBroadcast", "copyBroadcastAddressesButton", "openBroadcastEmailButton"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
@@ -116,6 +125,16 @@ elements.openSelectedEmailButton.addEventListener("click", openSelectedEmail);
 elements.cancelPaymentReview.addEventListener("click", () => elements.paymentReviewDialog.close());
 elements.checkUpdateButton.addEventListener("click", checkForAppUpdate);
 elements.installUpdateButton.addEventListener("click", installAppUpdate);
+elements.emailAllButton.addEventListener("click", openBroadcastDialog);
+elements.broadcastRecipients.addEventListener("change", updateBroadcastCount);
+elements.broadcastActiveOnly.addEventListener("click", () => setBroadcastSelection("active"));
+elements.broadcastSelectAll.addEventListener("click", () => setBroadcastSelection("all"));
+elements.broadcastClear.addEventListener("click", () => setBroadcastSelection("none"));
+elements.saveBroadcastTemplateButton.addEventListener("click", saveBroadcastTemplate);
+elements.resetBroadcastTemplateButton.addEventListener("click", resetBroadcastTemplate);
+elements.copyBroadcastAddressesButton.addEventListener("click", copyBroadcastAddresses);
+elements.openBroadcastEmailButton.addEventListener("click", openBroadcastEmail);
+elements.cancelBroadcast.addEventListener("click", () => elements.broadcastDialog.close());
 
 initAppUpdates();
 render();
@@ -1070,6 +1089,170 @@ function generateInvoice(member, balance) {
   }
   invoiceWindow.document.write(invoiceHtml);
   invoiceWindow.document.close();
+}
+
+// ---------------------------------------------------------------------------
+// All-members email (broadcast)
+// ---------------------------------------------------------------------------
+
+function openBroadcastDialog() {
+  const members = [...state.store.members].sort((a, b) => a.name.localeCompare(b.name));
+  if (members.length === 0) {
+    showToast(MSG.broadcastNoMembers);
+    return;
+  }
+  if (!members.some(hasEmail)) {
+    showToast(MSG.broadcastNoEmails);
+    return;
+  }
+
+  // Everyone is listed. Members who left (inactive) start un-checked so Master
+  // Lee can leave them out, but he can still tick them back on if he wants.
+  elements.broadcastRecipients.innerHTML = members.map(broadcastRecipientMarkup).join("");
+
+  const template = loadBroadcastTemplate();
+  elements.broadcastSubject.value = template.subject;
+  elements.broadcastBody.value = template.body.replace(/\r\n/g, "\n");
+
+  updateBroadcastCount();
+  elements.broadcastDialog.showModal();
+}
+
+function broadcastRecipientMarkup(member) {
+  const name = escapeHtml(member.name);
+  const email = (member.email || "").trim();
+  if (!email) {
+    return `
+      <div class="recipient no-email">
+        <span></span>
+        <span class="who"><strong>${name}</strong><span>이메일 없음 · No email on file</span></span>
+        <span class="recipient-tag none">이메일 없음 · No email</span>
+      </div>
+    `;
+  }
+  const tag = member.inactive ? `<span class="recipient-tag left">그만둔 회원 · Left</span>` : "";
+  return `
+    <label class="recipient">
+      <input type="checkbox" value="${escapeHtml(email)}" ${member.inactive ? "" : "checked"}>
+      <span class="who"><strong>${name}</strong><span>${escapeHtml(email)}</span></span>
+      ${tag}
+    </label>
+  `;
+}
+
+function broadcastCheckboxes() {
+  return Array.from(elements.broadcastRecipients.querySelectorAll("input[type='checkbox']"));
+}
+
+function setBroadcastSelection(mode) {
+  broadcastCheckboxes().forEach((box) => {
+    if (mode === "all") {
+      box.checked = true;
+    } else if (mode === "none") {
+      box.checked = false;
+    } else {
+      // "active" — everyone whose row is not tagged as having left
+      box.checked = !box.closest(".recipient").querySelector(".recipient-tag.left");
+    }
+  });
+  updateBroadcastCount();
+}
+
+function selectedBroadcastEmails() {
+  const seen = new Set();
+  broadcastCheckboxes()
+    .filter((box) => box.checked)
+    .forEach((box) => seen.add(box.value.trim().toLowerCase()));
+  return Array.from(seen);
+}
+
+function updateBroadcastCount() {
+  const total = broadcastCheckboxes().length;
+  const selected = selectedBroadcastEmails().length;
+  elements.broadcastCount.textContent = MSG.broadcastCount(selected, total);
+  elements.openBroadcastEmailButton.disabled = selected === 0;
+  elements.copyBroadcastAddressesButton.disabled = selected === 0;
+}
+
+function loadBroadcastTemplate() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BROADCAST_TEMPLATE_KEY));
+    if (saved?.subject && saved?.body) {
+      return saved;
+    }
+  } catch {
+    return DEFAULT_BROADCAST_TEMPLATE;
+  }
+  return DEFAULT_BROADCAST_TEMPLATE;
+}
+
+function saveBroadcastTemplate() {
+  const template = {
+    subject: elements.broadcastSubject.value,
+    body: elements.broadcastBody.value.replace(/\n/g, "\r\n")
+  };
+  localStorage.setItem(BROADCAST_TEMPLATE_KEY, JSON.stringify(template));
+  showToast(MSG.broadcastTemplateSaved);
+}
+
+function resetBroadcastTemplate() {
+  localStorage.removeItem(BROADCAST_TEMPLATE_KEY);
+  elements.broadcastSubject.value = DEFAULT_BROADCAST_TEMPLATE.subject;
+  elements.broadcastBody.value = DEFAULT_BROADCAST_TEMPLATE.body.replace(/\r\n/g, "\n");
+  showToast(MSG.broadcastTemplateReset);
+}
+
+function openBroadcastEmail() {
+  const emails = selectedBroadcastEmails();
+  if (emails.length === 0) {
+    showToast(MSG.broadcastNoRecipients);
+    return;
+  }
+  const subject = elements.broadcastSubject.value;
+  const body = elements.broadcastBody.value.replace(/\n/g, "\r\n");
+  // Members go in BCC so recipients never see each other's address.
+  const href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if (href.length > MAILTO_SAFE_LENGTH) {
+    showToast(MSG.broadcastTooLong);
+    return;
+  }
+  window.location.href = href;
+}
+
+async function copyBroadcastAddresses() {
+  const emails = selectedBroadcastEmails();
+  if (emails.length === 0) {
+    showToast(MSG.broadcastNoRecipients);
+    return;
+  }
+  const text = emails.join(", ");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(MSG.broadcastCopied(emails.length));
+  } catch {
+    showToast(legacyCopy(text) ? MSG.broadcastCopied(emails.length) : MSG.broadcastCopyFailed);
+  }
+}
+
+function legacyCopy(text) {
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function hasEmail(member) {
+  return Boolean((member.email || "").trim());
 }
 
 // ---------------------------------------------------------------------------

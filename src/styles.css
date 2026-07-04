@@ -1,26 +1,42 @@
 /* ------------------------------------------------------------------------
-   Theme
+   Theme — "Heritage Dojo"
+   Deep navy + warm bronze/gold on an ivory canvas. Serif display headings.
+   Large text and big targets kept for the elderly primary user.
 ------------------------------------------------------------------------- */
 
 :root {
   color-scheme: light;
-  --bg: #f4f1ea;
-  --panel: #ffffff;
-  --ink: #1f2933;
-  --muted: #637083;
-  --line: #d9ded6;
+  --bg: #f1ede3;
+  --panel: #fffdf9;
+  --panel-2: #f7f2e8;
+  --ink: #22262e;
+  --muted: #76808f;
+  --line: #e7e0d1;
+  --line-strong: #d8cfba;
+
+  --navy: #16233b;
+  --navy-2: #23375c;
+  --navy-3: #2c4368;
+
+  --gold: #b07d2b;
+  --gold-2: #caa052;
+  --gold-deep: #946618;
+  --gold-soft: #f6ecd6;
+
   --green: #2f7d4f;
-  --green-soft: #e4f3e9;
-  --amber: #a16012;
-  --amber-soft: #fff0cf;
-  --red: #a43d35;
-  --red-soft: #fde7e4;
+  --green-soft: #e6f2ea;
+  --amber: #a5701a;
+  --amber-soft: #f8edd6;
+  --red: #a83f37;
+  --red-soft: #f7e4e1;
   --blue: #22577a;
   --blue-soft: #e1edf3;
-  --gold: #b88924;
-  --gold-soft: #fff4d7;
-  --shadow: 0 12px 32px rgba(31, 41, 51, 0.08);
-  --strong-shadow: 0 18px 48px rgba(31, 41, 51, 0.12);
+
+  --r: 14px;
+  --r-sm: 11px;
+  --shadow: 0 12px 32px rgba(22, 35, 59, 0.09);
+  --strong-shadow: 0 20px 52px rgba(22, 35, 59, 0.14);
+  --serif: Georgia, "Times New Roman", "Batang", "바탕", "Nanum Myeongjo", serif;
 }
 
 * {
@@ -32,8 +48,9 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", Arial, Helvetica, sans-serif;
+  font-family: "Segoe UI", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", Arial, Helvetica, sans-serif;
   font-size: 20px;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -53,16 +70,29 @@ p {
 h1 {
   margin-bottom: 4px;
   font-size: 32px;
+  letter-spacing: -0.3px;
 }
 
 h2 {
   margin-bottom: 8px;
   font-size: 30px;
+  letter-spacing: -0.3px;
 }
 
 h3 {
   margin-bottom: 14px;
   font-size: 22px;
+}
+
+/* Serif display for the big titles — gives the premium, established feel */
+.topbar h1,
+.dashboard-header h2,
+.detail-header h2,
+.roster-header h2,
+.empty-state h2,
+dialog h2 {
+  font-family: var(--serif);
+  font-weight: 700;
 }
 
 /* English sub-labels under/next to the Korean text */
@@ -75,10 +105,11 @@ label small,
   color: var(--muted);
   font-size: 0.62em;
   font-weight: 600;
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
 }
 
 /* ------------------------------------------------------------------------
-   Top bar
+   Top bar — deep navy banner with a framed logo
 ------------------------------------------------------------------------- */
 
 .topbar {
@@ -86,24 +117,46 @@ label small,
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 20px 28px;
-  background: #fcfbf7;
-  border-bottom: 1px solid var(--line);
+  padding: 20px 30px;
+  color: #fff;
+  background: linear-gradient(120deg, var(--navy) 0%, var(--navy-2) 62%, var(--navy-3) 100%);
+  border-bottom: 3px solid var(--gold);
+  box-shadow: 0 10px 30px rgba(22, 35, 59, 0.22);
 }
 
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
 .brand-lockup img {
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
+  padding: 6px;
   object-fit: contain;
+  background: #fffdf9;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
 }
 
-.topbar p,
+.topbar h1 {
+  color: #fff;
+}
+
+.topbar h1 small {
+  color: var(--gold-2);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  font-size: 0.44em;
+}
+
+.topbar p {
+  margin-bottom: 0;
+  color: #aeb9d0;
+  font-size: 15px;
+}
+
 .detail-header p,
 .empty-state p {
   margin-bottom: 0;
@@ -112,24 +165,24 @@ label small,
 
 .page-tabs {
   display: flex;
-  gap: 8px;
-  padding: 14px 20px 0;
+  gap: 10px;
+  padding: 16px 22px 0;
   background: var(--bg);
 }
 
 .page-tab {
   display: grid;
-  min-width: 150px;
-  min-height: 58px;
-  padding: 9px 22px;
+  min-width: 160px;
+  min-height: 60px;
+  padding: 10px 24px;
   border: 1px solid var(--line);
   border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  background: #ece8df;
+  border-radius: 12px 12px 0 0;
+  background: #e8e1d2;
   color: var(--muted);
   cursor: pointer;
   text-align: left;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .page-tab small {
@@ -140,8 +193,8 @@ label small,
 
 .page-tab.active {
   background: var(--panel);
-  color: var(--blue);
-  box-shadow: 0 -8px 24px rgba(31, 41, 51, 0.05);
+  color: var(--navy);
+  box-shadow: inset 0 3px 0 var(--gold), 0 -6px 20px rgba(22, 35, 59, 0.05);
 }
 
 /* ------------------------------------------------------------------------
@@ -152,31 +205,42 @@ label small,
   min-height: 52px;
   padding: 12px 18px;
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   text-align: center;
   font-weight: 700;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.button:hover:not(:disabled):not(.disabled) {
+  transform: translateY(-1px);
 }
 
 .button.primary {
-  background: var(--blue);
+  background: linear-gradient(135deg, var(--navy-2), var(--navy));
   color: #fff;
+  box-shadow: 0 10px 24px rgba(22, 35, 59, 0.26);
 }
 
 .button.secondary {
-  background: var(--blue-soft);
-  border-color: #bdd1dc;
-  color: var(--blue);
+  background: var(--gold-soft);
+  border-color: #e4cf9e;
+  color: var(--gold-deep);
 }
 
 .button.tool {
   display: grid;
   width: 100%;
-  background: #f2f4f7;
+  background: var(--panel-2);
   border-color: var(--line);
   color: var(--ink);
   justify-items: start;
   text-align: left;
+}
+
+.button.tool:hover:not(:disabled) {
+  border-color: var(--gold-2);
+  background: #f4ecdb;
 }
 
 .button:disabled,
@@ -220,7 +284,7 @@ a.button {
 .button.bi small {
   font-size: 13px;
   font-weight: 600;
-  opacity: 0.75;
+  opacity: 0.78;
 }
 
 /* The big one-click pay button */
@@ -228,9 +292,10 @@ a.button {
   width: 100%;
   min-height: 76px;
   margin-bottom: 26px;
-  background: var(--green);
+  background: linear-gradient(135deg, #35895a, var(--green));
   color: #fff;
   font-size: 24px;
+  box-shadow: 0 14px 30px rgba(47, 125, 79, 0.32);
 }
 
 .button.pay small {
@@ -241,11 +306,20 @@ a.button {
   background: var(--green-soft);
   color: var(--green);
   opacity: 1;
+  box-shadow: none;
 }
 
 .button.pay.undo {
   background: var(--red-soft);
   color: var(--red);
+  box-shadow: none;
+}
+
+/* Bronze accent button — for the broadcast / email-all action */
+.button.gold {
+  background: linear-gradient(135deg, var(--gold-2), var(--gold));
+  color: #241802;
+  box-shadow: 0 10px 24px rgba(176, 125, 43, 0.3);
 }
 
 .text-button {
@@ -253,7 +327,7 @@ a.button {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--blue);
+  color: var(--gold-deep);
   cursor: pointer;
   font-weight: 800;
 }
@@ -285,16 +359,16 @@ a.button {
 .empty-state {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r);
 }
 
 .sidebar {
   padding: 18px;
-  box-shadow: 0 10px 28px rgba(31, 41, 51, 0.06);
+  box-shadow: var(--shadow);
 }
 
 .detail {
-  min-height: calc(100vh - 202px);
+  min-height: calc(100vh - 210px);
   padding: 24px;
   box-shadow: var(--strong-shadow);
 }
@@ -315,9 +389,9 @@ select,
 textarea {
   width: 100%;
   min-height: 54px;
-  padding: 10px 12px;
-  border: 2px solid #c9d0d6;
-  border-radius: 8px;
+  padding: 10px 13px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--r-sm);
   background: #fff;
   color: var(--ink);
 }
@@ -326,7 +400,7 @@ input:focus,
 select:focus,
 textarea:focus,
 button:focus {
-  outline: 3px solid #8ab6d6;
+  outline: 3px solid var(--gold-2);
   outline-offset: 2px;
 }
 
@@ -370,9 +444,9 @@ textarea {
 
 .summary-link {
   min-height: 46px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   text-align: left;
   font-size: 18px;
@@ -403,16 +477,21 @@ textarea {
   width: 100%;
   padding: 14px;
   border: 2px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: #fff;
   color: var(--ink);
   cursor: pointer;
   text-align: left;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.member-item:hover {
+  border-color: var(--gold-2);
 }
 
 .member-item.active {
-  border-color: var(--blue);
-  box-shadow: var(--shadow);
+  border-color: var(--navy-2);
+  box-shadow: inset 4px 0 0 var(--gold), var(--shadow);
 }
 
 .member-item strong {
@@ -454,8 +533,11 @@ textarea {
 
 .file-tools h3 {
   margin-bottom: 4px;
-  font-size: 17px;
-  color: var(--muted);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--gold-deep);
 }
 
 .update-panel {
@@ -479,8 +561,8 @@ textarea {
 
 .status-badge {
   min-width: 150px;
-  padding: 10px 14px;
-  border-radius: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
   text-align: center;
   font-weight: 800;
 }
@@ -527,17 +609,31 @@ textarea {
   gap: 18px;
   align-items: flex-start;
   margin-bottom: 24px;
+  padding: 22px 24px;
+  border-radius: var(--r);
+  color: #fff;
+  background: linear-gradient(120deg, var(--navy) 0%, var(--navy-2) 60%, var(--navy-3) 100%);
+  box-shadow: var(--shadow);
+}
+
+.dashboard-header h2,
+.roster-header h2 {
+  color: #fff;
 }
 
 .dashboard-header img {
-  width: 78px;
-  height: 78px;
+  width: 74px;
+  height: 74px;
+  padding: 6px;
   object-fit: contain;
+  background: #fffdf9;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
 }
 
 .dashboard-header p {
   margin: 0;
-  color: var(--muted);
+  color: var(--gold-2);
   font-weight: 700;
 }
 
@@ -552,19 +648,21 @@ textarea {
   display: grid;
   gap: 18px;
   min-height: 360px;
-  padding: 22px;
-  border-radius: 8px;
+  padding: 24px;
+  border-radius: var(--r);
   border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
 }
 
 .risk-panel {
-  background: #fff8f3;
-  border-color: #edc4bd;
+  background: linear-gradient(180deg, #fdf1ee, var(--panel));
+  border-color: #e6c7c1;
 }
 
 .good-panel {
-  background: #f4fbf6;
-  border-color: #b6d8c1;
+  background: linear-gradient(180deg, #eef6f0, var(--panel));
+  border-color: #c1ddca;
 }
 
 .panel-heading {
@@ -573,7 +671,7 @@ textarea {
   gap: 18px;
   align-items: flex-start;
   padding-bottom: 14px;
-  border-bottom: 1px solid rgba(31, 41, 51, 0.12);
+  border-bottom: 1px solid rgba(22, 35, 59, 0.12);
 }
 
 .panel-heading span {
@@ -608,7 +706,7 @@ textarea {
   align-items: center;
   min-height: 78px;
   padding: 14px 0;
-  border-bottom: 1px solid rgba(31, 41, 51, 0.12);
+  border-bottom: 1px solid rgba(22, 35, 59, 0.12);
 }
 
 .money-line:last-child {
@@ -625,6 +723,7 @@ textarea {
   font-size: 34px;
   line-height: 1;
   white-space: nowrap;
+  font-family: var(--serif);
 }
 
 .primary-risk strong {
@@ -670,17 +769,29 @@ textarea {
   display: grid;
   gap: 8px;
   min-height: 108px;
-  padding: 16px;
+  padding: 18px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r);
+  background: var(--panel);
+  box-shadow: var(--shadow);
   cursor: pointer;
   text-align: left;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
+
+.metric-card:hover {
+  transform: translateY(-2px);
+}
+
+.metric-card.status-paid { border-left: 5px solid var(--green); }
+.metric-card.status-watch { border-left: 5px solid var(--amber); }
+.metric-card.status-late { border-left: 5px solid var(--red); }
 
 .metric-card.neutral {
   cursor: default;
-  background: #f2f4f7;
+  background: var(--panel-2);
   color: var(--ink);
+  box-shadow: none;
 }
 
 .metric-card span {
@@ -700,6 +811,7 @@ textarea {
   align-self: end;
   font-size: 36px;
   line-height: 1;
+  font-family: var(--serif);
 }
 
 .overview-grid {
@@ -710,10 +822,15 @@ textarea {
 
 .overview-panel,
 .invoice-panel {
-  padding: 20px;
+  padding: 22px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: var(--r);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.overview-panel h3 {
+  color: var(--navy-2);
 }
 
 .snapshot-list {
@@ -741,6 +858,10 @@ textarea {
   cursor: pointer;
 }
 
+.snapshot-member:hover strong {
+  color: var(--gold-deep);
+}
+
 .snapshot-list span,
 .snapshot-member span {
   color: var(--muted);
@@ -754,6 +875,23 @@ textarea {
 /* ------------------------------------------------------------------------
    Roster (filtered member list)
 ------------------------------------------------------------------------- */
+
+.roster-header {
+  display: block;
+}
+
+.roster-header .text-button {
+  color: var(--gold-2);
+}
+
+.roster-header h2 {
+  margin-top: 8px;
+}
+
+.roster-header p {
+  color: var(--gold-2);
+  margin: 0;
+}
 
 .roster-members {
   display: grid;
@@ -770,13 +908,19 @@ textarea {
   align-items: center;
   width: 100%;
   min-height: 82px;
-  padding: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: var(--r-sm);
+  background: var(--panel);
   color: var(--ink);
   cursor: pointer;
   text-align: left;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.roster-member:hover {
+  border-color: var(--gold-2);
+  box-shadow: var(--shadow);
 }
 
 .roster-member strong {
@@ -801,20 +945,62 @@ textarea {
 .member-main,
 .edit-panel,
 .empty-state {
-  padding: 22px;
+  padding: 24px;
 }
 
+.edit-panel h3 {
+  color: var(--navy-2);
+}
+
+/* The member header becomes a navy banner that bleeds to the card edges */
 .detail-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  margin: -24px -24px 22px;
+  padding: 26px 24px;
+  border-radius: var(--r) var(--r) 0 0;
+  color: #fff;
+  background: linear-gradient(120deg, var(--navy) 0%, var(--navy-2) 60%, var(--navy-3) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.detail-header::after {
+  content: "武";
+  position: absolute;
+  right: 18px;
+  top: -30px;
+  font-family: var(--serif);
+  font-size: 150px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+
+.detail-header > div {
+  position: relative;
+  z-index: 1;
+}
+
+.detail-header h2 {
+  color: #fff;
+}
+
+.detail-header p {
+  color: #b9c4db;
+}
+
+.detail-header .due-day {
+  color: var(--gold-2);
+  font-weight: 700;
 }
 
 .latest-paid {
   margin: 22px 0;
   padding: 18px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   font-size: 22px;
   font-weight: 800;
 }
@@ -825,7 +1011,7 @@ textarea {
 }
 
 .latest-paid.no-payment {
-  background: #f2f4f7;
+  background: var(--panel-2);
   color: var(--muted);
 }
 
@@ -838,19 +1024,19 @@ textarea {
 
 .month-box {
   min-height: 100px;
-  padding: 12px;
+  padding: 14px;
   border: 2px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
 }
 
 .month-box.paid {
   background: var(--green-soft);
-  border-color: #aad0b9;
+  border-color: #b7d7c3;
 }
 
 .month-box.unpaid {
   background: var(--red-soft);
-  border-color: #efbbb5;
+  border-color: #e5bfb9;
 }
 
 .month-box strong,
@@ -890,7 +1076,8 @@ textarea {
   gap: 16px;
   align-items: center;
   margin-bottom: 22px;
-  background: #f8fafb;
+  background: var(--panel-2);
+  box-shadow: none;
 }
 
 .invoice-panel h3 {
@@ -931,23 +1118,30 @@ dialog {
   max-height: calc(100vh - 32px);
   overflow: auto;
   border: 0;
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: var(--shadow);
+  border-top: 5px solid var(--gold);
+  border-radius: var(--r);
+  padding: 26px;
+  box-shadow: var(--strong-shadow);
+  background: var(--panel);
 }
 
-dialog.review-dialog {
+dialog h2 {
+  color: var(--navy);
+}
+
+dialog.review-dialog,
+dialog.broadcast-dialog {
   width: min(980px, calc(100vw - 30px));
 }
 
 dialog::backdrop {
-  background: rgba(31, 41, 51, 0.35);
+  background: rgba(22, 35, 59, 0.42);
 }
 
 .reassure {
   margin: 12px 0;
   padding: 14px 16px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: var(--green-soft);
   color: var(--green);
   font-size: 17px;
@@ -957,7 +1151,7 @@ dialog::backdrop {
 
 .due-day {
   margin: 6px 0 0;
-  color: var(--blue);
+  color: var(--gold-deep);
   font-weight: 700;
 }
 
@@ -991,7 +1185,7 @@ dialog::backdrop {
   min-height: 70px;
   padding: 12px;
   border: 2px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
 }
 
 .month-choice input {
@@ -1013,8 +1207,9 @@ dialog::backdrop {
 .review-total {
   display: block;
   margin-top: 12px;
-  color: var(--blue);
+  color: var(--navy-2);
   font-size: 22px;
+  font-weight: 800;
 }
 
 .template-help {
@@ -1027,8 +1222,8 @@ dialog::backdrop {
 .template-help code {
   padding: 2px 5px;
   border-radius: 5px;
-  background: #eef1f4;
-  color: var(--ink);
+  background: var(--gold-soft);
+  color: var(--gold-deep);
 }
 
 .template-actions {
@@ -1044,17 +1239,118 @@ dialog::backdrop {
   margin: 0;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8fafb;
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
   color: var(--ink);
   white-space: pre-wrap;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
   font-size: 16px;
   line-height: 1.45;
 }
 
+/* ------------------------------------------------------------------------
+   All-members email (broadcast) dialog
+------------------------------------------------------------------------- */
+
+.broadcast-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 14px;
+}
+
+.broadcast-toolbar .pick {
+  min-height: 44px;
+  padding: 8px 15px;
+  border: 2px solid var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--navy-2);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.broadcast-toolbar .pick:hover {
+  border-color: var(--gold-2);
+  background: var(--gold-soft);
+}
+
+.recipient-count {
+  margin-left: auto;
+  font-weight: 800;
+  color: var(--navy-2);
+}
+
+.recipient-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+}
+
+.recipient {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  cursor: pointer;
+}
+
+.recipient:hover {
+  border-color: var(--gold-2);
+}
+
+.recipient input {
+  width: 24px;
+  min-height: 24px;
+}
+
+.recipient .who strong {
+  display: block;
+  font-size: 18px;
+}
+
+.recipient .who span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.recipient.no-email {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.recipient-tag {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.recipient-tag.left {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.recipient-tag.none {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 menu {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
   padding: 0;
@@ -1078,11 +1374,12 @@ menu {
   bottom: 20px;
   max-width: 480px;
   padding: 16px 18px;
-  border-radius: 8px;
-  background: var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--navy);
   color: #fff;
   font-size: 19px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--strong-shadow);
+  border-left: 5px solid var(--gold);
 }
 
 /* ------------------------------------------------------------------------
@@ -1140,12 +1437,16 @@ menu {
   }
 
   .brand-lockup img {
-    width: 54px;
-    height: 54px;
+    width: 52px;
+    height: 52px;
   }
 
   .dashboard-header,
   .invoice-panel {
+    display: grid;
+  }
+
+  .detail-header {
     display: grid;
   }
 
@@ -1171,5 +1472,14 @@ menu {
 
   .month-strip {
     grid-template-columns: 1fr;
+  }
+
+  .recipient {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .recipient-tag {
+    grid-column: 2;
+    justify-self: start;
   }
 }

@@ -64,7 +64,17 @@ export const MSG = {
   importedPayments: (addedCount, duplicateCount, unmatched) =>
     `결제 ${addedCount}건 추가, 이미 기록된 ${duplicateCount}건 건너뜀 (${unmatched}건 확인 필요). · Added ${addedCount} payments, skipped ${duplicateCount} already recorded, ${unmatched} rows need checking.`,
   paymentSavedFor: (name, month) => `${name} — ${month} 회비를 저장했습니다. · Payment saved.`,
-  paymentRemovedFor: (name, month) => `${name} — ${month} 납부 기록을 삭제했습니다. · Marked unpaid.`
+  paymentRemovedFor: (name, month) => `${name} — ${month} 납부 기록을 삭제했습니다. · Marked unpaid.`,
+  broadcastNoMembers: "회원 명단이 비어 있습니다. 먼저 회원을 추가하세요. · There are no members yet. Add members first.",
+  broadcastNoEmails: "이메일 주소가 있는 회원이 없습니다. 회원 정보에 이메일을 입력하세요. · No members have an email address on file yet.",
+  broadcastNoRecipients: "받는 사람을 한 명 이상 선택하세요. · Please select at least one recipient.",
+  broadcastTooLong:
+    "받는 사람이 너무 많아 메일 프로그램이 한 번에 열지 못할 수 있습니다. ‘주소 복사’를 눌러 붙여넣으세요. · That is a lot of recipients for one email. Use “Copy Addresses” and paste them into the BCC line instead.",
+  broadcastTemplateSaved: "이메일 문구가 저장되었습니다. · Announcement wording saved.",
+  broadcastTemplateReset: "기본 이메일 문구로 되돌렸습니다. · Restored the default announcement wording.",
+  broadcastCopied: (count) => `이메일 주소 ${count}개를 복사했습니다. · Copied ${count} email address${count === 1 ? "" : "es"}.`,
+  broadcastCopyFailed: "주소를 복사하지 못했습니다. · Could not copy the addresses.",
+  broadcastCount: (selected, total) => `${selected}명 선택 · ${selected} of ${total} selected`
 };
 
 // "완납 · Paid up" — for places that need plain text in both languages.
@@ -108,6 +118,24 @@ export function formatMonthBi(month) {
 }
 
 export const MASTER_LEE_PHONE = "(540) 347-7266";
+
+// A friendly, general announcement sent to every chosen member at once.
+// This goes out as a single BCC email, so it stays the same for everyone
+// (no per-member placeholders here — Master Lee just writes the notice).
+export const DEFAULT_BROADCAST_TEMPLATE = {
+  subject: "World Martial Arts Center — Announcement",
+  body: [
+    "Hello World Martial Arts Center families,",
+    "",
+    "[ Write your announcement here — schedule changes, testing dates, events, holidays, and so on. ]",
+    "",
+    "Thank you, and see you at the dojang!",
+    "",
+    "Master Lee",
+    "World Martial Arts Center",
+    MASTER_LEE_PHONE
+  ].join("\r\n")
+};
 
 export const DEFAULT_EMAIL_TEMPLATE = {
   subject: "World Martial Arts Center Payment Reminder — {{memberName}}",

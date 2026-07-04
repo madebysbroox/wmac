@@ -46,6 +46,13 @@
         <div id="memberList" class="member-list" role="list"></div>
 
         <div class="file-tools">
+          <h3>회원 연락 <small lang="en">Member Outreach</small></h3>
+          <button id="emailAllButton" class="button gold full bi" type="button">
+            <span lang="ko">전체 회원 이메일 보내기</span><small lang="en">Email All Members</small>
+          </button>
+        </div>
+
+        <div class="file-tools">
           <h3>파일 · 백업 <small lang="en">Files &amp; Backup</small></h3>
           <label class="button tool bi" for="memberCsv">
             <span lang="ko">회원 명단 가져오기</span><small lang="en">Import Members CSV</small>
@@ -270,6 +277,44 @@
         <button id="yearLastButton" class="button primary bi" type="button"></button>
         <button id="yearThisButton" class="button secondary bi" type="button"></button>
         <button id="cancelYearDialog" class="button secondary" type="button">취소 · Cancel</button>
+      </menu>
+    </dialog>
+
+    <dialog id="broadcastDialog" class="broadcast-dialog">
+      <h2>전체 회원 이메일 <small lang="en">Email All Members</small></h2>
+      <p class="dialog-help">보낼 회원을 고르세요. 그만둔 회원은 체크를 해제하면 됩니다. 모두 숨은 참조(BCC)로 보내져 서로의 주소가 보이지 않습니다.<br><span lang="en">Choose who to email. Un-check anyone who has left. Everyone is added as BCC, so members never see each other’s address.</span></p>
+
+      <section class="review-section">
+        <h3>받는 사람 <small lang="en">Recipients</small></h3>
+        <div class="broadcast-toolbar">
+          <button id="broadcastActiveOnly" class="pick" type="button">활동 회원만 · Active only</button>
+          <button id="broadcastSelectAll" class="pick" type="button">모두 선택 · Select all</button>
+          <button id="broadcastClear" class="pick" type="button">모두 해제 · Clear</button>
+          <span id="broadcastCount" class="recipient-count"></span>
+        </div>
+        <div id="broadcastRecipients" class="recipient-list"></div>
+      </section>
+
+      <section class="review-section email-editor">
+        <h3>이메일 문구 <small lang="en">Message</small></h3>
+        <div class="form-row">
+          <label for="broadcastSubject">제목 <small lang="en">Subject</small></label>
+          <input id="broadcastSubject">
+        </div>
+        <div class="form-row">
+          <label for="broadcastBody">내용 <small lang="en">Message</small></label>
+          <textarea id="broadcastBody" rows="10"></textarea>
+        </div>
+        <div class="template-actions">
+          <button id="saveBroadcastTemplateButton" class="button secondary" type="button">이 문구 저장 · Save Wording</button>
+          <button id="resetBroadcastTemplateButton" class="button secondary" type="button">기본 문구 · Default</button>
+        </div>
+      </section>
+
+      <menu>
+        <button id="cancelBroadcast" class="button secondary" type="button">닫기 · Close</button>
+        <button id="copyBroadcastAddressesButton" class="button secondary" type="button">주소 복사 · Copy Addresses</button>
+        <button id="openBroadcastEmailButton" class="button gold" type="button">이메일 열기 · Open Email</button>
       </menu>
     </dialog>
 
