@@ -945,6 +945,10 @@ dialog.review-dialog {
   width: min(980px, calc(100vw - 30px));
 }
 
+dialog.group-email-dialog {
+  width: min(760px, calc(100vw - 30px));
+}
+
 dialog::backdrop {
   background: rgba(31, 41, 51, 0.35);
 }
@@ -981,6 +985,50 @@ dialog::backdrop {
   margin: 18px 0;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+
+.group-email-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.group-email-members {
+  display: grid;
+  gap: 10px;
+  max-height: 48vh;
+  overflow: auto;
+  padding: 4px 4px 4px 0;
+}
+
+.group-email-member {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.group-email-member input {
+  width: 24px;
+  min-height: 24px;
+}
+
+.group-email-member strong,
+.group-email-member small {
+  display: block;
+}
+
+.group-email-member small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 15px;
+  word-break: break-word;
 }
 
 .month-choice-list {
@@ -1896,7 +1944,7 @@ dialog::backdrop {
   font-weight: 900;
 }
 
-.provider-worldpay {
+.provider-worldbankcard {
   color: #3a4f9f;
 }
 

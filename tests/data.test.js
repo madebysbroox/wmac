@@ -12,7 +12,7 @@ import {
   importMembersFromRecords,
   importPaymentsFromRecords,
   normalizeSquarePayment,
-  normalizeWorldpayPayment,
+  normalizeWorldBankcardPayment,
   nextUnpaidTuitionMonth,
   pendingSquarePaymentsForMember,
   parseCsv,
@@ -356,16 +356,16 @@ test("pending Square payments can be attached to a member without becoming real 
   assert.equal(pendingSquarePaymentsForMember([squarePayment], member).length, 1);
 });
 
-test("normalizes Worldpay POS transactions for manual review", () => {
+test("normalizes World Bankcard POS transactions for manual review", () => {
   const memberImport = importMembersFromRecords(
     [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
     { name: "Name", email: "Email", monthlyAmount: "Amount" },
     createEmptyStore()
   );
 
-  const worldpayPayment = normalizeWorldpayPayment(
+  const worldbankcardPayment = normalizeWorldBankcardPayment(
     {
-      transactionId: "wp_123",
+      transactionId: "wbc_123",
       amount: { value: "120.00", currency: "USD" },
       transactionDate: "2026-06-12T16:00:00Z",
       customerEmail: "sam@example.com",
@@ -376,14 +376,14 @@ test("normalizes Worldpay POS transactions for manual review", () => {
     memberImport.store.members
   );
 
-  assert.equal(worldpayPayment.provider, "worldpay");
-  assert.equal(worldpayPayment.id, "wp_123");
-  assert.equal(worldpayPayment.amountCents, 12000);
-  assert.equal(worldpayPayment.paidAt, "2026-06-12");
-  assert.equal(worldpayPayment.paymentMonth, "2026-06");
-  assert.equal(worldpayPayment.status, "pending");
-  assert.equal(worldpayPayment.suggestedMemberId, memberImport.store.members[0].id);
-  assert.match(worldpayPayment.note, /Terminal TERM-7/);
+  assert.equal(worldbankcardPayment.provider, "worldbankcard");
+  assert.equal(worldbankcardPayment.id, "wbc_123");
+  assert.equal(worldbankcardPayment.amountCents, 12000);
+  assert.equal(worldbankcardPayment.paidAt, "2026-06-12");
+  assert.equal(worldbankcardPayment.paymentMonth, "2026-06");
+  assert.equal(worldbankcardPayment.status, "pending");
+  assert.equal(worldbankcardPayment.suggestedMemberId, memberImport.store.members[0].id);
+  assert.match(worldbankcardPayment.note, /Terminal TERM-7/);
 });
 
 test("finds the next unpaid tuition month for card payment review", () => {

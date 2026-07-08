@@ -55,7 +55,7 @@ const state = {
   selectedStagedId: "",
   paymentProviders: {
     square: { configured: false, error: "" },
-    worldpay: { configured: false, error: "" }
+    worldbankcard: { configured: false, error: "" }
   }
 };
 
@@ -68,7 +68,7 @@ const elements = {};
   "dashboardMonthLabel", "dashboardDelinquentCount", "dashboardPastDue", "dashboardTenDaysLate",
   "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
   "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "squareView", "squareStatusLine",
-  "syncSquareButton", "syncWorldpayButton", "squareSummary", "squarePayments",
+  "syncSquareButton", "syncWorldBankcardButton", "squareSummary", "squarePayments",
   "squareDetail", "squareQueueHelp", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
@@ -82,6 +82,9 @@ const elements = {};
   "reviewTitle", "reviewHelp", "reviewMonthList", "reviewTotal", "emailSubjectInput",
   "emailBodyInput", "emailPreview", "saveEmailTemplateButton", "resetEmailTemplateButton",
   "generateSelectedInvoiceButton", "openSelectedEmailButton", "cancelPaymentReview",
+  "emailAllMembersButton", "groupEmailDialog", "groupEmailHelp", "groupEmailSubjectInput",
+  "groupEmailMembers", "selectAllEmailMembersButton", "clearAllEmailMembersButton",
+  "cancelGroupEmailButton", "openGroupEmailButton",
   "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
@@ -109,7 +112,7 @@ elements.dashboardWatch.addEventListener("click", () => showRoster("watch"));
 elements.dashboardLate.addEventListener("click", () => showRoster("late"));
 elements.backToDashboard.addEventListener("click", showDashboard);
 elements.syncSquareButton.addEventListener("click", syncSquarePayments);
-elements.syncWorldpayButton.addEventListener("click", syncWorldpayPayments);
+elements.syncWorldBankcardButton.addEventListener("click", syncWorldBankcardPayments);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
@@ -130,6 +133,12 @@ elements.resetEmailTemplateButton.addEventListener("click", resetEmailTemplateIn
 elements.generateSelectedInvoiceButton.addEventListener("click", generateSelectedInvoice);
 elements.openSelectedEmailButton.addEventListener("click", openSelectedEmail);
 elements.cancelPaymentReview.addEventListener("click", () => elements.paymentReviewDialog.close());
+elements.emailAllMembersButton.addEventListener("click", openGroupEmailDialog);
+elements.groupEmailMembers.addEventListener("change", updateGroupEmailDialog);
+elements.selectAllEmailMembersButton.addEventListener("click", () => setAllGroupEmailMembers(true));
+elements.clearAllEmailMembersButton.addEventListener("click", () => setAllGroupEmailMembers(false));
+elements.cancelGroupEmailButton.addEventListener("click", () => elements.groupEmailDialog.close());
+elements.openGroupEmailButton.addEventListener("click", openGroupEmail);
 elements.checkUpdateButton.addEventListener("click", checkForAppUpdate);
 elements.installUpdateButton.addEventListener("click", installAppUpdate);
 
@@ -315,7 +324,7 @@ function renderSquare() {
   const ignored = state.stagedPayments.filter((payment) => payment.status === "ignored");
   const providerStatus = [
     providerStatusText("square"),
-    providerStatusText("worldpay")
+    providerStatusText("worldbankcard")
   ].join(" · ");
   const errors = Object.values(state.paymentProviders).map((provider) => provider.error).filter(Boolean);
   elements.squareStatusLine.textContent = errors[0] || `${providerStatus} · ${pending.length} pending`;
@@ -333,7 +342,7 @@ function renderSquare() {
     elements.squarePayments.innerHTML = `
       <div class="empty-state compact square-empty">
         <h3>아직 카드 결제가 없습니다 <small lang="en">No card payments yet</small></h3>
-        <p>Square 또는 Worldpay 거래를 동기화하면 승인 전 검토 목록에 표시됩니다.</p>
+        <p>Square 또는 World Bankcard 거래를 동기화하면 승인 전 검토 목록에 표시됩니다.</p>
       </div>
     `;
     elements.squareDetail.innerHTML = emptyPaymentDetailMarkup();
@@ -608,8 +617,8 @@ function stagedPaymentView(payment) {
   const month = stagedPaymentMonth(payment);
   const statusClass = payment.status === "approved" ? "status-paid" : payment.status === "ignored" ? "neutral" : "status-pending";
   const canApprove = (payment.status === "pending" || payment.status === "needs_match") && selectedMemberId && month;
-  const provider = payment.provider || (payment.worldpayPaymentId ? "worldpay" : "square");
-  const providerLabel = provider === "worldpay" ? "Worldpay" : "Square";
+  const provider = payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square");
+  const providerLabel = provider === "worldbankcard" ? "World Bankcard" : "Square";
   const options = [
     `<option value="">회원 선택 · Choose member</option>`,
     ...state.store.members
@@ -790,7 +799,7 @@ function stagedStatusLabel(status) {
 }
 
 function providerStatusText(provider) {
-  const label = provider === "worldpay" ? "Worldpay" : "Square";
+  const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
   return state.paymentProviders[provider]?.configured
     ? `${label} ready`
     : `${label} not configured`;
@@ -899,7 +908,7 @@ function downloadCsv(csv, filename) {
 }
 
 // ---------------------------------------------------------------------------
-// Card payment staging (Square + Worldpay)
+// Card payment staging (Square + World Bankcard)
 // ---------------------------------------------------------------------------
 
 async function loadSquarePayments() {
@@ -907,7 +916,7 @@ async function loadSquarePayments() {
 }
 
 async function loadStagedPayments() {
-  const providers = ["square", "worldpay"];
+  const providers = ["square", "worldbankcard"];
   const results = await Promise.all(providers.map((provider) => loadProviderPayments(provider)));
   state.stagedPayments = results
     .flatMap((result) => result.payments)
@@ -934,7 +943,7 @@ async function loadProviderPayments(provider) {
       configured: false,
       error: provider === "square"
         ? "스퀘어 대기 결제 저장소에 연결할 수 없습니다 · Square staging store is not available"
-        : "Worldpay 대기 결제 저장소에 연결할 수 없습니다 · Worldpay staging store is not available"
+        : "World Bankcard 대기 결제 저장소에 연결할 수 없습니다 · World Bankcard staging store is not available"
     };
     return { provider, payments: [], error };
   }
@@ -944,14 +953,14 @@ async function syncSquarePayments() {
   await syncProviderPayments("square");
 }
 
-async function syncWorldpayPayments() {
-  await syncProviderPayments("worldpay");
+async function syncWorldBankcardPayments() {
+  await syncProviderPayments("worldbankcard");
 }
 
 async function syncProviderPayments(provider) {
-  const button = provider === "worldpay" ? elements.syncWorldpayButton : elements.syncSquareButton;
-  const label = provider === "worldpay" ? "Worldpay" : "Square";
-  const ko = provider === "worldpay" ? "Worldpay" : "스퀘어";
+  const button = provider === "worldbankcard" ? elements.syncWorldBankcardButton : elements.syncSquareButton;
+  const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
+  const ko = provider === "worldbankcard" ? "World Bankcard" : "스퀘어";
   elements.syncSquareButton.disabled = true;
   if (button) {
     button.disabled = true;
@@ -1052,8 +1061,8 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     return;
   }
 
-  const provider = payment.provider || (payment.worldpayPaymentId ? "worldpay" : "square");
-  const label = provider === "worldpay" ? "Worldpay" : "Square";
+  const provider = payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square");
+  const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
   const amount = Number(payment.amountCents || 0) / 100;
   state.store = addPayment(state.store, {
     memberId: member.id,
@@ -1064,8 +1073,8 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     category,
     note: payment.reviewNote || (category === "one-off" ? `${label} one-off payment` : ""),
     squarePaymentId: provider === "square" ? (payment.squarePaymentId || payment.id) : "",
-    worldpayPaymentId: provider === "worldpay" ? (payment.worldpayPaymentId || payment.id) : "",
-    providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.worldpayPaymentId || payment.id,
+    worldBankcardPaymentId: provider === "worldbankcard" ? (payment.worldBankcardPaymentId || payment.id) : "",
+    providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.worldBankcardPaymentId || payment.id,
     paymentProvider: provider
   });
   saveStore(MSG.paymentSaved);
@@ -1092,7 +1101,7 @@ async function ignoreStagedPayment(paymentId) {
 
 async function saveStagedStatus(paymentId, patch) {
   const current = state.stagedPayments.find((payment) => payment.id === paymentId);
-  const provider = current?.provider || (current?.worldpayPaymentId ? "worldpay" : "square");
+  const provider = current?.provider || (current?.worldBankcardPaymentId ? "worldbankcard" : "square");
   state.stagedPayments = state.stagedPayments.map((payment) =>
     payment.id === paymentId ? { ...payment, ...patch } : payment
   );
@@ -1488,6 +1497,79 @@ function openSelectedEmail() {
   window.location.href = `mailto:${member.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+function openGroupEmailDialog() {
+  const members = groupEmailMembers();
+  if (members.length === 0) {
+    showToast("이메일 주소가 있는 활동 회원이 없습니다. · No active members have email addresses.");
+    return;
+  }
+
+  elements.groupEmailSubjectInput.value = "World Martial Arts Center";
+  elements.groupEmailMembers.innerHTML = members.map((member) => groupEmailMemberMarkup(member)).join("");
+  updateGroupEmailDialog();
+  elements.groupEmailDialog.showModal();
+}
+
+function updateGroupEmailDialog() {
+  const checked = selectedGroupEmailMembers();
+  const availableCount = elements.groupEmailMembers.querySelectorAll("input[type='checkbox']").length;
+  elements.groupEmailHelp.textContent = `${checked.length}명 선택됨 · ${checked.length} selected from ${availableCount} members with email`;
+  elements.openGroupEmailButton.disabled = checked.length === 0;
+}
+
+function setAllGroupEmailMembers(checked) {
+  elements.groupEmailMembers.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    input.checked = checked;
+  });
+  updateGroupEmailDialog();
+}
+
+function openGroupEmail() {
+  const members = selectedGroupEmailMembers();
+  if (members.length === 0) {
+    showToast("이메일 받을 회원을 하나 이상 선택하세요. · Select at least one member.");
+    return;
+  }
+
+  const emails = uniqueEmailList(members);
+  const subject = elements.groupEmailSubjectInput.value.trim() || "World Martial Arts Center";
+  elements.groupEmailDialog.close();
+  window.location.href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent(subject)}`;
+}
+
+function groupEmailMembers() {
+  return state.store.members
+    .filter((member) => !member.inactive && memberEmailList(member).length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function selectedGroupEmailMembers() {
+  const selectedIds = new Set(
+    Array.from(elements.groupEmailMembers.querySelectorAll("input[type='checkbox']:checked"))
+      .map((input) => input.value)
+  );
+  return groupEmailMembers().filter((member) => selectedIds.has(member.id));
+}
+
+function uniqueEmailList(members) {
+  const seen = new Set();
+  return members.flatMap(memberEmailList).filter((email) => {
+    const key = email.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function memberEmailList(member) {
+  return String(member.email || "")
+    .split(/[;,]/)
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
 function loadEmailTemplate() {
   try {
     const saved = JSON.parse(localStorage.getItem(EMAIL_TEMPLATE_KEY));
@@ -1508,6 +1590,18 @@ function monthChoiceMarkup(line) {
       <span>
         <strong>${formatMonthBi(line.month)}</strong>
         <small>${formatMoney(line.amount)}${fee} = ${formatMoney(line.total)}</small>
+      </span>
+    </label>
+  `;
+}
+
+function groupEmailMemberMarkup(member) {
+  return `
+    <label class="group-email-member">
+      <input type="checkbox" value="${escapeHtml(member.id)}" checked>
+      <span>
+        <strong>${escapeHtml(member.name)}</strong>
+        <small>${escapeHtml(memberEmailList(member).join(", "))}</small>
       </span>
     </label>
   `;

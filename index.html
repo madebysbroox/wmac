@@ -75,6 +75,9 @@
           <button id="nextYearCsvButton" class="button tool bi" type="button">
             <span lang="ko">새해 회원 명단 저장</span><small lang="en">New Year Roster CSV</small>
           </button>
+          <button id="emailAllMembersButton" class="button tool bi" type="button">
+            <span lang="ko">전체 회원 이메일</span><small lang="en">Email All Members</small>
+          </button>
         </div>
       </section>
 
@@ -167,7 +170,7 @@
           <div class="dashboard-header square-header">
             <div>
               <h2>카드 결제 확인 <small lang="en">Card Payment Review</small></h2>
-              <p id="squareStatusLine">Square / Worldpay 연결 상태 확인 중 · Checking card payment connections</p>
+              <p id="squareStatusLine">Square / World Bankcard 연결 상태 확인 중 · Checking card payment connections</p>
             </div>
             <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
           </div>
@@ -175,14 +178,14 @@
           <div class="square-toolbar">
             <div>
               <h3>승인 대기 결제 <small lang="en">Payments Waiting for Approval</small></h3>
-              <p>Square 또는 Worldpay에서 들어온 결제를 확인하고 회원/월/메모를 선택한 뒤 회원 기록에 넣으세요. · Review card payments before they update member records.</p>
+              <p>Square 또는 World Bankcard에서 들어온 결제를 확인하고 회원/월/메모를 선택한 뒤 회원 기록에 넣으세요. · Review card payments before they update member records.</p>
             </div>
             <div class="square-toolbar-actions">
               <button id="syncSquareButton" class="button primary bi" type="button">
                 <span lang="ko">스퀘어에서 가져오기</span><small lang="en">Sync Square</small>
               </button>
-              <button id="syncWorldpayButton" class="button primary bi" type="button">
-                <span lang="ko">Worldpay에서 가져오기</span><small lang="en">Sync Worldpay</small>
+              <button id="syncWorldBankcardButton" class="button primary bi" type="button">
+                <span lang="ko">World Bankcard에서 가져오기</span><small lang="en">Sync World Bankcard</small>
               </button>
             </div>
           </div>
@@ -352,6 +355,28 @@
         <button id="cancelPaymentReview" class="button secondary" type="button">닫기 · Close</button>
         <button id="generateSelectedInvoiceButton" class="button secondary" type="button">청구서 만들기 · Generate Invoice</button>
         <button id="openSelectedEmailButton" class="button primary" type="button">이메일 열기 · Open Email</button>
+      </menu>
+    </dialog>
+
+    <dialog id="groupEmailDialog" class="group-email-dialog">
+      <h2>전체 회원 이메일 <small lang="en">Email All Members</small></h2>
+      <p id="groupEmailHelp" class="dialog-help"></p>
+
+      <div class="group-email-tools">
+        <button id="selectAllEmailMembersButton" class="button secondary" type="button">모두 선택 · Select All</button>
+        <button id="clearAllEmailMembersButton" class="button secondary" type="button">모두 해제 · Clear All</button>
+      </div>
+
+      <div class="form-row">
+        <label for="groupEmailSubjectInput">제목 <small lang="en">Subject</small></label>
+        <input id="groupEmailSubjectInput" placeholder="World Martial Arts Center">
+      </div>
+
+      <div id="groupEmailMembers" class="group-email-members"></div>
+
+      <menu>
+        <button id="cancelGroupEmailButton" class="button secondary" type="button">닫기 · Close</button>
+        <button id="openGroupEmailButton" class="button primary" type="button">이메일 열기 · Open Email</button>
       </menu>
     </dialog>
 

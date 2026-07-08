@@ -293,8 +293,8 @@ export function pendingSquarePaymentsForMember(squarePayments, member) {
 }
 
 export function normalizeProviderPayment(input, members = [], provider = "square") {
-  if (provider === "worldpay") {
-    return normalizeWorldpayPayment(input, members);
+  if (provider === "worldbankcard") {
+    return normalizeWorldBankcardPayment(input, members);
   }
   return normalizeSquarePayment(input, members);
 }
@@ -367,7 +367,7 @@ export function normalizeSquarePayment(input, members = []) {
   return candidate;
 }
 
-export function normalizeWorldpayPayment(input, members = []) {
+export function normalizeWorldBankcardPayment(input, members = []) {
   const payment = input?.transaction || input?.payment || input?.sale || input?.item || input || {};
   const id = clean(
     payment.id ||
@@ -375,10 +375,20 @@ export function normalizeWorldpayPayment(input, members = []) {
     payment.transaction_id ||
     payment.paymentId ||
     payment.payment_id ||
-    payment.worldpayPaymentId ||
-    payment.worldpayTransactionId ||
+    payment.worldBankcardPaymentId ||
+    payment.worldbankcardPaymentId ||
+    payment.world_bankcard_payment_id ||
+    payment.worldBankcardTransactionId ||
+    payment.worldbankcardTransactionId ||
+    payment.world_bankcard_transaction_id ||
+    payment.transactionReference ||
+    payment.transaction_reference ||
+    payment.referenceNumber ||
+    payment.reference_number ||
     input?.transactionId ||
     input?.paymentId ||
+    input?.worldBankcardPaymentId ||
+    input?.worldbankcardPaymentId ||
     input?.id
   );
   const amountCents = amountToCents(
@@ -407,16 +417,16 @@ export function normalizeWorldpayPayment(input, members = []) {
     payment.cardBrand || payment.card?.brand ? `${payment.cardBrand || payment.card?.brand}${payment.last4 || payment.card?.last4 ? ` ••••${payment.last4 || payment.card?.last4}` : ""}` : ""
   ].filter(Boolean);
   const candidate = {
-    provider: "worldpay",
-    providerLabel: "Worldpay",
-    id: id || cryptoId("wppay"),
-    worldpayPaymentId: id,
+    provider: "worldbankcard",
+    providerLabel: "World Bankcard",
+    id: id || cryptoId("wbcpay"),
+    worldBankcardPaymentId: id,
     providerPaymentId: id,
     providerEventId: clean(payment.eventId || payment.event_id || input?.eventId),
     sourceEventType: clean(input?.type || input?.sourceEventType || input?.eventType || payment.type),
     status: clean(input?.localStatus || input?.local_status || input?.reviewStatus || input?.review_status) || "pending",
-    worldpayStatus: clean(input?.worldpayStatus || payment.status || payment.transactionStatus || payment.state),
-    providerStatus: clean(input?.worldpayStatus || payment.status || payment.transactionStatus || payment.state),
+    worldBankcardStatus: clean(input?.worldBankcardStatus || payment.status || payment.transactionStatus || payment.state),
+    providerStatus: clean(input?.worldBankcardStatus || payment.status || payment.transactionStatus || payment.state),
     amountCents,
     currency: clean(payment.currency || payment.amount?.currency || payment.currencyCode || input?.currency) || "USD",
     paidAt,
@@ -428,7 +438,7 @@ export function normalizeWorldpayPayment(input, members = []) {
     customerId: clean(payment.customerId || payment.customer_id || payment.customer?.id || input?.customerId),
     externalCustomerId: clean(payment.customerReference || payment.customer_reference || payment.customer?.reference || input?.externalCustomerId),
     receiptUrl: clean(payment.receiptUrl || payment.receipt_url || input?.receiptUrl),
-    receiptNumber: clean(payment.receiptNumber || payment.receipt_number || payment.reference || payment.merchantReference || payment.transactionReference || input?.receiptNumber),
+    receiptNumber: clean(payment.receiptNumber || payment.receipt_number || payment.reference || payment.referenceNumber || payment.reference_number || payment.merchantReference || payment.transactionReference || input?.receiptNumber),
     locationId: clean(payment.locationId || payment.location_id || payment.storeId || payment.store_id || input?.locationId),
     terminalId: clean(payment.terminalId || payment.terminal_id || input?.terminalId),
     batchId: clean(payment.batchId || payment.batch_id || input?.batchId),
@@ -445,6 +455,11 @@ export function normalizeWorldpayPayment(input, members = []) {
     ignoredReason: clean(input?.ignoredReason),
     raw: input?.raw || input
   };
+
+  if (!candidate.worldBankcardPaymentId) {
+    candidate.worldBankcardPaymentId = candidate.id;
+    candidate.providerPaymentId = candidate.id;
+  }
 
   const suggested = candidate.memberId
     ? members.find((member) => member.id === candidate.memberId)
@@ -464,7 +479,7 @@ export function upsertProviderPayment(providerStore, providerPayment) {
   const existing = (providerStore.payments || []).find((payment) =>
     payment.id === providerPayment.id ||
     (providerPayment.squarePaymentId && payment.squarePaymentId === providerPayment.squarePaymentId) ||
-    (providerPayment.worldpayPaymentId && payment.worldpayPaymentId === providerPayment.worldpayPaymentId) ||
+    (providerPayment.worldBankcardPaymentId && payment.worldBankcardPaymentId === providerPayment.worldBankcardPaymentId) ||
     (providerPayment.providerPaymentId && payment.providerPaymentId === providerPayment.providerPaymentId)
   );
   const nextPayment = {
@@ -481,7 +496,7 @@ export function upsertProviderPayment(providerStore, providerPayment) {
   const payments = (providerStore.payments || []).filter((payment) =>
     payment.id !== nextPayment.id &&
     (!nextPayment.squarePaymentId || payment.squarePaymentId !== nextPayment.squarePaymentId) &&
-    (!nextPayment.worldpayPaymentId || payment.worldpayPaymentId !== nextPayment.worldpayPaymentId) &&
+    (!nextPayment.worldBankcardPaymentId || payment.worldBankcardPaymentId !== nextPayment.worldBankcardPaymentId) &&
     (!nextPayment.providerPaymentId || payment.providerPaymentId !== nextPayment.providerPaymentId)
   );
   payments.push(nextPayment);
@@ -499,7 +514,7 @@ export function upsertSquarePayment(squareStore, squarePayment) {
 export function updateProviderPaymentStatus(providerStore, paymentId, patch) {
   let found = false;
   const payments = (providerStore.payments || []).map((payment) => {
-    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId && payment.worldpayPaymentId !== paymentId && payment.providerPaymentId !== paymentId) {
+    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId && payment.worldBankcardPaymentId !== paymentId && payment.providerPaymentId !== paymentId) {
       return payment;
     }
     found = true;
@@ -547,15 +562,15 @@ export function addPayment(store, payment) {
     category,
     note: clean(payment.note),
     squarePaymentId: clean(payment.squarePaymentId),
-    worldpayPaymentId: clean(payment.worldpayPaymentId),
-    providerPaymentId: clean(payment.providerPaymentId || payment.squarePaymentId || payment.worldpayPaymentId),
+    worldBankcardPaymentId: clean(payment.worldBankcardPaymentId),
+    providerPaymentId: clean(payment.providerPaymentId || payment.squarePaymentId || payment.worldBankcardPaymentId),
     paymentProvider: clean(payment.paymentProvider || payment.source)
   };
   const existingPayments = store.payments.filter((item) => {
     if (nextPayment.squarePaymentId && item.squarePaymentId === nextPayment.squarePaymentId) {
       return false;
     }
-    if (nextPayment.worldpayPaymentId && item.worldpayPaymentId === nextPayment.worldpayPaymentId) {
+    if (nextPayment.worldBankcardPaymentId && item.worldBankcardPaymentId === nextPayment.worldBankcardPaymentId) {
       return false;
     }
     if (nextPayment.providerPaymentId && item.providerPaymentId === nextPayment.providerPaymentId) {
@@ -825,7 +840,7 @@ function memberRow(member, payment) {
     "Payment Category": payment ? payment.category || "tuition" : "",
     "Payment Note": payment?.note || "",
     "Square Payment ID": payment?.squarePaymentId || "",
-    "Worldpay Payment ID": payment?.worldpayPaymentId || "",
+    "World Bankcard Payment ID": payment?.worldBankcardPaymentId || "",
     "Provider Payment ID": payment?.providerPaymentId || ""
   };
 }

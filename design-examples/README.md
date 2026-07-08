@@ -32,7 +32,7 @@ automatically.
 
 ## Card Payment Review focused samples
 
-These are newer mockups focused on the Square + Worldpay review workflow:
+These are newer mockups focused on the Square + World Bankcard review workflow:
 
 - `concept-card-review-command.html` — **Payment Command**: two-pane review queue + selected payment detail; recommended for safest manual review.
 - `concept-card-review-kanban.html` — **Review Board**: columns for ready, needs match, and recently approved; good for batching many payments.
