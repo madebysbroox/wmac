@@ -208,6 +208,12 @@ async function receiveSquareWebhook(request, response) {
     return;
   }
 
+  const providerStatus = String(event?.data?.object?.payment?.status || "").toUpperCase();
+  if (providerStatus !== "COMPLETED") {
+    json(response, 200, { received: true, staged: false, providerStatus });
+    return;
+  }
+
   const squarePayment = normalizeSquarePayment(event);
   const store = upsertProviderPayment(await readProviderStore("square"), squarePayment);
   await writeProviderStore("square", store);
@@ -232,31 +238,37 @@ async function syncSquarePayments(response) {
   const baseUrl = process.env.SQUARE_ENVIRONMENT === "sandbox"
     ? "https://connect.squareupsandbox.com"
     : "https://connect.squareup.com";
-  const query = new URLSearchParams();
-  if (process.env.SQUARE_LOCATION_ID) {
-    query.set("location_id", process.env.SQUARE_LOCATION_ID);
-  }
-  query.set("sort_order", "DESC");
-  query.set("limit", "100");
-
-  const squareResponse = await fetch(`${baseUrl}/v2/payments?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Square-Version": process.env.SQUARE_API_VERSION || "2026-05-20"
-    }
-  });
-  const body = await squareResponse.json();
-  if (!squareResponse.ok) {
-    json(response, squareResponse.status, { error: "Square sync failed.", details: body });
-    return;
-  }
-
   let store = await readProviderStore("square");
-  (body.payments || []).forEach((payment) => {
-    store = upsertProviderPayment(store, normalizeSquarePayment({ payment }));
-  });
+  let cursor = "";
+  let checked = 0;
+  let imported = 0;
+  let pages = 0;
+  do {
+    const query = new URLSearchParams({ sort_order: "DESC", limit: "100" });
+    if (process.env.SQUARE_LOCATION_ID) query.set("location_id", process.env.SQUARE_LOCATION_ID);
+    if (cursor) query.set("cursor", cursor);
+    const squareResponse = await fetch(`${baseUrl}/v2/payments?${query.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Square-Version": process.env.SQUARE_API_VERSION || "2026-05-20"
+      }
+    });
+    const body = await squareResponse.json();
+    if (!squareResponse.ok) {
+      json(response, squareResponse.status, { error: "Square sync failed.", details: body });
+      return;
+    }
+    for (const payment of body.payments || []) {
+      checked += 1;
+      if (payment.status !== "COMPLETED") continue;
+      store = upsertProviderPayment(store, normalizeSquarePayment({ payment }));
+      imported += 1;
+    }
+    cursor = body.cursor || "";
+    pages += 1;
+  } while (cursor && pages < 20);
   await writeProviderStore("square", store);
-  json(response, 200, { imported: body.payments?.length || 0, payments: store.payments, configured: true });
+  json(response, 200, { checked, imported, payments: store.payments, configured: true });
 }
 
 async function syncSquareRelayPayments(response) {
@@ -276,6 +288,10 @@ async function syncSquareRelayPayments(response) {
   let store = await readProviderStore("square");
   const payments = body.payments || [];
   for (const payment of payments) {
+    const providerStatus = String(payment.squareStatus || payment.providerStatus || payment.payment?.status || "").toUpperCase();
+    if (providerStatus && providerStatus !== "COMPLETED") {
+      continue;
+    }
     store = upsertProviderPayment(store, normalizeSquarePayment({
       ...payment,
       sourceEventType: payment.eventType,

@@ -190,6 +190,25 @@
             </div>
           </div>
 
+          <details class="square-connection-card">
+            <summary>Square 연결 설정 <small lang="en">Square Connection Setup</small></summary>
+            <p>설치된 Windows 앱은 안전한 중계 서버에서 결제를 가져옵니다. 관리자에게 받은 주소와 동기화 토큰을 한 번만 입력하세요. · The installed Windows app pulls payments from the secure relay. Enter the relay address and sync token once.</p>
+            <div class="square-settings-grid">
+              <div class="form-row">
+                <label for="squareRelayUrl">중계 서버 주소 <small lang="en">Relay URL</small></label>
+                <input id="squareRelayUrl" type="url" placeholder="https://...">
+              </div>
+              <div class="form-row">
+                <label for="squareRelayToken">동기화 토큰 <small lang="en">Sync token</small></label>
+                <input id="squareRelayToken" type="password" autocomplete="off" placeholder="••••••••••••">
+              </div>
+            </div>
+            <button id="saveSquareSettingsButton" class="button secondary bi" type="button">
+              <span lang="ko">Square 연결 저장</span><small lang="en">Save Square Connection</small>
+            </button>
+            <p id="squareSettingsStatus" class="connection-status"></p>
+          </details>
+
           <div id="squareSummary" class="metric-grid square-metrics"></div>
 
           <div class="review-shell">
@@ -233,6 +252,10 @@
             </div>
 
             <div id="latestPaid" class="latest-paid"></div>
+
+            <section id="householdCard" class="household-card"></section>
+
+            <section id="progressCard" class="progress-card"></section>
 
             <button id="quickPayButton" class="button pay bi" type="button"></button>
 
@@ -288,6 +311,47 @@
               <div class="form-row">
                 <label for="memberParent">부모/보호자 <small lang="en">Parent or guardian</small></label>
                 <input id="memberParent">
+              </div>
+              <div class="form-row">
+                <label for="memberHousehold">가족/가구 이름 <small lang="en">Family or household</small></label>
+                <input id="memberHousehold" placeholder="예: Park Family · Park 가족">
+              </div>
+              <div class="form-row">
+                <label for="memberRole">가족 안에서의 역할 <small lang="en">Household role</small></label>
+                <select id="memberRole">
+                  <option value="adult">성인 · Adult</option>
+                  <option value="parent_guardian">부모/보호자 · Parent/guardian</option>
+                  <option value="child">자녀 · Child</option>
+                </select>
+              </div>
+              <label class="check-row participant-row">
+                <input id="memberParticipant" type="checkbox" checked>
+                수련 참가자 <small lang="en">Participates in classes</small>
+              </label>
+              <fieldset class="program-fieldset">
+                <legend>수련 프로그램 <small lang="en">Programs</small></legend>
+                <label class="check-row"><input id="memberTaeKwonDo" type="checkbox"> 태권도 <small lang="en">Tae Kwon Do</small></label>
+                <label class="check-row"><input id="memberMuayThai" type="checkbox"> 무에타이 <small lang="en">Muay Thai</small></label>
+              </fieldset>
+              <div class="form-row">
+                <label for="memberBeltLevel">현재 띠/레벨 <small lang="en">Current belt or level</small></label>
+                <input id="memberBeltLevel" list="beltLevelOptions" placeholder="예: Yellow Belt · 노란띠">
+              </div>
+              <div class="form-row">
+                <label for="memberNextLevel">다음 목표 <small lang="en">Next belt or level goal</small></label>
+                <input id="memberNextLevel" list="beltLevelOptions" placeholder="예: Orange Belt · 주황띠">
+              </div>
+              <datalist id="beltLevelOptions">
+                <option value="White Belt"></option><option value="Yellow Belt"></option>
+                <option value="Orange Belt"></option><option value="Green Belt"></option>
+                <option value="Blue Belt"></option><option value="Purple Belt"></option>
+                <option value="Brown Belt"></option><option value="Red Belt"></option>
+                <option value="Black Belt"></option><option value="Muay Thai Level 1"></option>
+                <option value="Muay Thai Level 2"></option><option value="Muay Thai Level 3"></option>
+              </datalist>
+              <div class="form-row">
+                <label for="memberSquareCustomerId">Square 고객 ID <small lang="en">Square customer ID</small></label>
+                <input id="memberSquareCustomerId" autocomplete="off">
               </div>
               <div class="form-row">
                 <label for="memberAmount">월 회비 <small lang="en">Monthly amount</small></label>

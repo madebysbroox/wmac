@@ -4,7 +4,7 @@ This guide walks through the recommended desktop app setup for 회비 관리 (Pa
 
 ## How it works (the short version)
 
-The app runs **entirely on this one computer**. Nothing is uploaded anywhere, no account or internet connection is needed for daily use, and all member and payment data stays on the machine.
+The member tracker runs on this computer and its working member data stays on the machine. An internet connection is only needed when checking for app updates, emailing, or synchronizing completed card payments from a configured provider relay.
 
 Daily use after setup is one step: **double-click the Payment Tracker icon.**
 
@@ -39,6 +39,16 @@ This only needs to happen once. The data is saved on the computer afterward.
 3. Click the big paid button or open the invoice/email review.
 4. Close the app window when done.
 
+## One-Time Square Connection
+
+1. Open **카드 결제 (Card Payments)**.
+2. Expand **Square 연결 설정 (Square Connection Setup)**.
+3. Enter the HTTPS relay URL and limited-scope sync token supplied by the administrator.
+4. Click **Square 연결 저장 (Save Square Connection)**.
+5. Click **스퀘어에서 가져오기 (Sync Square)**.
+
+The installed app stores staged provider payments under the current Windows user's app-data folder. It imports only completed Square payments and follows pagination, so a busy billing month is not cut off after the first 100 transactions.
+
 ## Updates
 
 Use **앱 업데이트 (App Updates)** at the bottom of the left sidebar, then click **업데이트 확인 (Check for Updates)**.
@@ -63,7 +73,8 @@ When a member has unpaid months:
 
 - **Use the same Windows account.** The data is saved for the Windows user who runs the app.
 - **Make backups.** Click **백업 파일 저장 (Export Backup CSV)** once in a while and keep the file in Documents or on a USB stick.
-- **No internet needed for daily use.** The installer is downloaded once; the app itself works offline.
+- **Core tracking works offline.** Searching members and recording or reviewing local payments do not require internet.
+- **Square sync needs internet.** Searching members, recording cash/check payments, and reviewing existing data still work offline.
 
 ## If Something Goes Wrong
 

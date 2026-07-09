@@ -5,7 +5,14 @@ const MEMBER_FIELD_ALIASES = {
   email: ["email", "email address"],
   phone: ["phone", "phone number", "mobile", "cell"],
   parentName: ["parent/guardian name", "parent name", "guardian", "guardian name", "parent"],
-  externalId: ["id", "member id", "student id", "customer id", "square customer id"]
+  externalId: ["id", "member id", "student id", "customer id"],
+  squareCustomerId: ["square customer id", "square customer", "square id"],
+  householdName: ["household", "household name", "family", "family name"],
+  householdRole: ["household role", "family role", "person type", "role"],
+  participant: ["participant", "student", "takes classes", "participates"],
+  programs: ["programs", "program", "classes", "martial arts"],
+  beltLevel: ["belt", "belt level", "current belt", "current level", "level"],
+  nextLevel: ["next belt", "next level", "next goal", "promotion goal"]
 };
 
 const PAYMENT_FIELD_ALIASES = {
@@ -164,9 +171,17 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
       phone: phone || existing?.phone || "",
       parentName: clean(record[columnMap.parentName]) || existing?.parentName || "",
       externalId: externalId || existing?.externalId || "",
+      squareCustomerId: clean(record[columnMap.squareCustomerId]) || existing?.squareCustomerId || "",
+      householdName: clean(record[columnMap.householdName]) || existing?.householdName || "",
+      householdRole: normalizeHouseholdRole(record[columnMap.householdRole]) || existing?.householdRole || (clean(record[columnMap.parentName]) ? "child" : "adult"),
+      participant: parseParticipant(record[columnMap.participant], existing?.participant),
+      programs: normalizePrograms(record[columnMap.programs] || existing?.programs),
+      beltLevel: clean(record[columnMap.beltLevel]) || existing?.beltLevel || "",
+      nextLevel: clean(record[columnMap.nextLevel]) || existing?.nextLevel || "",
       inactive: existing?.inactive ?? false,
       notes: existing?.notes ?? ""
     };
+    member.householdId = existing?.householdId || householdIdFor(member.householdName);
     member.identityKey = buildIdentityKey(member);
 
     if (existing) {
@@ -257,7 +272,7 @@ export function suggestedPaymentMember(providerPayment, members) {
   const customerId = clean(providerPayment.customerId || providerPayment.externalCustomerId);
 
   return members.find((member) =>
-    (customerId && member.externalId === customerId) ||
+    (customerId && (member.squareCustomerId === customerId || member.externalId === customerId)) ||
     (email && member.email === email) ||
     (phone && member.phone === phone) ||
     (name && normalize(member.name) === name)
@@ -606,7 +621,15 @@ export function upsertMember(store, member) {
     name: clean(member.name),
     email: clean(member.email).toLowerCase(),
     phone: cleanPhone(member.phone),
-    monthlyAmount: Number(member.monthlyAmount) || 0
+    monthlyAmount: Number(member.monthlyAmount) || 0,
+    participant: member.participant !== false,
+    householdRole: normalizeHouseholdRole(member.householdRole) || "adult",
+    householdName: clean(member.householdName),
+    householdId: member.householdId || householdIdFor(member.householdName),
+    programs: normalizePrograms(member.programs),
+    beltLevel: clean(member.beltLevel),
+    nextLevel: clean(member.nextLevel),
+    squareCustomerId: clean(member.squareCustomerId)
   };
   nextMember.identityKey = buildIdentityKey(nextMember);
   const members = store.members.filter((item) => item.id !== nextMember.id);
@@ -616,6 +639,16 @@ export function upsertMember(store, member) {
 
 export function getMemberStatus(member, payments, today = new Date()) {
   const currentMonth = monthKey(today);
+  if (member.participant === false || member.inactive) {
+    return {
+      level: "paid",
+      label: member.inactive ? "Inactive" : "Non-participant",
+      currentMonth,
+      lastPaidMonth: "",
+      recentMonths: [],
+      paidMonths: new Set()
+    };
+  }
   const firstDueMonth = getFirstDueMonth(member, currentMonth);
   const billableMonths = monthsInRange(firstDueMonth, currentMonth);
   const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
@@ -651,6 +684,9 @@ export function getMemberStatus(member, payments, today = new Date()) {
 }
 
 export function getUnpaidMonths(member, payments, today = new Date()) {
+  if (member.participant === false || member.inactive) {
+    return [];
+  }
   const currentMonth = monthKey(today);
   const firstDueMonth = getFirstDueMonth(member, currentMonth);
   const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
@@ -670,7 +706,8 @@ export function getMemberBalance(member, payments, today = new Date()) {
 export function getDashboardSummary(store, today = new Date()) {
   const currentMonth = monthKey(today);
   const currentYear = String(today.getFullYear());
-  const activeMembers = store.members.filter((member) => !member.inactive);
+  const activeMembers = store.members.filter(isActiveParticipant);
+  const nonParticipantContacts = store.members.filter((member) => !member.inactive && member.participant === false);
   const payments = store.payments || [];
 
   const paidThisMonth = payments
@@ -709,7 +746,8 @@ export function getDashboardSummary(store, today = new Date()) {
   return {
     currentMonth,
     activeMembers: activeMembers.length,
-    inactiveMembers: store.members.length - activeMembers.length,
+    inactiveMembers: store.members.filter((member) => member.inactive).length,
+    nonParticipantContacts: nonParticipantContacts.length,
     paidThisMonth,
     paidThisYear,
     pastDue: rows.reduce((sum, row) => sum + row.overdueDue, 0),
@@ -817,7 +855,14 @@ export function exportRosterRows(store) {
       Email: member.email || "",
       Phone: member.phone || "",
       "Parent/Guardian Name": member.parentName || "",
-      "Member ID": member.externalId || ""
+      "Member ID": member.externalId || "",
+      "Square Customer ID": member.squareCustomerId || "",
+      "Household Name": member.householdName || "",
+      "Household Role": member.householdRole || "adult",
+      Participant: member.participant === false ? "no" : "yes",
+      Programs: normalizePrograms(member.programs).join("; "),
+      "Current Belt/Level": member.beltLevel || "",
+      "Next Belt/Level": member.nextLevel || ""
     }));
 }
 
@@ -832,6 +877,13 @@ function memberRow(member, payment) {
     Phone: member.phone || "",
     "Parent/Guardian": member.parentName || "",
     "Member ID": member.externalId || "",
+    "Square Customer ID": member.squareCustomerId || "",
+    "Household Name": member.householdName || "",
+    "Household Role": member.householdRole || "adult",
+    Participant: member.participant === false ? "no" : "yes",
+    Programs: normalizePrograms(member.programs).join("; "),
+    "Current Belt/Level": member.beltLevel || "",
+    "Next Belt/Level": member.nextLevel || "",
     Inactive: member.inactive ? "yes" : "no",
     "Payment Month": payment?.month || "",
     "Payment Amount": payment ? moneyText(payment.amount) : "",
@@ -847,6 +899,23 @@ function memberRow(member, payment) {
 
 function isTuitionPayment(payment) {
   return !payment?.category || payment.category === "tuition";
+}
+
+export function isActiveParticipant(member) {
+  return Boolean(member && !member.inactive && member.participant !== false);
+}
+
+export function householdMembers(members, member) {
+  if (!member) {
+    return [];
+  }
+  const householdId = member.householdId || householdIdFor(member.householdName);
+  if (!householdId) {
+    return [member];
+  }
+  return members
+    .filter((candidate) => (candidate.householdId || householdIdFor(candidate.householdName)) === householdId)
+    .sort((a, b) => householdRoleOrder(a.householdRole) - householdRoleOrder(b.householdRole) || a.name.localeCompare(b.name));
 }
 
 function escapeCsvCell(value) {
@@ -971,6 +1040,62 @@ function buildIdentityKey(member) {
     return `phone:${member.phone}`;
   }
   return `name:${normalize(member.name)}`;
+}
+
+function parseParticipant(value, existingValue) {
+  const cleaned = normalize(value);
+  if (!cleaned) {
+    return existingValue !== false;
+  }
+  return !["no", "n", "false", "0", "non participant", "non-participant", "contact only"].includes(cleaned);
+}
+
+function normalizeHouseholdRole(value) {
+  const cleaned = normalize(value).replace(/[_-]+/g, " ");
+  if (["parent", "guardian", "parent guardian", "payer"].includes(cleaned)) {
+    return "parent_guardian";
+  }
+  if (["child", "student child", "minor"].includes(cleaned)) {
+    return "child";
+  }
+  if (["adult", "individual", "self"].includes(cleaned)) {
+    return "adult";
+  }
+  return "";
+}
+
+function normalizePrograms(value) {
+  const values = Array.isArray(value) ? value : String(value || "").split(/[;,|/]+/);
+  const programs = [];
+  values.forEach((entry) => {
+    const cleaned = normalize(entry).replace(/[_-]+/g, " ");
+    const program = cleaned.includes("muay") || cleaned.includes("thai")
+      ? "muay_thai"
+      : cleaned.includes("tae") || cleaned.includes("kwon") || cleaned === "tkd"
+        ? "tae_kwon_do"
+        : "";
+    if (program && !programs.includes(program)) {
+      programs.push(program);
+    }
+  });
+  return programs;
+}
+
+function householdIdFor(name) {
+  const normalizedName = normalize(name);
+  if (!normalizedName) {
+    return "";
+  }
+  const slug = normalizedName.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  let hash = 0;
+  for (const char of normalizedName) {
+    hash = ((hash << 5) - hash + char.codePointAt(0)) | 0;
+  }
+  return `house-${slug || "family"}-${Math.abs(hash).toString(36)}`;
+}
+
+function householdRoleOrder(role) {
+  return role === "parent_guardian" ? 0 : role === "adult" ? 1 : 2;
 }
 
 function cryptoId(prefix) {

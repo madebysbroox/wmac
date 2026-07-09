@@ -26,6 +26,13 @@ export const FIELD_LABELS = {
   phone: { ko: "전화번호", en: "Phone" },
   parentName: { ko: "부모/보호자", en: "Parent or guardian" },
   externalId: { ko: "회원 번호", en: "Member ID" },
+  squareCustomerId: { ko: "Square 고객 ID", en: "Square customer ID" },
+  householdName: { ko: "가족/가구 이름", en: "Family or household" },
+  householdRole: { ko: "가족 역할", en: "Household role" },
+  participant: { ko: "수련 참가자", en: "Class participant" },
+  programs: { ko: "수련 프로그램", en: "Programs" },
+  beltLevel: { ko: "현재 띠/레벨", en: "Current belt or level" },
+  nextLevel: { ko: "다음 목표", en: "Next belt or level" },
   amount: { ko: "결제 금액", en: "Payment amount" },
   paidAt: { ko: "결제 날짜", en: "Payment date" },
   month: { ko: "납부 월", en: "Payment month" }

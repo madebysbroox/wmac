@@ -1,6 +1,6 @@
 # 회비 관리 · Master Lee Payment Tracker
 
-A simple, bilingual (한국어 / English) payment tracker for a martial arts gym owner. It runs locally, saves data in the browser, imports member CSV files, records monthly payments, and exports a backup CSV.
+A simple, bilingual (한국어 / English) payment tracker for a martial arts gym owner. It runs locally, saves member data on the computer, imports member CSV files, records monthly payments, organizes parents and children by household, tracks programs and belt/level goals, and exports a backup CSV.
 
 Every button and label shows Korean first with English underneath, so the app can be used comfortably in either language. Text is large and high-contrast for easy reading.
 
@@ -34,6 +34,12 @@ The everyday workflow needs only the left side of the screen:
 
 The home screen (처음 화면) shows who is paid, who needs attention, and who is behind — click any card to see that list of members.
 
+## Families, Participants, and Progress
+
+Each person can be assigned to a family/household and labeled as an adult, parent/guardian, or child. A parent can be a class participant or a contact-only payer. Contact-only parents remain searchable and appear above their children in the household card, but they are not counted as active students and never accumulate tuition automatically.
+
+Participants can be enrolled in Tae Kwon Do, Muay Thai, or both. Current belt/level and next goal fields create a polished training-journey card that is friendly enough to show the family. Use the same household name on every related record to group them together.
+
 ## Card Payment Review · 카드 결제 확인
 
 The **카드 결제 (Card Payments)** tab is a manual staging area for payments reported by Square or World Bankcard POS. Provider-reported payments stay separate from member payment history until someone reviews and approves them.
@@ -58,6 +64,8 @@ npm start
 ```
 
 Then use **스퀘어에서 가져오기 (Sync Square)** to pull pending relay payments into the local review screen.
+
+In the installed Windows app, open **Square Connection Setup** in Card Payments, enter the HTTPS relay URL and limited-scope sync token once, save, and click **Sync Square**. The Electron main process performs the network request and stores staged provider data under the Windows app-data folder; the access details are never exposed to page JavaScript. Only completed Square payments can be approved, and direct API fallback follows Square pagination instead of stopping at 100 payments.
 
 Optional direct Square API sync is still available if needed:
 

@@ -5,10 +5,12 @@ import {
   createEmptyStore,
   getDashboardSummary,
   exportStoreRows,
+  exportRosterRows,
   getMemberBalance,
   getMemberStatus,
   getYearRevenue,
   guessColumnMap,
+  householdMembers,
   importMembersFromRecords,
   importPaymentsFromRecords,
   normalizeSquarePayment,
@@ -18,6 +20,7 @@ import {
   parseCsv,
   removePayment,
   searchMembers,
+  isActiveParticipant,
   squarePaymentMonth,
   suggestedSquareMember,
   toCsv
@@ -396,4 +399,41 @@ test("finds the next unpaid tuition month for card payment review", () => {
   const store = addPayment(imported.store, { memberId: member.id, month: "2026-04", amount: 120 });
 
   assert.equal(nextUnpaidTuitionMonth(member, store.payments, new Date("2026-06-12")), "2026-05");
+});
+
+test("groups parents and children while excluding contact-only parents from tuition totals", () => {
+  const records = [
+    { Name: "Joon Park", Family: "Park Family", Role: "Parent", Participant: "no", Programs: "" },
+    { Name: "Sam Park", Family: "Park Family", Role: "Child", Participant: "yes", Programs: "Tae Kwon Do; Muay Thai", Belt: "Yellow Belt", Next: "Orange Belt", Amount: "120", Start: "2026-06-01" }
+  ];
+  const result = importMembersFromRecords(records, {
+    name: "Name", householdName: "Family", householdRole: "Role", participant: "Participant",
+    programs: "Programs", beltLevel: "Belt", nextLevel: "Next", monthlyAmount: "Amount", startDate: "Start"
+  }, createEmptyStore());
+  const parent = result.store.members.find((member) => member.name === "Joon Park");
+  const child = result.store.members.find((member) => member.name === "Sam Park");
+
+  assert.equal(parent.participant, false);
+  assert.equal(isActiveParticipant(parent), false);
+  assert.deepEqual(child.programs, ["tae_kwon_do", "muay_thai"]);
+  assert.deepEqual(householdMembers(result.store.members, child).map((member) => member.name), ["Joon Park", "Sam Park"]);
+  assert.deepEqual(getMemberBalance(parent, [], new Date("2026-06-18")).unpaidMonths, []);
+  assert.equal(getDashboardSummary(result.store, new Date("2026-06-18")).activeMembers, 1);
+  assert.equal(getDashboardSummary(result.store, new Date("2026-06-18")).nonParticipantContacts, 1);
+
+  const roster = exportRosterRows(result.store);
+  assert.equal(roster.length, 2, "new-year roster keeps the contact-only parent");
+  const childRow = roster.find((row) => row["Member Name"] === "Sam Park");
+  assert.equal(childRow["Household Name"], "Park Family");
+  assert.equal(childRow.Programs, "tae_kwon_do; muay_thai");
+});
+
+test("matches a Square subscription payment by dedicated Square customer ID", () => {
+  const result = importMembersFromRecords(
+    [{ Name: "Sam Park", Square: "CUS_123", Amount: "120" }],
+    { name: "Name", squareCustomerId: "Square", monthlyAmount: "Amount" },
+    createEmptyStore()
+  );
+  const payment = normalizeSquarePayment({ payment: { id: "pay-sub", status: "COMPLETED", customer_id: "CUS_123", amount_money: { amount: 12000, currency: "USD" } } });
+  assert.equal(suggestedSquareMember(payment, result.store.members)?.name, "Sam Park");
 });

@@ -14,3 +14,11 @@ contextBridge.exposeInMainWorld("paymentTrackerUpdates", {
     return () => ipcRenderer.removeListener("updates:status", listener);
   }
 });
+
+contextBridge.exposeInMainWorld("paymentTrackerProviders", {
+  list: (provider) => ipcRenderer.invoke("providers:list", provider),
+  sync: (provider) => ipcRenderer.invoke("providers:sync", provider),
+  updateStatus: (provider, paymentId, patch) => ipcRenderer.invoke("providers:update-status", provider, paymentId, patch),
+  getSettings: () => ipcRenderer.invoke("providers:get-settings"),
+  saveSquareRelay: (settings) => ipcRenderer.invoke("providers:save-square-relay", settings)
+});

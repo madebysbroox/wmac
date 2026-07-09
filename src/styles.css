@@ -23,6 +23,181 @@
   --strong-shadow: 0 18px 48px rgba(31, 41, 51, 0.12);
 }
 
+/* Household, training progression, and installed-app Square setup */
+.square-connection-card {
+  margin: 0 0 20px;
+  padding: 16px 18px;
+  border: 1px solid #d7deea;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.square-connection-card summary {
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 800;
+  color: #18304a;
+}
+
+.square-connection-card summary small,
+.section-kicker {
+  display: block;
+  margin-top: 3px;
+  color: #66758a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.square-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, .65fr);
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.connection-status {
+  margin: 10px 0 0;
+  color: #526175;
+  font-weight: 700;
+}
+
+.household-card,
+.progress-card {
+  margin: 18px 0;
+  padding: 18px;
+  border-radius: 18px;
+}
+
+.household-card {
+  border: 1px solid #d7dfeb;
+  background: #f7f9fc;
+}
+
+.household-card h3,
+.progress-card h3 {
+  margin: 5px 0 12px;
+}
+
+.household-people {
+  display: grid;
+  gap: 8px;
+}
+
+.household-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #dce3ec;
+  border-radius: 12px;
+  background: #fff;
+  color: #1a2a3b;
+  text-align: left;
+}
+
+.household-person:hover,
+.household-person.current {
+  border-color: #8ca5c2;
+  box-shadow: 0 4px 14px rgba(28, 54, 84, .08);
+}
+
+.household-person-main {
+  display: grid;
+  gap: 2px;
+}
+
+.household-person-main small {
+  color: #6b7787;
+}
+
+.participation-chip,
+.program-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.participation-chip.student,
+.program-chip {
+  color: #135a3c;
+  background: #dff4e9;
+}
+
+.participation-chip.contact {
+  color: #5f6875;
+  background: #edf0f4;
+}
+
+.dot.contact {
+  background: #8a94a3;
+}
+
+.progress-card {
+  overflow: hidden;
+  border: 1px solid #d8c994;
+  background: linear-gradient(135deg, #fffaf0 0%, #fff 58%, #edf6ff 100%);
+  box-shadow: 0 10px 24px rgba(92, 70, 12, .08);
+}
+
+.progress-copy p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 14px;
+}
+
+.level-progress {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e9ef;
+}
+
+.level-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #b98b1d, #e9b949 55%, #2f6ea6);
+}
+
+.progress-encouragement {
+  margin: 10px 0 0;
+  color: #3b4a5f;
+  font-weight: 750;
+}
+
+.program-fieldset {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid #d9e0e8;
+  border-radius: 12px;
+}
+
+.program-fieldset legend {
+  padding: 0 6px;
+  font-weight: 800;
+}
+
+@media (max-width: 850px) {
+  .square-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .household-person {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1424,6 +1599,10 @@ h3 {
 
 .layout.members-layout {
   grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.layout.square-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sidebar,

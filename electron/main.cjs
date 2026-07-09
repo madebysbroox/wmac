@@ -1,8 +1,10 @@
 const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("node:path");
+const { createPaymentProviderService } = require("./payment-providers.cjs");
 
 let mainWindow;
+let paymentProviders;
 let lastUpdateStatus = {
   status: "idle",
   message: "Ready to check for updates.",
@@ -133,7 +135,17 @@ ipcMain.handle("updates:install", () => {
   autoUpdater.quitAndInstall(false, true);
 });
 
+ipcMain.handle("providers:list", (_event, provider) => paymentProviders.list(provider));
+ipcMain.handle("providers:sync", (_event, provider) => paymentProviders.sync(provider));
+ipcMain.handle("providers:update-status", (_event, provider, paymentId, patch) => paymentProviders.updateStatus(provider, paymentId, patch));
+ipcMain.handle("providers:get-settings", () => paymentProviders.getPublicSettings());
+ipcMain.handle("providers:save-square-relay", (_event, settings) => paymentProviders.saveSquareRelay(settings || {}));
+
 app.whenReady().then(() => {
+  paymentProviders = createPaymentProviderService({
+    userDataPath: app.getPath("userData"),
+    appRoot: path.join(__dirname, "..")
+  });
   configureAutoUpdater();
   Menu.setApplicationMenu(null);
   createWindow();

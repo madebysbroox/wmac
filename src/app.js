@@ -11,6 +11,7 @@ import {
   getMemberStatus,
   getYearRevenue,
   guessColumnMap,
+  householdMembers,
   importMembersFromRecords,
   importPaymentsFromRecords,
   nextUnpaidTuitionMonth,
@@ -18,6 +19,7 @@ import {
   parseCsv,
   removePayment,
   searchMembers,
+  isActiveParticipant,
   stagedPaymentMonth,
   suggestedPaymentMember,
   toCsv,
@@ -69,12 +71,13 @@ const elements = {};
   "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
   "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "squareView", "squareStatusLine",
   "syncSquareButton", "syncWorldBankcardButton", "squareSummary", "squarePayments",
-  "squareDetail", "squareQueueHelp", "rosterView",
+  "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
-  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid",
+  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid", "householdCard", "progressCard",
   "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
-  "memberPhone", "memberEmail", "memberParent", "memberAmount", "memberStart",
+  "memberPhone", "memberEmail", "memberParent", "memberHousehold", "memberRole", "memberParticipant",
+  "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberStart",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
   "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
@@ -113,6 +116,7 @@ elements.dashboardLate.addEventListener("click", () => showRoster("late"));
 elements.backToDashboard.addEventListener("click", showDashboard);
 elements.syncSquareButton.addEventListener("click", syncSquarePayments);
 elements.syncWorldBankcardButton.addEventListener("click", syncWorldBankcardPayments);
+elements.saveSquareSettingsButton.addEventListener("click", saveSquareConnectionSettings);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
@@ -145,6 +149,7 @@ elements.installUpdateButton.addEventListener("click", installAppUpdate);
 initAppUpdates();
 render();
 loadSquarePayments();
+loadSquareConnectionSettings();
 
 // ---------------------------------------------------------------------------
 // Storage
@@ -296,6 +301,7 @@ function renderDashboard() {
     <div><span>활동 회원 <small lang="en">Active members</small></span><strong>${activeTotal}</strong></div>
     <div><span>이번 달 완납 <small lang="en">Paid this month</small></span><strong>${currentRate}%</strong></div>
     <div><span>이번 달 아직 예상 <small lang="en">Expected from up-to-date</small></span><strong>${formatMoney(summary.expectedCurrentMonthFromUpToDate)}</strong></div>
+    <div><span>비참가 가족 연락처 <small lang="en">Family contacts</small></span><strong>${summary.nonParticipantContacts}</strong></div>
     <div><span>쉬는 회원 <small lang="en">Inactive members</small></span><strong>${summary.inactiveMembers}</strong></div>
   `;
 
@@ -385,12 +391,13 @@ function renderMemberList() {
 
   members.forEach((member) => {
     const status = displayedMemberStatus(member);
+    const contactOnly = member.participant === false;
     const button = document.createElement("button");
     button.type = "button";
     button.className = `member-item ${member.id === state.selectedId ? "active" : ""}`;
     button.innerHTML = `
-      <strong><span class="dot ${status.level}"></span>${escapeHtml(member.name)}</strong>
-      <span>${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}</span>
+      <strong><span class="dot ${contactOnly ? "contact" : status.level}"></span>${escapeHtml(member.name)}</strong>
+      <span>${contactOnly ? "비참가 연락처 · Contact only" : `${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}`}</span>
     `;
     button.addEventListener("click", () => selectMember(member.id));
     elements.memberList.append(button);
@@ -413,13 +420,20 @@ function renderDetail() {
     .filter(Boolean)
     .join("  ");
   const dueDay = Number(member.startDate?.split("-")[2]) || 1;
-  elements.detailDueDay.textContent = `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
-  elements.statusBadge.innerHTML = `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>`;
+  elements.detailDueDay.textContent = member.participant === false
+    ? "회비 일정 없음 · Contact only - no tuition schedule"
+    : `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
+  elements.statusBadge.innerHTML = member.participant === false
+    ? `비참가<small lang="en">Contact only</small>`
+    : `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>`;
   elements.statusBadge.className = `status-badge status-${status.level}`;
   elements.latestPaid.textContent = status.lastPaidMonth
     ? `마지막 납부: ${formatMonthBi(status.lastPaidMonth)}`
     : MSG.noPaymentsYet;
   elements.latestPaid.className = `latest-paid ${status.lastPaidMonth ? "has-payment" : "no-payment"}`;
+
+  renderHouseholdCard(member);
+  renderProgressCard(member);
 
   renderQuickPay(member, status);
 
@@ -451,9 +465,89 @@ function renderDetail() {
   elements.memberPhone.value = formatPhone(member.phone);
   elements.memberEmail.value = member.email || "";
   elements.memberParent.value = member.parentName || "";
+  elements.memberHousehold.value = member.householdName || "";
+  elements.memberRole.value = member.householdRole || "adult";
+  elements.memberParticipant.checked = member.participant !== false;
+  elements.memberTaeKwonDo.checked = (member.programs || []).includes("tae_kwon_do");
+  elements.memberMuayThai.checked = (member.programs || []).includes("muay_thai");
+  elements.memberBeltLevel.value = member.beltLevel || "";
+  elements.memberNextLevel.value = member.nextLevel || "";
+  elements.memberSquareCustomerId.value = member.squareCustomerId || "";
   elements.memberAmount.value = member.monthlyAmount || "";
   elements.memberStart.value = member.startDate || "";
   elements.memberInactive.checked = Boolean(member.inactive);
+}
+
+function renderHouseholdCard(member) {
+  const family = householdMembers(state.store.members, member);
+  const householdName = member.householdName || (family.length > 1 ? `${member.name} household` : "");
+  if (!householdName && family.length <= 1) {
+    elements.householdCard.classList.add("hidden");
+    elements.householdCard.innerHTML = "";
+    return;
+  }
+
+  const roleLabels = {
+    parent_guardian: "부모/보호자 · Parent/guardian",
+    child: "자녀 · Child",
+    adult: "성인 · Adult"
+  };
+  elements.householdCard.classList.remove("hidden");
+  elements.householdCard.innerHTML = `
+    <div class="section-kicker">가족 계정 · Household</div>
+    <h3>${escapeHtml(householdName)}</h3>
+    <div class="household-people">
+      ${family.map((person) => `
+        <button type="button" class="household-person ${person.id === member.id ? "current" : ""}" data-household-member="${escapeHtml(person.id)}">
+          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small></span>
+          <span class="participation-chip ${person.participant === false ? "contact" : "student"}">${person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+  elements.householdCard.querySelectorAll("[data-household-member]").forEach((button) => {
+    button.addEventListener("click", () => selectMember(button.dataset.householdMember));
+  });
+}
+
+function renderProgressCard(member) {
+  if (member.participant === false) {
+    elements.progressCard.classList.add("hidden");
+    elements.progressCard.innerHTML = "";
+    return;
+  }
+  const programs = member.programs || [];
+  const programLabels = programs.map((program) => program === "muay_thai" ? "무에타이 · Muay Thai" : "태권도 · Tae Kwon Do");
+  const current = member.beltLevel || "첫 수업 · First class";
+  const next = member.nextLevel || suggestedNextLevel(member.beltLevel, programs);
+  const progress = beltProgress(member.beltLevel);
+  elements.progressCard.classList.remove("hidden");
+  elements.progressCard.innerHTML = `
+    <div class="progress-copy">
+      <div class="section-kicker">수련 여정 · Training Journey</div>
+      <h3>${escapeHtml(current)} <span aria-hidden="true">→</span> ${escapeHtml(next)}</h3>
+      <p>${programLabels.length ? programLabels.map((label) => `<span class="program-chip">${label}</span>`).join("") : "프로그램을 선택하세요 · Choose a program"}</p>
+    </div>
+    <div class="level-progress" role="progressbar" aria-label="Belt journey progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
+      <span style="width: ${progress}%"></span>
+    </div>
+    <p class="progress-encouragement">다음 목표를 향해 계속 전진하세요! · Keep moving toward the next goal!</p>
+  `;
+}
+
+function suggestedNextLevel(currentLevel, programs) {
+  const belts = ["White Belt", "Yellow Belt", "Orange Belt", "Green Belt", "Blue Belt", "Purple Belt", "Brown Belt", "Red Belt", "Black Belt"];
+  const index = belts.findIndex((belt) => belt.toLowerCase() === String(currentLevel || "").trim().toLowerCase());
+  if (index >= 0 && index < belts.length - 1) {
+    return belts[index + 1];
+  }
+  return programs.includes("muay_thai") ? "다음 기술 레벨 · Next skill level" : "다음 띠 · Next belt";
+}
+
+function beltProgress(currentLevel) {
+  const belts = ["white", "yellow", "orange", "green", "blue", "purple", "brown", "red", "black"];
+  const index = belts.findIndex((belt) => String(currentLevel || "").toLowerCase().includes(belt));
+  return index < 0 ? 8 : Math.round(((index + 1) / belts.length) * 100);
 }
 
 // The reminder button opens a review step first, so Master Lee can choose the
@@ -471,7 +565,10 @@ function renderQuickPay(member, status) {
 
   button.classList.toggle("done", paidThisMonth);
   button.classList.toggle("undo", paidThisMonth);
-  if (paidThisMonth) {
+  if (member.participant === false) {
+    button.disabled = true;
+    button.innerHTML = `<span lang="ko">비참가 연락처</span><small lang="en">Contact only - no tuition due</small>`;
+  } else if (paidThisMonth) {
     button.disabled = false;
     button.innerHTML = `<span lang="ko">이번 달 미납으로 변경</span><small lang="en">Mark this month unpaid</small>`;
   } else if (amount <= 0) {
@@ -543,7 +640,7 @@ function initialsFor(name) {
 
 function memberRows() {
   return state.store.members
-    .filter((member) => !member.inactive)
+    .filter(isActiveParticipant)
     .map((member) => ({
       member,
       status: displayedMemberStatus(member),
@@ -622,7 +719,7 @@ function stagedPaymentView(payment) {
   const options = [
     `<option value="">회원 선택 · Choose member</option>`,
     ...state.store.members
-      .filter((member) => !member.inactive)
+      .filter(isActiveParticipant)
       .map((member) => `<option value="${escapeHtml(member.id)}"${member.id === selectedMemberId ? " selected" : ""}>${escapeHtml(member.name)}</option>`)
   ].join("");
   const buyerLine = [payment.buyerName, payment.buyerEmail, formatPhone(payment.buyerPhone)].filter(Boolean).join(" · ") || "고객 정보 없음 · No customer details";
@@ -926,11 +1023,9 @@ async function loadStagedPayments() {
 
 async function loadProviderPayments(provider) {
   try {
-    const response = await fetch(`/api/${provider}/payments`);
-    if (!response.ok) {
-      throw new Error(`${provider} staging API unavailable.`);
-    }
-    const data = await response.json();
+    const data = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.list(provider)
+      : await fetchProviderJson(`/api/${provider}/payments`);
     const payments = (data.payments || []).map((payment) => ({
       ...payment,
       provider: payment.provider || provider,
@@ -966,11 +1061,9 @@ async function syncProviderPayments(provider) {
     button.disabled = true;
   }
   try {
-    const response = await fetch(`/api/${provider}/sync`, { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.nextStep || data.error || `${label} sync failed.`);
-    }
+    const data = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.sync(provider)
+      : await fetchProviderJson(`/api/${provider}/sync`, { method: "POST" });
     const syncedPayments = (data.payments || []).map((payment) => ({ ...payment, provider: payment.provider || provider }));
     state.stagedPayments = [
       ...state.stagedPayments.filter((payment) => (payment.provider || "square") !== provider),
@@ -1047,6 +1140,11 @@ function setStagedPaymentNote(paymentId, reviewNote, { persist = false } = {}) {
 
 async function approveStagedPayment(paymentId, category = "tuition") {
   const payment = state.stagedPayments.find((item) => item.id === paymentId);
+  const squareStatus = String(payment?.squareStatus || payment?.providerStatus || "").toUpperCase();
+  if ((payment?.provider || "square") === "square" && squareStatus && squareStatus !== "COMPLETED") {
+    showToast("완료된 Square 결제만 승인할 수 있습니다. · Only completed Square payments can be approved.");
+    return;
+  }
   const memberId = payment?.memberId || payment?.suggestedMemberId;
   const member = state.store.members.find((item) => item.id === memberId);
   if (!payment || !member) {
@@ -1107,23 +1205,72 @@ async function saveStagedStatus(paymentId, patch) {
   );
 
   try {
-    const response = await fetch(`/api/${provider}/payments/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: paymentId, ...patch })
-    });
-    if (response.ok) {
-      const data = await response.json();
-      if (data.payment) {
-        state.stagedPayments = state.stagedPayments.map((payment) =>
-          payment.id === paymentId ? data.payment : payment
-        );
-      }
+    const data = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.updateStatus(provider, paymentId, patch)
+      : await fetchProviderJson(`/api/${provider}/payments/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: paymentId, ...patch })
+      });
+    if (data.payment) {
+      state.stagedPayments = state.stagedPayments.map((payment) =>
+        payment.id === paymentId ? data.payment : payment
+      );
     }
   } catch {
     state.stagedPayments = state.stagedPayments.map((payment) =>
       payment.id === paymentId ? { ...current, ...patch } : payment
     );
+  }
+}
+
+async function fetchProviderJson(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.nextStep || data.error || "Payment provider request failed.");
+  }
+  return data;
+}
+
+async function loadSquareConnectionSettings() {
+  if (!window.paymentTrackerProviders) {
+    elements.squareSettingsStatus.textContent = "개발 서버에서는 환경 변수로 연결합니다. · Development server uses environment variables.";
+    return;
+  }
+  try {
+    const settings = await window.paymentTrackerProviders.getSettings();
+    elements.squareRelayUrl.value = settings.squareRelayBaseUrl || "";
+    elements.squareSettingsStatus.textContent = settings.squareRelayConfigured
+      ? "Square 중계 서버가 연결되어 있습니다. · Square relay is configured."
+      : "Square 중계 서버 정보를 입력하세요. · Enter the Square relay information.";
+  } catch (error) {
+    elements.squareSettingsStatus.textContent = error.message;
+  }
+}
+
+async function saveSquareConnectionSettings() {
+  if (!window.paymentTrackerProviders) {
+    showToast("설치된 Windows 앱에서 설정하세요. · Configure this in the installed Windows app.");
+    return;
+  }
+  elements.saveSquareSettingsButton.disabled = true;
+  try {
+    const result = await window.paymentTrackerProviders.saveSquareRelay({
+      baseUrl: elements.squareRelayUrl.value,
+      token: elements.squareRelayToken.value
+    });
+    elements.squareRelayToken.value = "";
+    elements.squareSettingsStatus.textContent = result.configured
+      ? "연결을 저장했습니다. 이제 Sync Square를 누르세요. · Connection saved. Click Sync Square."
+      : "연결 설정을 지웠습니다. · Connection settings cleared.";
+    showToast(elements.squareSettingsStatus.textContent);
+    await loadSquarePayments();
+  } catch (error) {
+    elements.squareSettingsStatus.textContent = error.message;
+    showToast(error.message);
+  } finally {
+    elements.saveSquareSettingsButton.disabled = false;
   }
 }
 
@@ -1152,6 +1299,13 @@ function addNewMember() {
     email: "",
     phone: "",
     parentName: "",
+    householdName: "",
+    householdRole: "adult",
+    participant: true,
+    programs: [],
+    beltLevel: "",
+    nextLevel: "",
+    squareCustomerId: "",
     externalId: "",
     inactive: false
   };
@@ -1226,6 +1380,17 @@ function saveMember(event) {
     phone: elements.memberPhone.value,
     email: elements.memberEmail.value,
     parentName: elements.memberParent.value,
+    householdName: elements.memberHousehold.value,
+    householdId: "",
+    householdRole: elements.memberRole.value,
+    participant: elements.memberParticipant.checked,
+    programs: [
+      elements.memberTaeKwonDo.checked ? "tae_kwon_do" : "",
+      elements.memberMuayThai.checked ? "muay_thai" : ""
+    ].filter(Boolean),
+    beltLevel: elements.memberBeltLevel.value,
+    nextLevel: elements.memberNextLevel.value,
+    squareCustomerId: elements.memberSquareCustomerId.value,
     monthlyAmount: elements.memberAmount.value,
     startDate: elements.memberStart.value,
     inactive: elements.memberInactive.checked
