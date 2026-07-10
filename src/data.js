@@ -614,6 +614,26 @@ export function removePayment(store, memberId, month) {
   };
 }
 
+// Records one normal tuition payment for every unpaid billable month through
+// today. Individual months remain ordinary payments, so they can be removed
+// later with removePayment just like any manually entered payment.
+export function bringMemberUpToDate(store, member, today = new Date()) {
+  const amount = Number(member?.monthlyAmount || 0);
+  if (!member || amount <= 0) {
+    return store;
+  }
+
+  return getUnpaidMonths(member, store.payments, today).reduce(
+    (nextStore, month) => addPayment(nextStore, {
+      memberId: member.id,
+      month,
+      amount,
+      source: "manual-catch-up"
+    }),
+    store
+  );
+}
+
 export function upsertMember(store, member) {
   const nextMember = {
     ...member,
@@ -646,6 +666,7 @@ export function getMemberStatus(member, payments, today = new Date()) {
       currentMonth,
       lastPaidMonth: "",
       recentMonths: [],
+      billableMonths: [],
       paidMonths: new Set()
     };
   }
@@ -679,6 +700,7 @@ export function getMemberStatus(member, payments, today = new Date()) {
     currentMonth,
     lastPaidMonth,
     recentMonths: recentMonths.map((month) => ({ month, paid: paidMonths.has(month) })),
+    billableMonths,
     paidMonths
   };
 }

@@ -73,7 +73,8 @@ export const MSG = {
   importedPayments: (addedCount, duplicateCount, unmatched) =>
     `결제 ${addedCount}건 추가, 이미 기록된 ${duplicateCount}건 건너뜀 (${unmatched}건 확인 필요). · Added ${addedCount} payments, skipped ${duplicateCount} already recorded, ${unmatched} rows need checking.`,
   paymentSavedFor: (name, month) => `${name} — ${month} 회비를 저장했습니다. · Payment saved.`,
-  paymentRemovedFor: (name, month) => `${name} — ${month} 납부 기록을 삭제했습니다. · Marked unpaid.`
+  paymentRemovedFor: (name, month) => `${name} — ${month} 납부 기록을 삭제했습니다. · Marked unpaid.`,
+  paymentsCaughtUpFor: (name, count) => `${name} — 미납 ${count}개월을 완납 처리했습니다. · Marked ${count} unpaid month${count === 1 ? "" : "s"} paid.`
 };
 
 // "완납 · Paid up" — for places that need plain text in both languages.

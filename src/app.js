@@ -2,6 +2,7 @@ import {
   MEMBER_FIELD_ALIASES,
   PAYMENT_FIELD_ALIASES,
   addPayment,
+  bringMemberUpToDate,
   createEmptyStore,
   exportRosterRows,
   exportStoreRows,
@@ -74,7 +75,7 @@ const elements = {};
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid", "householdCard", "progressCard",
-  "quickPayButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
+  "quickPayButton", "catchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberPhone", "memberEmail", "memberParent", "memberHousehold", "memberRole", "memberParticipant",
   "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberStart",
@@ -118,6 +119,7 @@ elements.syncSquareButton.addEventListener("click", syncSquarePayments);
 elements.syncWorldBankcardButton.addEventListener("click", syncWorldBankcardPayments);
 elements.saveSquareSettingsButton.addEventListener("click", saveSquareConnectionSettings);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
+elements.catchUpButton.addEventListener("click", catchUpMemberPayments);
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
 elements.paymentForm.addEventListener("submit", savePayment);
@@ -436,9 +438,11 @@ function renderDetail() {
   renderProgressCard(member);
 
   renderQuickPay(member, status);
+  elements.catchUpButton.disabled = member.participant === false || balance.unpaidMonths.length === 0 || Number(member.monthlyAmount || 0) <= 0;
 
   elements.monthStrip.innerHTML = "";
-  status.recentMonths.forEach((month) => {
+  status.billableMonths.forEach((monthKey) => {
+    const month = { month: monthKey, paid: status.paidMonths.has(monthKey) };
     const item = document.createElement("div");
     item.className = `month-box ${month.paid ? "paid" : "unpaid"}`;
     item.innerHTML = `
@@ -1337,6 +1341,23 @@ function quickPayCurrentMonth() {
   });
   saveStore(MSG.paymentSaved);
   showToast(MSG.paymentSavedFor(member.name, formatMonthBi(status.currentMonth)));
+  render();
+}
+
+function catchUpMemberPayments() {
+  const member = selectedMember();
+  if (!member) {
+    return;
+  }
+
+  const balance = getMemberBalance(member, state.store.payments);
+  if (!balance.unpaidMonths.length || Number(member.monthlyAmount || 0) <= 0) {
+    return;
+  }
+
+  state.store = bringMemberUpToDate(state.store, member);
+  saveStore(MSG.paymentsCaughtUpFor(member.name, balance.unpaidMonths.length));
+  showToast(MSG.paymentsCaughtUpFor(member.name, balance.unpaidMonths.length));
   render();
 }
 

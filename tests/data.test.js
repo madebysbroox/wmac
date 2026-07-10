@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   addPayment,
+  bringMemberUpToDate,
   createEmptyStore,
   getDashboardSummary,
   exportStoreRows,
@@ -151,6 +152,22 @@ test("removing a payment marks that month unpaid again", () => {
 
   assert.equal(getMemberStatus(store.members[0], store.payments, new Date("2026-06-08")).level, "watch");
   assert.deepEqual(getMemberBalance(store.members[0], store.payments, new Date("2026-06-08")).unpaidMonths, ["2026-06"]);
+});
+
+test("bringing a member up to date keeps each month individually removable", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  let store = bringMemberUpToDate(imported.store, member, new Date("2026-06-08"));
+
+  assert.deepEqual(store.payments.map((payment) => payment.month).sort(), ["2026-04", "2026-05", "2026-06"]);
+  assert.equal(getMemberStatus(member, store.payments, new Date("2026-06-08")).level, "paid");
+
+  store = removePayment(store, member.id, "2026-05");
+  assert.deepEqual(getMemberBalance(member, store.payments, new Date("2026-06-08")).unpaidMonths, ["2026-05"]);
 });
 
 test("calculates invoice balance from unpaid months", () => {
