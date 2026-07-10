@@ -503,15 +503,21 @@ function renderHouseholdCard(member) {
     <div class="household-people">
       ${family.map((person) => `
         <button type="button" class="household-person ${person.id === member.id ? "current" : ""}" data-household-member="${escapeHtml(person.id)}">
-          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small></span>
+          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
           <span class="participation-chip ${person.participant === false ? "contact" : "student"}">${person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
         </button>
       `).join("")}
+    </div>
+    <div class="household-actions">
+      <button type="button" class="button secondary bi" data-add-household-member>
+        <span lang="ko">가족 구성원 추가</span><small lang="en">Add Family Member</small>
+      </button>
     </div>
   `;
   elements.householdCard.querySelectorAll("[data-household-member]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.householdMember));
   });
+  elements.householdCard.querySelector("[data-add-household-member]")?.addEventListener("click", addFamilyMember);
 }
 
 function renderProgressCard(member) {
@@ -1305,6 +1311,38 @@ function addNewMember() {
     parentName: "",
     householdName: "",
     householdRole: "adult",
+    participant: true,
+    programs: [],
+    beltLevel: "",
+    nextLevel: "",
+    squareCustomerId: "",
+    externalId: "",
+    inactive: false
+  };
+  state.store = upsertMember(state.store, member);
+  saveStore(MSG.newMemberAdded);
+  selectMember(member.id);
+  elements.memberName.focus();
+  elements.memberName.select();
+}
+
+function addFamilyMember() {
+  const familyMember = selectedMember();
+  if (!familyMember) {
+    return;
+  }
+
+  const member = {
+    id: makeId("mem"),
+    name: "New Family Member",
+    startDate: familyMember.startDate || new Date().toISOString().slice(0, 10),
+    monthlyAmount: familyMember.monthlyAmount || 0,
+    email: "",
+    phone: "",
+    parentName: "",
+    householdName: familyMember.householdName,
+    householdId: familyMember.householdId || "",
+    householdRole: "child",
     participant: true,
     programs: [],
     beltLevel: "",

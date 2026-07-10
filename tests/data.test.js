@@ -220,6 +220,24 @@ test("members with a future start date are not marked as missing payments", () =
   assert.equal(balance.totalDue, 0);
 });
 
+test("family members can have independent contract start dates", () => {
+  const imported = importMembersFromRecords(
+    [
+      { Name: "Sam Park", Family: "Park Family", Amount: "120", Start: "2026-04-01" },
+      { Name: "Mina Park", Family: "Park Family", Amount: "120", Start: "2026-06-01" }
+    ],
+    { name: "Name", householdName: "Family", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const sam = imported.store.members.find((member) => member.name === "Sam Park");
+  const mina = imported.store.members.find((member) => member.name === "Mina Park");
+
+  assert.equal(sam.startDate, "2026-04-01");
+  assert.equal(mina.startDate, "2026-06-01");
+  assert.deepEqual(getMemberBalance(sam, imported.store.payments, new Date("2026-06-08")).unpaidMonths, ["2026-04", "2026-05", "2026-06"]);
+  assert.deepEqual(getMemberBalance(mina, imported.store.payments, new Date("2026-06-08")).unpaidMonths, ["2026-06"]);
+});
+
 test("dashboard summary separates late money, at-risk current month, and healthy cash flow", () => {
   let store = createEmptyStore();
   const imported = importMembersFromRecords(

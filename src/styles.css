@@ -114,6 +114,14 @@
   color: #6b7787;
 }
 
+.household-contract {
+  font-weight: 700;
+}
+
+.household-actions {
+  margin-top: 12px;
+}
+
 .participation-chip,
 .program-chip {
   display: inline-flex;
