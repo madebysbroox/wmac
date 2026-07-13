@@ -1,3 +1,9 @@
+import {
+  nextMemberCertification,
+  normalizeMemberCertifications,
+  primaryCertificationLabel
+} from "./certification.js";
+
 const MEMBER_FIELD_ALIASES = {
   name: ["name", "member name", "student name", "student", "full name"],
   startDate: ["contract start date", "start date", "joined", "join date", "contract date"],
@@ -12,7 +18,9 @@ const MEMBER_FIELD_ALIASES = {
   participant: ["participant", "student", "takes classes", "participates"],
   programs: ["programs", "program", "classes", "martial arts"],
   beltLevel: ["belt", "belt level", "current belt", "current level", "level"],
-  nextLevel: ["next belt", "next level", "next goal", "promotion goal"]
+  nextLevel: ["next belt", "next level", "next goal", "promotion goal"],
+  taeKwonDoCertification: ["tae kwon do certification", "taekwondo certification", "tae kwon do level", "tkd level"],
+  muayThaiCertification: ["muay thai certification", "muay thai level"]
 };
 
 const PAYMENT_FIELD_ALIASES = {
@@ -27,7 +35,7 @@ const PAYMENT_FIELD_ALIASES = {
 
 export function createEmptyStore() {
   return {
-    version: 1,
+    version: 2,
     members: [],
     payments: [],
     updatedAt: new Date().toISOString()
@@ -181,6 +189,16 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
       inactive: existing?.inactive ?? false,
       notes: existing?.notes ?? ""
     };
+    member.certifications = normalizeMemberCertifications({
+      ...member,
+      certifications: {
+        ...(existing?.certifications || {}),
+        tae_kwon_do: clean(record[columnMap.taeKwonDoCertification]) || existing?.certifications?.tae_kwon_do || "",
+        muay_thai: clean(record[columnMap.muayThaiCertification]) || existing?.certifications?.muay_thai || ""
+      }
+    });
+    member.beltLevel = primaryCertificationLabel(member);
+    member.nextLevel = nextMemberCertification(member) || member.nextLevel;
     member.householdId = existing?.householdId || householdIdFor(member.householdName);
     member.identityKey = buildIdentityKey(member);
 
@@ -576,6 +594,7 @@ export function addPayment(store, payment) {
     source: payment.source || "manual",
     category,
     note: clean(payment.note),
+    batchId: clean(payment.batchId),
     squarePaymentId: clean(payment.squarePaymentId),
     worldBankcardPaymentId: clean(payment.worldBankcardPaymentId),
     providerPaymentId: clean(payment.providerPaymentId || payment.squarePaymentId || payment.worldBankcardPaymentId),
@@ -635,6 +654,7 @@ export function bringMemberUpToDate(store, member, today = new Date()) {
 }
 
 export function upsertMember(store, member) {
+  const certifications = normalizeMemberCertifications(member);
   const nextMember = {
     ...member,
     id: member.id || cryptoId("mem"),
@@ -647,8 +667,9 @@ export function upsertMember(store, member) {
     householdName: clean(member.householdName),
     householdId: member.householdId || householdIdFor(member.householdName),
     programs: normalizePrograms(member.programs),
-    beltLevel: clean(member.beltLevel),
-    nextLevel: clean(member.nextLevel),
+    certifications,
+    beltLevel: primaryCertificationLabel({ ...member, certifications }),
+    nextLevel: nextMemberCertification({ ...member, certifications }) || clean(member.nextLevel),
     squareCustomerId: clean(member.squareCustomerId)
   };
   nextMember.identityKey = buildIdentityKey(nextMember);
@@ -657,7 +678,26 @@ export function upsertMember(store, member) {
   return { ...store, members: members.sort((a, b) => a.name.localeCompare(b.name)), updatedAt: new Date().toISOString() };
 }
 
-export function getMemberStatus(member, payments, today = new Date()) {
+export function migrateStore(store) {
+  if (!store?.members || !store?.payments) {
+    return createEmptyStore();
+  }
+  return {
+    ...store,
+    version: 2,
+    members: store.members.map((member) => {
+      const certifications = normalizeMemberCertifications(member);
+      return {
+        ...member,
+        certifications,
+        beltLevel: primaryCertificationLabel({ ...member, certifications }),
+        nextLevel: nextMemberCertification({ ...member, certifications }) || member.nextLevel || ""
+      };
+    })
+  };
+}
+
+export function getMemberPaymentState(member, payments, today = new Date(), pendingPayments = []) {
   const currentMonth = monthKey(today);
   if (member.participant === false || member.inactive) {
     return {
@@ -667,31 +707,59 @@ export function getMemberStatus(member, payments, today = new Date()) {
       lastPaidMonth: "",
       recentMonths: [],
       billableMonths: [],
-      paidMonths: new Set()
+      paidMonths: new Set(),
+      unpaidMonths: [],
+      dueUnpaidMonths: [],
+      upcomingUnpaidMonths: [],
+      months: [],
+      oldestDaysLate: 0,
+      flags: { pending: false, setupNeeded: false }
     };
   }
   const firstDueMonth = getFirstDueMonth(member, currentMonth);
   const billableMonths = monthsInRange(firstDueMonth, currentMonth);
   const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
+  const pendingMonths = new Set((pendingPayments || [])
+    .filter((payment) => payment.status === "pending" || payment.status === "needs_match")
+    .map((payment) => normalizeMonth(payment.paymentMonth || payment.month || payment.paidAt))
+    .filter(Boolean));
+  const todayUtc = utcDateValue(today);
+  const months = billableMonths.map((month) => {
+    const dueDate = dueDateForMonth(member, month);
+    const daysLate = Math.floor((todayUtc - utcDateValue(dueDate)) / 86400000);
+    const paid = paidMonths.has(month);
+    const pending = !paid && pendingMonths.has(month);
+    let state = "upcoming";
+    if (paid) {
+      state = "paid";
+    } else if (pending) {
+      state = "pending";
+    } else if (daysLate >= LATE_FEE_GRACE_DAYS) {
+      state = "behind";
+    } else if (daysLate >= 0) {
+      state = "attention";
+    }
+    return { month, dueDate, daysLate, paid, pending, state };
+  });
   const recentMonths = billableMonths.slice(-4);
   const lastPaidMonth = Array.from(paidMonths).sort().at(-1) || "";
-  const unpaidRecent = recentMonths.filter((month) => !paidMonths.has(month));
-  const unpaidBillableMonths = billableMonths.filter((month) => !paidMonths.has(month));
-  const currentMonthIsDue = billableMonths.includes(currentMonth);
-  const monthsBehind = currentMonthIsDue && !paidMonths.has(currentMonth)
-    ? unpaidBillableMonths.length
-    : 0;
+  const unpaidMonths = months.filter((month) => !month.paid).map((month) => month.month);
+  const dueUnpaidMonths = months.filter((month) => !month.paid && month.daysLate >= 0);
+  const upcomingUnpaidMonths = months.filter((month) => !month.paid && month.daysLate < 0);
 
   let level = "paid";
   let label = "Paid up";
-  if (currentMonthIsDue && !paidMonths.has(currentMonth)) {
-    if (monthsBehind >= 3 || (lastPaidMonth && unpaidRecent.length >= 3)) {
-      level = "late";
-      label = "Behind";
-    } else {
-      level = "watch";
-      label = "Needs attention";
-    }
+  if (dueUnpaidMonths.some((month) => month.daysLate >= LATE_FEE_GRACE_DAYS)) {
+    level = "late";
+    label = "Behind";
+  } else if (dueUnpaidMonths.length > 0) {
+    level = "watch";
+    label = "Needs attention";
+  }
+  const setupNeeded = !isIsoDate(member.startDate) || Number(member.monthlyAmount || 0) <= 0;
+  if (setupNeeded) {
+    level = "watch";
+    label = "Needs information";
   }
 
   return {
@@ -701,27 +769,110 @@ export function getMemberStatus(member, payments, today = new Date()) {
     lastPaidMonth,
     recentMonths: recentMonths.map((month) => ({ month, paid: paidMonths.has(month) })),
     billableMonths,
-    paidMonths
+    paidMonths,
+    unpaidMonths,
+    dueUnpaidMonths,
+    upcomingUnpaidMonths,
+    months,
+    oldestDaysLate: dueUnpaidMonths.reduce((maximum, month) => Math.max(maximum, month.daysLate), 0),
+    flags: {
+      pending: pendingMonths.size > 0,
+      setupNeeded
+    }
   };
 }
 
+export function getMemberStatus(member, payments, today = new Date()) {
+  return getMemberPaymentState(member, payments, today);
+}
+
 export function getUnpaidMonths(member, payments, today = new Date()) {
-  if (member.participant === false || member.inactive) {
-    return [];
-  }
-  const currentMonth = monthKey(today);
-  const firstDueMonth = getFirstDueMonth(member, currentMonth);
-  const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
-  return monthsInRange(firstDueMonth, currentMonth).filter((month) => !paidMonths.has(month));
+  return getMemberPaymentState(member, payments, today).unpaidMonths;
 }
 
 export function getMemberBalance(member, payments, today = new Date()) {
-  const unpaidMonths = getUnpaidMonths(member, payments, today);
+  const state = getMemberPaymentState(member, payments, today);
+  const unpaidMonths = state.unpaidMonths;
   const monthlyAmount = Number(member.monthlyAmount || 0);
   return {
     unpaidMonths,
+    dueUnpaidMonths: state.dueUnpaidMonths.map((month) => month.month),
+    upcomingUnpaidMonths: state.upcomingUnpaidMonths.map((month) => month.month),
     monthlyAmount,
-    totalDue: unpaidMonths.length * monthlyAmount
+    totalDue: unpaidMonths.length * monthlyAmount,
+    dueNow: state.dueUnpaidMonths.length * monthlyAmount
+  };
+}
+
+export function getAttentionRows(store, pendingPayments = [], today = new Date()) {
+  return store.members
+    .filter(isActiveParticipant)
+    .map((member) => {
+      const pending = pendingPaymentsFor(member, pendingPayments);
+      const paymentState = getMemberPaymentState(member, store.payments, today, pending);
+      const balance = getMemberBalance(member, store.payments, today);
+      return { member, paymentState, balance, pending };
+    })
+    .filter((row) => row.paymentState.dueUnpaidMonths.length > 0 && !row.paymentState.flags.setupNeeded)
+    .sort((a, b) => b.paymentState.oldestDaysLate - a.paymentState.oldestDaysLate || b.balance.dueNow - a.balance.dueNow || a.member.name.localeCompare(b.member.name));
+}
+
+export function getLandscapeRows(store, pendingPayments = [], today = new Date(), monthCount = 12) {
+  const currentMonth = monthKey(today);
+  const firstMonth = shiftMonth(currentMonth, -(Math.max(1, monthCount) - 1));
+  const visibleMonths = monthsInRange(firstMonth, currentMonth);
+  const rows = store.members.filter(isActiveParticipant).map((member) => {
+    const pending = pendingPaymentsFor(member, pendingPayments);
+    const paymentState = getMemberPaymentState(member, store.payments, today, pending);
+    const stateByMonth = new Map(paymentState.months.map((month) => [month.month, month]));
+    const cells = visibleMonths.map((month) => ({
+      month,
+      state: paymentState.flags.setupNeeded ? "not_billable" : stateByMonth.get(month)?.state || "not_billable"
+    }));
+    return {
+      member,
+      paymentState,
+      balance: getMemberBalance(member, store.payments, today),
+      certification: primaryCertificationLabel(member),
+      dueDay: isIsoDate(member.startDate) ? Number(member.startDate.split("-")[2]) : null,
+      cells
+    };
+  });
+  return { months: visibleMonths, rows };
+}
+
+export function reconcileDuePayments(store, member, stillMissingMonths = [], today = new Date()) {
+  const keepMissing = new Set(stillMissingMonths.map(normalizeMonth).filter(Boolean));
+  const dueMonths = getMemberPaymentState(member, store.payments, today).dueUnpaidMonths.map((month) => month.month);
+  const monthsToPay = dueMonths.filter((month) => !keepMissing.has(month));
+  const batchId = cryptoId("batch");
+  let nextStore = store;
+  const paymentIds = [];
+  monthsToPay.forEach((month) => {
+    nextStore = addPayment(nextStore, {
+      memberId: member.id,
+      month,
+      amount: member.monthlyAmount,
+      source: "attention-review",
+      batchId
+    });
+    const payment = nextStore.payments.find((item) => item.memberId === member.id && item.month === month && item.batchId === batchId);
+    if (payment) {
+      paymentIds.push(payment.id);
+    }
+  });
+  return { store: nextStore, batch: { id: batchId, memberId: member.id, months: monthsToPay, paymentIds } };
+}
+
+export function undoPaymentBatch(store, batch) {
+  const paymentIds = new Set(batch?.paymentIds || []);
+  if (paymentIds.size === 0 && !batch?.id) {
+    return store;
+  }
+  return {
+    ...store,
+    payments: store.payments.filter((payment) => !paymentIds.has(payment.id) && payment.batchId !== batch.id),
+    updatedAt: new Date().toISOString()
   };
 }
 
@@ -750,7 +901,7 @@ export function getDashboardSummary(store, today = new Date()) {
     const currentMonthUnpaid = balance.unpaidMonths.includes(currentMonth) && !paidMonths.has(currentMonth);
     const currentMonthLine = lateFeeBalance.lines.find((line) => line.month === currentMonth);
     const currentMonthAlreadyLate = Number(currentMonthLine?.daysLate || 0) >= LATE_FEE_GRACE_DAYS;
-    const hasDelinquentPayment = olderTenDaysLateLines.length > 0;
+    const hasDelinquentPayment = olderTenDaysLateLines.length > 0 && !status.flags?.setupNeeded;
     return {
       member,
       status,
@@ -791,20 +942,16 @@ export const LATE_FEE_RATE = 0.05;
 export const LATE_FEE_MINIMUM = 5;
 
 export function getLateFeeBalance(member, payments, today = new Date()) {
-  const { unpaidMonths, monthlyAmount } = getMemberBalance(member, payments, today);
-  const dueDay = Number(member.startDate?.split("-")[2]) || 1;
-  const lines = unpaidMonths.map((month) => {
-    const [year, monthNumber] = month.split("-").map(Number);
-    const lastDayOfMonth = new Date(year, monthNumber, 0).getDate();
-    const day = Math.min(dueDay, lastDayOfMonth);
-    const dueDate = new Date(year, monthNumber - 1, day);
-    const daysLate = Math.floor((today - dueDate) / 86400000);
+  const paymentState = getMemberPaymentState(member, payments, today);
+  const monthlyAmount = Number(member.monthlyAmount || 0);
+  const lines = paymentState.months.filter((month) => !month.paid).map((monthState) => {
+    const daysLate = monthState.daysLate;
     const lateFee = daysLate >= LATE_FEE_GRACE_DAYS
       ? Math.max(LATE_FEE_MINIMUM, Math.round(monthlyAmount * LATE_FEE_RATE * 100) / 100)
       : 0;
     return {
-      month,
-      dueDate: `${year}-${String(monthNumber).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+      month: monthState.month,
+      dueDate: monthState.dueDate,
       amount: monthlyAmount,
       daysLate,
       lateFee,
@@ -884,7 +1031,9 @@ export function exportRosterRows(store) {
       Participant: member.participant === false ? "no" : "yes",
       Programs: normalizePrograms(member.programs).join("; "),
       "Current Belt/Level": member.beltLevel || "",
-      "Next Belt/Level": member.nextLevel || ""
+      "Next Belt/Level": member.nextLevel || "",
+      "Tae Kwon Do Certification": member.certifications?.tae_kwon_do || "",
+      "Muay Thai Certification": member.certifications?.muay_thai || ""
     }));
 }
 
@@ -906,6 +1055,8 @@ function memberRow(member, payment) {
     Programs: normalizePrograms(member.programs).join("; "),
     "Current Belt/Level": member.beltLevel || "",
     "Next Belt/Level": member.nextLevel || "",
+    "Tae Kwon Do Certification": member.certifications?.tae_kwon_do || "",
+    "Muay Thai Certification": member.certifications?.muay_thai || "",
     Inactive: member.inactive ? "yes" : "no",
     "Payment Month": payment?.month || "",
     "Payment Amount": payment ? moneyText(payment.amount) : "",
@@ -913,6 +1064,7 @@ function memberRow(member, payment) {
     "Payment Source": payment?.source || "",
     "Payment Category": payment ? payment.category || "tuition" : "",
     "Payment Note": payment?.note || "",
+    "Payment Batch ID": payment?.batchId || "",
     "Square Payment ID": payment?.squarePaymentId || "",
     "World Bankcard Payment ID": payment?.worldBankcardPaymentId || "",
     "Provider Payment ID": payment?.providerPaymentId || ""
@@ -1049,6 +1201,37 @@ function monthsInRange(startMonth, endMonth) {
     date.setMonth(date.getMonth() + 1);
   }
   return months;
+}
+
+function shiftMonth(month, offset) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + offset, 1);
+  return monthKey(date);
+}
+
+function dueDateForMonth(member, month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const dueDay = Number(member.startDate?.split("-")[2]) || 1;
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  return `${year}-${String(monthNumber).padStart(2, "0")}-${String(Math.min(dueDay, lastDay)).padStart(2, "0")}`;
+}
+
+function utcDateValue(value) {
+  if (typeof value === "string") {
+    const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  }
+  return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function isIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+}
+
+function pendingPaymentsFor(member, pendingPayments) {
+  return (pendingPayments || []).filter((payment) =>
+    payment.memberId === member.id || payment.suggestedMemberId === member.id
+  );
 }
 
 function buildIdentityKey(member) {

@@ -33,9 +33,39 @@ export const FIELD_LABELS = {
   programs: { ko: "수련 프로그램", en: "Programs" },
   beltLevel: { ko: "현재 띠/레벨", en: "Current belt or level" },
   nextLevel: { ko: "다음 목표", en: "Next belt or level" },
+  taeKwonDoCertification: { ko: "태권도 자격", en: "Tae Kwon Do certification" },
+  muayThaiCertification: { ko: "무에타이 자격", en: "Muay Thai certification" },
   amount: { ko: "결제 금액", en: "Payment amount" },
   paidAt: { ko: "결제 날짜", en: "Payment date" },
   month: { ko: "납부 월", en: "Payment month" }
+};
+
+export const LANDSCAPE_COPY = {
+  page: { ko: "납부 현황", en: "Payment Landscape" },
+  allMembers: { ko: "전체 수련생", en: "All active participants" },
+  household: { ko: "가족", en: "Household" },
+  certification: { ko: "자격", en: "Certification" },
+  dueDay: { ko: "납부일", en: "Due day" },
+  status: { ko: "상태", en: "Status" },
+  balance: { ko: "미납액", en: "Balance" },
+  legendPaid: { ko: "납부", en: "Paid" },
+  legendAttention: { ko: "확인 필요", en: "Due or needs attention" },
+  legendBehind: { ko: "미납", en: "10+ days behind" },
+  legendPending: { ko: "카드 검토 중", en: "Card payment pending" },
+  legendNotBillable: { ko: "해당 없음", en: "Not billable" }
+};
+
+export const ATTENTION_COPY = {
+  title: { ko: "오늘 확인할 회원", en: "Today’s Follow-ups" },
+  help: { ko: "납부일이 오늘이거나 지난 회원", en: "Members with tuition due today or earlier" },
+  reviewAll: { ko: "모두 검토", en: "Review All" },
+  allPaid: { ko: "모두 납부 완료", en: "All Paid" },
+  keepAsIs: { ko: "그대로 유지", en: "Keep As-Is" },
+  except: { ko: "아래 월만 미납", en: "All Good Except…" },
+  stillMissing: { ko: "계속 미납", en: "Still missing" },
+  saveNext: { ko: "저장하고 다음 회원", en: "Save and Review Next" },
+  undo: { ko: "방금 실행 취소", en: "Oops — Undo Last Action" },
+  close: { ko: "검토 닫기", en: "Close Review" }
 };
 
 export const MSG = {

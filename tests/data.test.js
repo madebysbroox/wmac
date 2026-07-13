@@ -8,7 +8,10 @@ import {
   exportStoreRows,
   exportRosterRows,
   getMemberBalance,
+  getMemberPaymentState,
   getMemberStatus,
+  getLandscapeRows,
+  getAttentionRows,
   getYearRevenue,
   guessColumnMap,
   householdMembers,
@@ -20,11 +23,14 @@ import {
   pendingSquarePaymentsForMember,
   parseCsv,
   removePayment,
+  reconcileDuePayments,
   searchMembers,
   isActiveParticipant,
   squarePaymentMonth,
   suggestedSquareMember,
-  toCsv
+  toCsv,
+  undoPaymentBatch,
+  migrateStore
 } from "../src/data.js";
 
 test("parses CSV with quoted commas", () => {
@@ -50,7 +56,7 @@ test("imports members and supports partial name search", () => {
 test("calculates paid, watch, and late status", () => {
   let store = createEmptyStore();
   const imported = importMembersFromRecords(
-    [{ Name: "Sam Park", Amount: "120" }, { Name: "Sarah Kim", Amount: "120", Start: "2026-06-01" }],
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-06-01" }, { Name: "Sarah Kim", Amount: "120", Start: "2026-06-01" }],
     { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
     store
   );
@@ -283,7 +289,7 @@ test("one-off Square payments count as revenue without marking tuition paid", ()
     squarePaymentId: "sq-one-off"
   });
 
-  assert.equal(getMemberStatus(member, store.payments, new Date("2026-06-18")).level, "watch");
+  assert.equal(getMemberStatus(member, store.payments, new Date("2026-06-18")).level, "late");
   assert.deepEqual(getMemberBalance(member, store.payments, new Date("2026-06-18")).unpaidMonths, ["2026-06"]);
 
   const summary = getDashboardSummary(store, new Date("2026-06-18"));
@@ -471,4 +477,92 @@ test("matches a Square subscription payment by dedicated Square customer ID", ()
   );
   const payment = normalizeSquarePayment({ payment: { id: "pay-sub", status: "COMPLETED", customer_id: "CUS_123", amount_money: { amount: 12000, currency: "USD" } } });
   assert.equal(suggestedSquareMember(payment, result.store.members)?.name, "Sam Park");
+});
+
+test("due-aware state separates upcoming, attention, and ten-day-behind tuition", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Due Fifteenth", Amount: "120", Start: "2026-05-15" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  let store = addPayment(imported.store, { memberId: member.id, month: "2026-05", amount: 120 });
+
+  const before = getMemberPaymentState(member, store.payments, new Date("2026-06-14T12:00:00"));
+  const due = getMemberPaymentState(member, store.payments, new Date("2026-06-15T12:00:00"));
+  const late = getMemberPaymentState(member, store.payments, new Date("2026-06-25T12:00:00"));
+
+  assert.equal(before.level, "paid");
+  assert.deepEqual(before.upcomingUnpaidMonths.map((month) => month.month), ["2026-06"]);
+  assert.equal(due.level, "watch");
+  assert.equal(late.level, "late");
+});
+
+test("pending card payment is a flag and does not hide underlying debt", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const pending = [{ memberId: member.id, status: "pending", paymentMonth: "2026-06" }];
+  const state = getMemberPaymentState(member, imported.store.payments, new Date("2026-06-18"), pending);
+
+  assert.equal(state.level, "late");
+  assert.equal(state.flags.pending, true);
+  assert.equal(state.months.find((month) => month.month === "2026-06").state, "pending");
+});
+
+test("attention reconciliation is reversible as a batch and by individual month", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Mina Park", Amount: "100", Start: "2026-04-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const result = reconcileDuePayments(imported.store, member, ["2026-05"], new Date("2026-06-18"));
+
+  assert.deepEqual(result.batch.months, ["2026-04", "2026-06"]);
+  assert.deepEqual(getMemberBalance(member, result.store.payments, new Date("2026-06-18")).unpaidMonths, ["2026-05"]);
+
+  const manuallyReversed = removePayment(result.store, member.id, "2026-04");
+  assert.deepEqual(getMemberBalance(member, manuallyReversed.payments, new Date("2026-06-18")).unpaidMonths, ["2026-04", "2026-05"]);
+
+  const undone = undoPaymentBatch(result.store, result.batch);
+  assert.deepEqual(undone.payments, []);
+});
+
+test("landscape includes every active family member and twelve month cells", () => {
+  const imported = importMembersFromRecords(
+    [
+      { Name: "Sam Park", Family: "Park", Amount: "120", Start: "2026-01-01", Belt: "Yellow Belt" },
+      { Name: "Mina Park", Family: "Park", Amount: "120", Start: "2026-06-01", Belt: "Green Belt" }
+    ],
+    { name: "Name", householdName: "Family", monthlyAmount: "Amount", startDate: "Start", beltLevel: "Belt" },
+    createEmptyStore()
+  );
+  const landscape = getLandscapeRows(imported.store, [], new Date("2026-06-18"));
+  const attention = getAttentionRows(imported.store, [], new Date("2026-06-18"));
+
+  assert.equal(landscape.rows.length, 2);
+  assert.equal(landscape.rows[0].cells.length, 12);
+  assert.notEqual(landscape.rows[0].certification, landscape.rows[1].certification);
+  assert.equal(attention.length, 2);
+});
+
+test("store migration keeps household members' certifications independent and is idempotent", () => {
+  const legacy = {
+    version: 1,
+    members: [
+      { id: "a", name: "Sam", householdName: "Park", beltLevel: "Yellow Belt" },
+      { id: "b", name: "Mina", householdName: "Park", beltLevel: "Green Belt" }
+    ],
+    payments: []
+  };
+  const migrated = migrateStore(legacy);
+  const twice = migrateStore(migrated);
+
+  assert.equal(migrated.members[0].certifications.tae_kwon_do, "Yellow Belt");
+  assert.equal(migrated.members[1].certifications.tae_kwon_do, "Green Belt");
+  assert.deepEqual(twice, migrated);
 });

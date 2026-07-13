@@ -24,6 +24,9 @@
       <button id="membersTab" class="page-tab" type="button">
         <span lang="ko">회원</span><small lang="en">Members</small>
       </button>
+      <button id="landscapeTab" class="page-tab" type="button">
+        <span lang="ko">납부 현황</span><small lang="en">Payment Landscape</small>
+      </button>
       <button id="squareTab" class="page-tab" type="button">
         <span lang="ko">카드 결제</span><small lang="en">Card Payments</small>
       </button>
@@ -83,6 +86,8 @@
 
       <section class="detail" aria-label="작업 공간 Workspace">
         <div id="dashboardView" class="dashboard-view">
+          <div class="home-workspace">
+            <div class="home-main">
           <div class="dashboard-header">
             <div>
               <h2>오늘의 회비 상황 <small lang="en">Today’s Payment Command Center</small></h2>
@@ -163,6 +168,47 @@
               <h3>미납액 많은 회원 <small lang="en">Owes the Most</small></h3>
               <div id="highestBalanceList" class="snapshot-list"></div>
             </section>
+          </div>
+            </div>
+            <aside id="todayFollowups" class="today-followups" aria-labelledby="todayFollowupsTitle">
+              <div class="followup-heading">
+                <div>
+                  <h2 id="todayFollowupsTitle"><span lang="ko">오늘 확인할 회원</span><small lang="en">Today’s Follow-ups</small></h2>
+                  <p><span lang="ko">납부일이 오늘이거나 지난 회원</span><small lang="en">Due today or earlier</small></p>
+                </div>
+                <strong id="todayFollowupCount">0</strong>
+              </div>
+              <div id="todayFollowupList" class="today-followup-list"></div>
+              <button id="reviewAllAttentionButton" class="button primary full bi" type="button">
+                <span lang="ko">모두 검토</span><small lang="en">Review All</small>
+              </button>
+            </aside>
+          </div>
+        </div>
+
+        <div id="landscapeView" class="landscape-view hidden">
+          <div class="landscape-header">
+            <div>
+              <h2><span lang="ko">납부 현황</span><small lang="en">Payment Landscape</small></h2>
+              <p id="landscapeSummary"></p>
+            </div>
+            <button id="landscapeReviewButton" class="button primary bi" type="button">
+              <span lang="ko">확인 필요 회원 검토</span><small lang="en">Review Members Needing Attention</small>
+            </button>
+          </div>
+          <div class="landscape-legend" aria-label="납부 상태 범례 Payment status legend">
+            <span><i class="matrix-key paid" aria-hidden="true">✓</i><span lang="ko">납부</span><small lang="en">Paid</small></span>
+            <span><i class="matrix-key attention" aria-hidden="true">!</i><span lang="ko">확인 필요</span><small lang="en">Due</small></span>
+            <span><i class="matrix-key behind" aria-hidden="true">!</i><span lang="ko">미납</span><small lang="en">10+ Days Behind</small></span>
+            <span><i class="matrix-key pending" aria-hidden="true">…</i><span lang="ko">카드 검토</span><small lang="en">Pending Card Review</small></span>
+            <span><i class="matrix-key not-billable" aria-hidden="true">—</i><span lang="ko">해당 없음</span><small lang="en">Not Billable</small></span>
+          </div>
+          <div class="landscape-table-wrap" role="region" aria-label="전체 회원 월별 납부표 All-member monthly payment matrix">
+            <table class="landscape-table">
+              <caption class="sr-only">모든 활동 회원의 최근 12개월 납부 현황 · Recent twelve-month payment status for every active participant</caption>
+              <thead id="landscapeHead"></thead>
+              <tbody id="landscapeBody"></tbody>
+            </table>
           </div>
         </div>
 
@@ -262,6 +308,9 @@
             <button id="catchUpButton" class="button primary large bi" type="button">
               <span lang="ko">모든 미납 월 완납 처리</span><small lang="en">Bring All Payments Up to Date</small>
             </button>
+            <button id="undoCatchUpButton" class="button secondary full bi hidden" type="button">
+              <span lang="ko">방금 완납 처리 취소</span><small lang="en">Oops — Undo Catch-Up</small>
+            </button>
 
             <h3>납부 기록 <small lang="en">Payment History</small></h3>
             <div id="monthStrip" class="month-strip"></div>
@@ -338,21 +387,26 @@
                 <label class="check-row"><input id="memberMuayThai" type="checkbox"> 무에타이 <small lang="en">Muay Thai</small></label>
               </fieldset>
               <div class="form-row">
-                <label for="memberBeltLevel">현재 띠/레벨 <small lang="en">Current belt or level</small></label>
-                <input id="memberBeltLevel" list="beltLevelOptions" placeholder="예: Yellow Belt · 노란띠">
+                <label for="memberBeltLevel"><span lang="ko">태권도 자격 레벨</span><small lang="en">Tae Kwon Do certification</small></label>
+                <select id="memberBeltLevel"></select>
               </div>
               <div class="form-row">
-                <label for="memberNextLevel">다음 목표 <small lang="en">Next belt or level goal</small></label>
-                <input id="memberNextLevel" list="beltLevelOptions" placeholder="예: Orange Belt · 주황띠">
+                <label for="memberMuayThaiLevel"><span lang="ko">무에타이 자격 레벨</span><small lang="en">Muay Thai certification</small></label>
+                <select id="memberMuayThaiLevel">
+                  <option value="">선택 안 함 · Not set</option>
+                  <option value="Muay Thai Level 1">무에타이 레벨 1 · Muay Thai Level 1</option>
+                  <option value="Muay Thai Level 2">무에타이 레벨 2 · Muay Thai Level 2</option>
+                  <option value="Muay Thai Level 3">무에타이 레벨 3 · Muay Thai Level 3</option>
+                </select>
               </div>
-              <datalist id="beltLevelOptions">
-                <option value="White Belt"></option><option value="Yellow Belt"></option>
-                <option value="Orange Belt"></option><option value="Green Belt"></option>
-                <option value="Blue Belt"></option><option value="Purple Belt"></option>
-                <option value="Brown Belt"></option><option value="Red Belt"></option>
-                <option value="Black Belt"></option><option value="Muay Thai Level 1"></option>
-                <option value="Muay Thai Level 2"></option><option value="Muay Thai Level 3"></option>
-              </datalist>
+              <div class="form-row">
+                <label for="memberNextLevel"><span lang="ko">다음 자격 목표</span><small lang="en">Next certification goal</small></label>
+                <input id="memberNextLevel" readonly placeholder="현재 레벨을 선택하면 자동 표시 · Filled automatically">
+              </div>
+              <p class="certification-help">
+                <span lang="ko">흰띠 → 노란띠 → 초록띠 → 파란띠 → 빨간띠. 각 띠마다 팁 3개.</span>
+                <small lang="en">White → Yellow → Green → Blue → Red, with three tips per belt. Black-belt color cycles advance the Dan stripe.</small>
+              </p>
               <div class="form-row">
                 <label for="memberSquareCustomerId">Square 고객 ID <small lang="en">Square customer ID</small></label>
                 <input id="memberSquareCustomerId" autocomplete="off">
@@ -425,6 +479,48 @@
         <button id="generateSelectedInvoiceButton" class="button secondary" type="button">청구서 만들기 · Generate Invoice</button>
         <button id="openSelectedEmailButton" class="button primary" type="button">이메일 열기 · Open Email</button>
       </menu>
+    </dialog>
+
+    <dialog id="attentionReviewDialog" class="attention-review-dialog">
+      <div class="attention-review-header">
+        <div>
+          <span id="attentionReviewProgress" class="review-progress"></span>
+          <h2 id="attentionReviewName"></h2>
+          <p id="attentionReviewContext"></p>
+        </div>
+        <button id="closeAttentionReview" class="button secondary bi" type="button">
+          <span lang="ko">검토 닫기</span><small lang="en">Close Review</small>
+        </button>
+      </div>
+      <div id="attentionReviewFacts" class="attention-review-facts"></div>
+      <section class="attention-month-section">
+        <h3><span lang="ko">납부일이 지난 월</span><small lang="en">Months Due Now</small></h3>
+        <div id="attentionReviewMonths" class="attention-review-months"></div>
+      </section>
+      <div class="attention-review-actions">
+        <button id="attentionAllPaid" class="button primary large bi" type="button">
+          <span lang="ko">모두 납부 완료</span><small lang="en">All Paid</small>
+        </button>
+        <button id="attentionKeepAsIs" class="button secondary large bi" type="button">
+          <span lang="ko">그대로 유지</span><small lang="en">Keep As-Is</small>
+        </button>
+        <button id="attentionExceptButton" class="button secondary large bi" type="button" aria-expanded="false">
+          <span lang="ko">아래 월만 미납</span><small lang="en">All Good Except…</small>
+        </button>
+      </div>
+      <section id="attentionExceptionPanel" class="attention-exception-panel hidden">
+        <h3><span lang="ko">계속 미납으로 둘 월을 선택하세요</span><small lang="en">Check each month that should stay missing</small></h3>
+        <div id="attentionExceptionMonths" class="attention-exception-months"></div>
+        <button id="attentionSaveExceptions" class="button primary full bi" type="button">
+          <span lang="ko">저장하고 다음 회원</span><small lang="en">Save and Review Next</small>
+        </button>
+      </section>
+      <div class="attention-undo-row">
+        <p id="attentionReviewMessage" aria-live="polite"></p>
+        <button id="attentionUndoButton" class="button secondary bi" type="button" disabled>
+          <span lang="ko">방금 실행 취소</span><small lang="en">Oops — Undo Last Action</small>
+        </button>
+      </div>
     </dialog>
 
     <dialog id="groupEmailDialog" class="group-email-dialog">

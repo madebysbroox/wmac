@@ -2,32 +2,38 @@ import {
   MEMBER_FIELD_ALIASES,
   PAYMENT_FIELD_ALIASES,
   addPayment,
-  bringMemberUpToDate,
   createEmptyStore,
   exportRosterRows,
   exportStoreRows,
   getMemberBalance,
   getLateFeeBalance,
   getDashboardSummary,
+  getAttentionRows,
+  getLandscapeRows,
   getMemberStatus,
+  getMemberPaymentState,
   getYearRevenue,
   guessColumnMap,
   householdMembers,
   importMembersFromRecords,
   importPaymentsFromRecords,
+  migrateStore,
   nextUnpaidTuitionMonth,
   pendingStagedPaymentsForMember,
   parseCsv,
   removePayment,
+  reconcileDuePayments,
   searchMembers,
   isActiveParticipant,
   stagedPaymentMonth,
   suggestedPaymentMember,
   toCsv,
+  undoPaymentBatch,
   upsertMember
 } from "./data.js";
 import {
   DEFAULT_EMAIL_TEMPLATE,
+  ATTENTION_COPY,
   FIELD_LABELS,
   MSG,
   ROSTER_TITLES,
@@ -38,8 +44,16 @@ import {
   formatMonthKo,
   ordinalEn
 } from "./i18n.js";
+import {
+  CERTIFICATION_LEVELS,
+  certificationProgress,
+  nextMemberCertification,
+  normalizeMemberCertifications,
+  primaryCertificationLabel
+} from "./certification.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
+const STORAGE_BACKUP_KEY = "master-lee-payment-tracker-v1-backup";
 const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +68,8 @@ const state = {
   statusFilter: "all",
   mapping: null,
   review: null,
+  attentionReview: null,
+  lastPaymentBatch: null,
   stagedPayments: [],
   selectedStagedId: "",
   paymentProviders: {
@@ -64,10 +80,11 @@ const state = {
 
 const elements = {};
 [
-  "saveStatus", "homeTab", "membersTab", "squareTab", "appLayout", "memberSidebar",
+  "saveStatus", "homeTab", "membersTab", "landscapeTab", "squareTab", "appLayout", "memberSidebar",
   "memberCsv", "paymentCsv", "exportButton",
   "searchInput", "addMemberButton", "paidCount", "pendingCount", "watchCount", "lateCount",
-  "memberList", "dashboardView", "dashboardPaid", "dashboardPending", "dashboardWatch", "dashboardLate",
+  "memberList", "dashboardView", "landscapeView", "landscapeSummary", "landscapeHead", "landscapeBody", "landscapeReviewButton",
+  "todayFollowupCount", "todayFollowupList", "reviewAllAttentionButton", "dashboardPaid", "dashboardPending", "dashboardWatch", "dashboardLate",
   "dashboardMonthLabel", "dashboardDelinquentCount", "dashboardPastDue", "dashboardTenDaysLate",
   "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
   "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "squareView", "squareStatusLine",
@@ -75,10 +92,10 @@ const elements = {};
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid", "householdCard", "progressCard",
-  "quickPayButton", "catchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
+  "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberPhone", "memberEmail", "memberParent", "memberHousehold", "memberRole", "memberParticipant",
-  "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberStart",
+  "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberStart",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
   "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
@@ -89,10 +106,52 @@ const elements = {};
   "emailAllMembersButton", "groupEmailDialog", "groupEmailHelp", "groupEmailSubjectInput",
   "groupEmailMembers", "selectAllEmailMembersButton", "clearAllEmailMembersButton",
   "cancelGroupEmailButton", "openGroupEmailButton",
+  "attentionReviewDialog", "attentionReviewProgress", "attentionReviewName", "attentionReviewContext", "attentionReviewFacts",
+  "attentionReviewMonths", "attentionAllPaid", "attentionKeepAsIs", "attentionExceptButton", "attentionExceptionPanel",
+  "attentionExceptionMonths", "attentionSaveExceptions", "attentionReviewMessage", "attentionUndoButton", "closeAttentionReview",
   "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
+
+function populateCertificationControls() {
+  elements.memberBeltLevel.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "선택 안 함 · Not set";
+  elements.memberBeltLevel.append(placeholder);
+  CERTIFICATION_LEVELS.forEach((level) => {
+    const option = document.createElement("option");
+    option.value = level;
+    option.textContent = level;
+    elements.memberBeltLevel.append(option);
+  });
+}
+
+function setCertificationControlValue(select, value) {
+  select.querySelector("[data-legacy-level]")?.remove();
+  const savedValue = String(value || "");
+  const known = Array.from(select.options).some((option) => option.value === savedValue);
+  if (savedValue && !known) {
+    const legacyOption = document.createElement("option");
+    legacyOption.value = savedValue;
+    legacyOption.textContent = `${savedValue} (기존 값 · Saved legacy value)`;
+    legacyOption.dataset.legacyLevel = "true";
+    select.append(legacyOption);
+  }
+  select.value = savedValue;
+}
+
+function updateNextCertificationField() {
+  const member = {
+    certifications: {
+      tae_kwon_do: elements.memberBeltLevel.value,
+      muay_thai: elements.memberMuayThaiLevel.value,
+      legacyLabel: ""
+    }
+  };
+  elements.memberNextLevel.value = nextMemberCertification(member) || (primaryCertificationLabel(member) ? "최고 자격 레벨 · Highest certification level" : "");
+}
 
 // ---------------------------------------------------------------------------
 // Events
@@ -100,6 +159,7 @@ const elements = {};
 
 elements.homeTab.addEventListener("click", showDashboard);
 elements.membersTab.addEventListener("click", showMembers);
+elements.landscapeTab.addEventListener("click", showLandscape);
 elements.squareTab.addEventListener("click", showSquare);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
@@ -120,6 +180,15 @@ elements.syncWorldBankcardButton.addEventListener("click", syncWorldBankcardPaym
 elements.saveSquareSettingsButton.addEventListener("click", saveSquareConnectionSettings);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.catchUpButton.addEventListener("click", catchUpMemberPayments);
+elements.undoCatchUpButton.addEventListener("click", undoMemberCatchUp);
+elements.reviewAllAttentionButton.addEventListener("click", () => openAttentionReview());
+elements.landscapeReviewButton.addEventListener("click", () => openAttentionReview());
+elements.attentionAllPaid.addEventListener("click", markAttentionMemberPaid);
+elements.attentionKeepAsIs.addEventListener("click", keepAttentionMemberAsIs);
+elements.attentionExceptButton.addEventListener("click", toggleAttentionExceptions);
+elements.attentionSaveExceptions.addEventListener("click", saveAttentionExceptions);
+elements.attentionUndoButton.addEventListener("click", undoAttentionAction);
+elements.closeAttentionReview.addEventListener("click", () => elements.attentionReviewDialog.close());
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
 elements.paymentForm.addEventListener("submit", savePayment);
@@ -148,6 +217,10 @@ elements.openGroupEmailButton.addEventListener("click", openGroupEmail);
 elements.checkUpdateButton.addEventListener("click", checkForAppUpdate);
 elements.installUpdateButton.addEventListener("click", installAppUpdate);
 
+populateCertificationControls();
+elements.memberBeltLevel.addEventListener("change", updateNextCertificationField);
+elements.memberMuayThaiLevel.addEventListener("change", updateNextCertificationField);
+
 initAppUpdates();
 render();
 loadSquarePayments();
@@ -161,7 +234,10 @@ function loadStore() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (stored?.members && stored?.payments) {
-      return stored;
+      if (Number(stored.version || 1) < 2 && !localStorage.getItem(STORAGE_BACKUP_KEY)) {
+        localStorage.setItem(STORAGE_BACKUP_KEY, JSON.stringify(stored));
+      }
+      return migrateStore(stored);
     }
   } catch {
     return createEmptyStore();
@@ -244,6 +320,7 @@ function render() {
   renderPageShell();
   renderSummary();
   renderDashboard();
+  renderLandscape();
   renderSquare();
   renderRoster();
   renderMemberList();
@@ -253,15 +330,19 @@ function render() {
 function renderPageShell() {
   const isHome = state.page === "home";
   const isSquare = state.page === "square";
+  const isLandscape = state.page === "landscape";
   elements.appLayout.classList.toggle("home-layout", isHome);
-  elements.appLayout.classList.toggle("members-layout", !isHome && !isSquare);
+  elements.appLayout.classList.toggle("members-layout", state.page === "members");
+  elements.appLayout.classList.toggle("landscape-layout", isLandscape);
   elements.appLayout.classList.toggle("square-layout", isSquare);
-  elements.memberSidebar.classList.toggle("hidden", isHome || isSquare);
+  elements.memberSidebar.classList.toggle("hidden", state.page !== "members");
   elements.homeTab.classList.toggle("active", isHome);
   elements.membersTab.classList.toggle("active", state.page === "members");
+  elements.landscapeTab.classList.toggle("active", isLandscape);
   elements.squareTab.classList.toggle("active", isSquare);
   elements.homeTab.setAttribute("aria-current", isHome ? "page" : "false");
   elements.membersTab.setAttribute("aria-current", state.page === "members" ? "page" : "false");
+  elements.landscapeTab.setAttribute("aria-current", isLandscape ? "page" : "false");
   elements.squareTab.setAttribute("aria-current", isSquare ? "page" : "false");
 }
 
@@ -319,6 +400,87 @@ function renderDashboard() {
   elements.highestBalanceList.querySelectorAll("[data-member-id]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.memberId));
   });
+
+  renderTodayFollowups();
+}
+
+function renderTodayFollowups() {
+  const rows = getAttentionRows(state.store, state.stagedPayments);
+  elements.todayFollowupCount.textContent = rows.length;
+  elements.reviewAllAttentionButton.disabled = rows.length === 0;
+  elements.reviewAllAttentionButton.querySelector("small").textContent = rows.length
+    ? `${ATTENTION_COPY.reviewAll.en} ${rows.length}`
+    : "Nothing due today";
+  elements.todayFollowupList.innerHTML = rows.length
+    ? rows.slice(0, 7).map((row) => `
+      <button class="today-followup-member" type="button" data-followup-member="${escapeHtml(row.member.id)}">
+        <span>
+          <strong>${escapeHtml(row.member.name)}</strong>
+          <small>${escapeHtml(row.member.householdName || "개인 회원 · Individual")}</small>
+        </span>
+        <span class="followup-amount">
+          <strong>${formatMoney(row.balance.dueNow)}</strong>
+          <small>${row.paymentState.oldestDaysLate === 0 ? "오늘 납부일 · Due today" : `${row.paymentState.oldestDaysLate}일 지남 · ${row.paymentState.oldestDaysLate} days late`}</small>
+        </span>
+      </button>
+    `).join("")
+    : `<div class="followup-clear"><strong>오늘 확인할 미납 없음</strong><small lang="en">No tuition due for follow-up today</small></div>`;
+  elements.todayFollowupList.querySelectorAll("[data-followup-member]").forEach((button) => {
+    button.addEventListener("click", () => openAttentionReview(button.dataset.followupMember));
+  });
+}
+
+function renderLandscape() {
+  elements.landscapeView.classList.toggle("hidden", state.view !== "landscape");
+  if (state.view !== "landscape") {
+    return;
+  }
+  const landscape = getLandscapeRows(state.store, state.stagedPayments);
+  const attentionCount = getAttentionRows(state.store, state.stagedPayments).length;
+  elements.landscapeSummary.textContent = `${landscape.rows.length}명 · ${landscape.rows.length} active participant${landscape.rows.length === 1 ? "" : "s"} · ${attentionCount}명 확인 필요`;
+  elements.landscapeReviewButton.disabled = attentionCount === 0;
+  elements.landscapeHead.innerHTML = `
+    <tr>
+      <th scope="col" class="sticky-member"><span lang="ko">회원</span><small lang="en">Member</small></th>
+      <th scope="col"><span lang="ko">가족</span><small lang="en">Household</small></th>
+      <th scope="col"><span lang="ko">자격</span><small lang="en">Certification</small></th>
+      <th scope="col"><span lang="ko">납부일</span><small lang="en">Due Day</small></th>
+      <th scope="col"><span lang="ko">상태</span><small lang="en">Status</small></th>
+      <th scope="col"><span lang="ko">미납액</span><small lang="en">Balance</small></th>
+      ${landscape.months.map((month) => `<th scope="col"><span>${formatMonthKo(month)}</span><small lang="en">${escapeHtml(formatMonthEn(month))}</small></th>`).join("")}
+    </tr>
+  `;
+  elements.landscapeBody.innerHTML = landscape.rows.map((row) => {
+    const mainStatus = STATUS_LABELS[row.paymentState.level];
+    const pending = row.paymentState.flags.pending ? `<small class="pending-flag">카드 검토 중 · Card pending</small>` : "";
+    const setup = row.paymentState.flags.setupNeeded ? `<small class="setup-flag">정보 확인 필요 · Setup needed</small>` : "";
+    return `
+      <tr class="landscape-row payment-${row.paymentState.level}">
+        <th scope="row" class="sticky-member"><button type="button" class="landscape-member-link" data-landscape-member="${escapeHtml(row.member.id)}">${escapeHtml(row.member.name)}</button></th>
+        <td>${escapeHtml(row.member.householdName || "—")}</td>
+        <td>${escapeHtml(row.certification || "미설정 · Not set")}</td>
+        <td>${row.dueDay ? `${row.dueDay}일<small lang="en">Day ${row.dueDay}</small>` : "—"}</td>
+        <td><span class="matrix-status status-${row.paymentState.level}">${mainStatus.ko}<small lang="en">${mainStatus.en}</small></span>${pending}${setup}</td>
+        <td class="money-cell">${row.paymentState.flags.setupNeeded ? "—<small lang=\"en\">Setup needed</small>" : `${formatMoney(row.balance.totalDue)}<small lang="en">${row.balance.unpaidMonths.length} missing</small>`}</td>
+        ${row.cells.map((cell) => landscapeCellMarkup(row.member.name, cell)).join("")}
+      </tr>
+    `;
+  }).join("");
+  elements.landscapeBody.querySelectorAll("[data-landscape-member]").forEach((button) => {
+    button.addEventListener("click", () => selectMember(button.dataset.landscapeMember));
+  });
+}
+
+function landscapeCellMarkup(memberName, cell) {
+  const details = {
+    paid: ["✓", "납부 완료 · Paid"],
+    attention: ["!", "확인 필요 · Due now"],
+    behind: ["!", "미납 · 10+ days behind"],
+    pending: ["…", "카드 검토 중 · Card payment pending"],
+    upcoming: ["○", "아직 납부일 전 · Not due yet"],
+    not_billable: ["—", "해당 없음 · Not billable"]
+  }[cell.state];
+  return `<td class="matrix-cell ${cell.state}" aria-label="${escapeHtml(memberName)} ${escapeHtml(formatMonthEn(cell.month))}: ${details[1]}"><span aria-hidden="true">${details[0]}</span><span class="sr-only">${details[1]}</span></td>`;
 }
 
 function renderSquare() {
@@ -370,7 +532,10 @@ function renderRoster() {
   }
 
   const title = ROSTER_TITLES[state.statusFilter] || ROSTER_TITLES.all;
-  const rows = memberRows().filter((row) => state.statusFilter === "all" || row.status.level === state.statusFilter);
+  const rows = memberRows().filter((row) =>
+    state.statusFilter === "all" ||
+    (state.statusFilter === "pending" ? row.status.flags?.pending : row.status.level === state.statusFilter)
+  );
   elements.rosterTitle.innerHTML = `${title.ko} <small lang="en">${title.en}</small>`;
   elements.rosterHelp.textContent = `${rows.length}명 · ${rows.length} member${rows.length === 1 ? "" : "s"}`;
   elements.rosterMembers.innerHTML = rows.length
@@ -427,7 +592,7 @@ function renderDetail() {
     : `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
   elements.statusBadge.innerHTML = member.participant === false
     ? `비참가<small lang="en">Contact only</small>`
-    : `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>`;
+    : `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>${status.flags?.pending ? `<small class="status-pending-note">카드 검토 중 · Card pending</small>` : ""}${status.flags?.setupNeeded ? `<small class="status-setup-note">정보 확인 필요 · Setup needed</small>` : ""}`;
   elements.statusBadge.className = `status-badge status-${status.level}`;
   elements.latestPaid.textContent = status.lastPaidMonth
     ? `마지막 납부: ${formatMonthBi(status.lastPaidMonth)}`
@@ -438,7 +603,8 @@ function renderDetail() {
   renderProgressCard(member);
 
   renderQuickPay(member, status);
-  elements.catchUpButton.disabled = member.participant === false || balance.unpaidMonths.length === 0 || Number(member.monthlyAmount || 0) <= 0;
+  elements.catchUpButton.disabled = member.participant === false || balance.dueUnpaidMonths.length === 0 || Number(member.monthlyAmount || 0) <= 0;
+  elements.undoCatchUpButton.classList.toggle("hidden", state.lastPaymentBatch?.memberId !== member.id);
 
   elements.monthStrip.innerHTML = "";
   status.billableMonths.forEach((monthKey) => {
@@ -474,8 +640,10 @@ function renderDetail() {
   elements.memberParticipant.checked = member.participant !== false;
   elements.memberTaeKwonDo.checked = (member.programs || []).includes("tae_kwon_do");
   elements.memberMuayThai.checked = (member.programs || []).includes("muay_thai");
-  elements.memberBeltLevel.value = member.beltLevel || "";
-  elements.memberNextLevel.value = member.nextLevel || "";
+  const certifications = normalizeMemberCertifications(member);
+  setCertificationControlValue(elements.memberBeltLevel, certifications.tae_kwon_do);
+  setCertificationControlValue(elements.memberMuayThaiLevel, certifications.muay_thai);
+  elements.memberNextLevel.value = nextMemberCertification(member) || member.nextLevel || "";
   elements.memberSquareCustomerId.value = member.squareCustomerId || "";
   elements.memberAmount.value = member.monthlyAmount || "";
   elements.memberStart.value = member.startDate || "";
@@ -503,7 +671,7 @@ function renderHouseholdCard(member) {
     <div class="household-people">
       ${family.map((person) => `
         <button type="button" class="household-person ${person.id === member.id ? "current" : ""}" data-household-member="${escapeHtml(person.id)}">
-          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
+          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-certification">자격: ${escapeHtml(primaryCertificationLabel(person) || "미설정")}<span lang="en">Certification: ${escapeHtml(primaryCertificationLabel(person) || "Not set")}</span></small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
           <span class="participation-chip ${person.participant === false ? "contact" : "student"}">${person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
         </button>
       `).join("")}
@@ -528,9 +696,9 @@ function renderProgressCard(member) {
   }
   const programs = member.programs || [];
   const programLabels = programs.map((program) => program === "muay_thai" ? "무에타이 · Muay Thai" : "태권도 · Tae Kwon Do");
-  const current = member.beltLevel || "첫 수업 · First class";
-  const next = member.nextLevel || suggestedNextLevel(member.beltLevel, programs);
-  const progress = beltProgress(member.beltLevel);
+  const current = primaryCertificationLabel(member) || "첫 수업 · First class";
+  const next = nextMemberCertification(member) || member.nextLevel || "최고 자격 레벨 · Highest certification level";
+  const progress = certificationProgress(normalizeMemberCertifications(member).tae_kwon_do);
   elements.progressCard.classList.remove("hidden");
   elements.progressCard.innerHTML = `
     <div class="progress-copy">
@@ -543,21 +711,6 @@ function renderProgressCard(member) {
     </div>
     <p class="progress-encouragement">다음 목표를 향해 계속 전진하세요! · Keep moving toward the next goal!</p>
   `;
-}
-
-function suggestedNextLevel(currentLevel, programs) {
-  const belts = ["White Belt", "Yellow Belt", "Orange Belt", "Green Belt", "Blue Belt", "Purple Belt", "Brown Belt", "Red Belt", "Black Belt"];
-  const index = belts.findIndex((belt) => belt.toLowerCase() === String(currentLevel || "").trim().toLowerCase());
-  if (index >= 0 && index < belts.length - 1) {
-    return belts[index + 1];
-  }
-  return programs.includes("muay_thai") ? "다음 기술 레벨 · Next skill level" : "다음 띠 · Next belt";
-}
-
-function beltProgress(currentLevel) {
-  const belts = ["white", "yellow", "orange", "green", "blue", "purple", "brown", "red", "black"];
-  const index = belts.findIndex((belt) => String(currentLevel || "").toLowerCase().includes(belt));
-  return index < 0 ? 8 : Math.round(((index + 1) / belts.length) * 100);
 }
 
 // The reminder button opens a review step first, so Master Lee can choose the
@@ -604,11 +757,17 @@ function showDashboard() {
   render();
 }
 
+function showLandscape() {
+  state.page = "landscape";
+  state.view = "landscape";
+  state.statusFilter = "all";
+  render();
+}
+
 function showMembers() {
   state.page = "members";
-  if (state.view === "dashboard") {
-    state.view = state.selectedId ? "member" : "roster";
-  }
+  state.view = "roster";
+  state.statusFilter = "all";
   render();
   elements.searchInput.focus();
 }
@@ -663,6 +822,9 @@ function statusCounts(rows = memberRows()) {
   return rows.reduce(
     (counts, row) => {
       counts[row.status.level] += 1;
+      if (row.status.flags?.pending) {
+        counts.pending += 1;
+      }
       return counts;
     },
     { paid: 0, pending: 0, watch: 0, late: 0 }
@@ -671,14 +833,7 @@ function statusCounts(rows = memberRows()) {
 
 function displayedMemberStatus(member) {
   const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
-  if (pending.length > 0) {
-    return {
-      ...getMemberStatus(member, state.store.payments),
-      level: "pending",
-      label: "Pending card payment"
-    };
-  }
-  return getMemberStatus(member, state.store.payments);
+  return getMemberPaymentState(member, state.store.payments, new Date(), pending);
 }
 
 function rosterSummaryMarkup(row) {
@@ -699,7 +854,7 @@ function rosterMemberMarkup(row) {
     : "미납 없음";
   return `
     <button class="roster-member" type="button" data-member-id="${escapeHtml(row.member.id)}">
-      <span class="status-badge status-${row.status.level}">${STATUS_LABELS[row.status.level].ko}<small lang="en">${STATUS_LABELS[row.status.level].en}</small></span>
+      <span class="status-badge status-${row.status.level}">${STATUS_LABELS[row.status.level].ko}<small lang="en">${STATUS_LABELS[row.status.level].en}</small>${row.status.flags?.pending ? `<small class="status-pending-note">카드 검토 중 · Card pending</small>` : ""}${row.status.flags?.setupNeeded ? `<small class="status-setup-note">정보 확인 필요 · Setup needed</small>` : ""}</span>
       <strong>${escapeHtml(row.member.name)}</strong>
       <span>${escapeHtml(lastPaid)}</span>
       <span>${escapeHtml(dueText)}</span>
@@ -1313,6 +1468,7 @@ function addNewMember() {
     householdRole: "adult",
     participant: true,
     programs: [],
+    certifications: { tae_kwon_do: "", muay_thai: "", legacyLabel: "" },
     beltLevel: "",
     nextLevel: "",
     squareCustomerId: "",
@@ -1345,6 +1501,7 @@ function addFamilyMember() {
     householdRole: "child",
     participant: true,
     programs: [],
+    certifications: { tae_kwon_do: "", muay_thai: "", legacyLabel: "" },
     beltLevel: "",
     nextLevel: "",
     squareCustomerId: "",
@@ -1389,14 +1546,179 @@ function catchUpMemberPayments() {
   }
 
   const balance = getMemberBalance(member, state.store.payments);
-  if (!balance.unpaidMonths.length || Number(member.monthlyAmount || 0) <= 0) {
+  if (!balance.dueUnpaidMonths.length || Number(member.monthlyAmount || 0) <= 0) {
     return;
   }
 
-  state.store = bringMemberUpToDate(state.store, member);
-  saveStore(MSG.paymentsCaughtUpFor(member.name, balance.unpaidMonths.length));
-  showToast(MSG.paymentsCaughtUpFor(member.name, balance.unpaidMonths.length));
+  const result = reconcileDuePayments(state.store, member, [], new Date());
+  state.store = result.store;
+  state.lastPaymentBatch = result.batch.paymentIds.length ? result.batch : null;
+  saveStore(MSG.paymentsCaughtUpFor(member.name, result.batch.months.length));
+  showToast(MSG.paymentsCaughtUpFor(member.name, result.batch.months.length));
   render();
+}
+
+function undoMemberCatchUp() {
+  if (!state.lastPaymentBatch) {
+    return;
+  }
+  state.store = undoPaymentBatch(state.store, state.lastPaymentBatch);
+  state.lastPaymentBatch = null;
+  saveStore("방금 완납 처리를 취소했습니다. · Catch-up undone.");
+  showToast("방금 완납 처리를 취소했습니다. · Catch-up undone.");
+  render();
+}
+
+function openAttentionReview(startMemberId = "") {
+  const rows = getAttentionRows(state.store, state.stagedPayments);
+  if (rows.length === 0) {
+    showToast("오늘 확인할 미납이 없습니다. · No tuition is due for review today.");
+    return;
+  }
+  const memberIds = rows.map((row) => row.member.id);
+  const requestedIndex = memberIds.indexOf(startMemberId);
+  state.attentionReview = {
+    memberIds,
+    index: requestedIndex >= 0 ? requestedIndex : 0,
+    reviewed: 0,
+    changed: 0,
+    kept: 0,
+    lastBatch: null,
+    message: ""
+  };
+  renderAttentionReview();
+  elements.attentionReviewDialog.showModal();
+}
+
+function currentAttentionMember() {
+  const review = state.attentionReview;
+  if (!review || review.index >= review.memberIds.length) {
+    return null;
+  }
+  return state.store.members.find((member) => member.id === review.memberIds[review.index]) || null;
+}
+
+function renderAttentionReview() {
+  const review = state.attentionReview;
+  if (!review) {
+    return;
+  }
+  const member = currentAttentionMember();
+  elements.attentionExceptionPanel.classList.add("hidden");
+  elements.attentionExceptButton.setAttribute("aria-expanded", "false");
+  elements.attentionUndoButton.disabled = !review.lastBatch;
+  elements.attentionReviewMessage.textContent = review.message || "선택하면 자동으로 다음 회원으로 이동합니다. · Your choice advances to the next member.";
+
+  if (!member) {
+    elements.attentionReviewProgress.textContent = `${review.memberIds.length} / ${review.memberIds.length}`;
+    elements.attentionReviewName.textContent = "검토 완료 · Review Complete";
+    elements.attentionReviewContext.textContent = `${review.changed}명 변경 · ${review.changed} changed · ${review.kept}명 그대로 유지 · ${review.kept} kept as-is`;
+    elements.attentionReviewFacts.innerHTML = "";
+    elements.attentionReviewMonths.innerHTML = `<div class="review-complete-mark">✓</div>`;
+    [elements.attentionAllPaid, elements.attentionKeepAsIs, elements.attentionExceptButton].forEach((button) => button.classList.add("hidden"));
+    return;
+  }
+
+  [elements.attentionAllPaid, elements.attentionKeepAsIs, elements.attentionExceptButton].forEach((button) => button.classList.remove("hidden"));
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
+  const paymentState = getMemberPaymentState(member, state.store.payments, new Date(), pending);
+  const balance = getMemberBalance(member, state.store.payments);
+  const certifications = normalizeMemberCertifications(member);
+  elements.attentionReviewProgress.textContent = `${review.index + 1} / ${review.memberIds.length}`;
+  elements.attentionReviewName.textContent = member.name;
+  elements.attentionReviewContext.textContent = `${member.householdName || "개인 회원"} · ${paymentState.oldestDaysLate === 0 ? "오늘 납부일 · Due today" : `${paymentState.oldestDaysLate}일 지남 · ${paymentState.oldestDaysLate} days late`}`;
+  elements.attentionReviewFacts.innerHTML = `
+    <div><small>자격 · Certification</small><strong>${escapeHtml(certifications.tae_kwon_do || certifications.muay_thai || certifications.legacyLabel || "미설정 · Not set")}</strong></div>
+    <div><small>납부일 · Due day</small><strong>매월 ${Number(member.startDate?.split("-")[2]) || 1}일</strong></div>
+    <div><small>현재 미납액 · Balance</small><strong>${formatMoney(balance.dueNow)}</strong></div>
+  `;
+  elements.attentionReviewMonths.innerHTML = paymentState.dueUnpaidMonths.map((month) => `
+    <div class="attention-month ${month.state}">
+      <strong>${formatMonthKo(month.month)}</strong>
+      <small lang="en">${formatMonthEn(month.month)}</small>
+      <span>${month.daysLate === 0 ? "오늘 납부일 · Due today" : `${month.daysLate}일 지남 · ${month.daysLate} days late`}</span>
+    </div>
+  `).join("");
+  elements.attentionExceptionMonths.innerHTML = paymentState.dueUnpaidMonths.map((month, index) => `
+    <label class="attention-exception-choice">
+      <input type="checkbox" value="${escapeHtml(month.month)}" checked>
+      <span><strong>${formatMonthKo(month.month)}</strong><small lang="en">${formatMonthEn(month.month)} — Still missing</small></span>
+    </label>
+  `).join("");
+  const canChange = Number(member.monthlyAmount || 0) > 0 && paymentState.dueUnpaidMonths.length > 0;
+  elements.attentionAllPaid.disabled = !canChange;
+  elements.attentionSaveExceptions.disabled = !canChange;
+}
+
+function markAttentionMemberPaid() {
+  const member = currentAttentionMember();
+  if (!member) {
+    return;
+  }
+  const result = reconcileDuePayments(state.store, member, [], new Date());
+  state.store = result.store;
+  state.attentionReview.lastBatch = result.batch;
+  state.attentionReview.changed += 1;
+  advanceAttentionReview(`${member.name}: 모두 납부 완료 · All due months marked paid`);
+}
+
+function keepAttentionMemberAsIs() {
+  const member = currentAttentionMember();
+  if (!member) {
+    return;
+  }
+  state.attentionReview.lastBatch = null;
+  state.attentionReview.kept += 1;
+  advanceAttentionReview(`${member.name}: 그대로 유지 · Kept as-is`);
+}
+
+function toggleAttentionExceptions() {
+  const hidden = elements.attentionExceptionPanel.classList.toggle("hidden");
+  elements.attentionExceptButton.setAttribute("aria-expanded", String(!hidden));
+}
+
+function saveAttentionExceptions() {
+  const member = currentAttentionMember();
+  if (!member) {
+    return;
+  }
+  const stillMissing = Array.from(elements.attentionExceptionMonths.querySelectorAll("input:checked")).map((input) => input.value);
+  const result = reconcileDuePayments(state.store, member, stillMissing, new Date());
+  state.store = result.store;
+  state.attentionReview.lastBatch = result.batch.paymentIds.length ? result.batch : null;
+  if (result.batch.paymentIds.length > 0) {
+    state.attentionReview.changed += 1;
+  } else {
+    state.attentionReview.kept += 1;
+  }
+  advanceAttentionReview(`${member.name}: ${stillMissing.length}개월 미납 유지 · ${stillMissing.length} month${stillMissing.length === 1 ? "" : "s"} left missing`);
+}
+
+function advanceAttentionReview(message) {
+  const review = state.attentionReview;
+  review.reviewed += 1;
+  review.index += 1;
+  review.message = message;
+  saveStore("검토 결과 저장됨 · Review saved");
+  render();
+  renderAttentionReview();
+}
+
+function undoAttentionAction() {
+  const review = state.attentionReview;
+  if (!review?.lastBatch) {
+    return;
+  }
+  const batch = review.lastBatch;
+  state.store = undoPaymentBatch(state.store, batch);
+  review.index = Math.max(0, review.memberIds.indexOf(batch.memberId));
+  review.reviewed = Math.max(0, review.reviewed - 1);
+  review.changed = Math.max(0, review.changed - 1);
+  review.lastBatch = null;
+  review.message = "방금 변경을 취소했습니다. · Last payment change undone.";
+  saveStore("방금 변경 취소됨 · Last change undone");
+  render();
+  renderAttentionReview();
 }
 
 function savePayment(event) {
@@ -1447,7 +1769,12 @@ function saveMember(event) {
       elements.memberTaeKwonDo.checked ? "tae_kwon_do" : "",
       elements.memberMuayThai.checked ? "muay_thai" : ""
     ].filter(Boolean),
-    beltLevel: elements.memberBeltLevel.value,
+    certifications: {
+      tae_kwon_do: elements.memberBeltLevel.value,
+      muay_thai: elements.memberMuayThaiLevel.value,
+      legacyLabel: normalizeMemberCertifications(member).legacyLabel
+    },
+    beltLevel: elements.memberBeltLevel.value || elements.memberMuayThaiLevel.value,
     nextLevel: elements.memberNextLevel.value,
     squareCustomerId: elements.memberSquareCustomerId.value,
     monthlyAmount: elements.memberAmount.value,

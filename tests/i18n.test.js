@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { MEMBER_FIELD_ALIASES, PAYMENT_FIELD_ALIASES } from "../src/data.js";
 import {
+  ATTENTION_COPY,
   FIELD_LABELS,
+  LANDSCAPE_COPY,
   ROSTER_TITLES,
   STATUS_LABELS,
   bi,
@@ -26,6 +28,13 @@ test("every importable CSV field has a bilingual label", () => {
   fields.forEach((field) => {
     assert.ok(FIELD_LABELS[field]?.ko, `missing Korean label for field ${field}`);
     assert.ok(FIELD_LABELS[field]?.en, `missing English label for field ${field}`);
+  });
+});
+
+test("landscape and attention actions have complete bilingual copy", () => {
+  [...Object.values(LANDSCAPE_COPY), ...Object.values(ATTENTION_COPY)].forEach((pair) => {
+    assert.ok(pair.ko, "missing Korean workflow copy");
+    assert.ok(pair.en, "missing English workflow copy");
   });
 });
 
