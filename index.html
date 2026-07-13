@@ -15,6 +15,14 @@
           <p id="saveStatus">이 컴퓨터에 저장됨 · Saved on this computer</p>
         </div>
       </div>
+      <div class="global-find">
+        <label for="globalSearchInput">
+          <span lang="ko">어디서나 회원 찾기</span>
+          <small lang="en">Find a member from anywhere</small>
+        </label>
+        <input id="globalSearchInput" type="search" autocomplete="off" placeholder="이름 입력 · Type a name">
+        <div id="globalSearchResults" class="global-find-results hidden" aria-label="회원 검색 결과 Member search results"></div>
+      </div>
     </header>
 
     <nav class="page-tabs" aria-label="Primary pages">
@@ -88,101 +96,90 @@
         <div id="dashboardView" class="dashboard-view">
           <div class="home-workspace">
             <div class="home-main">
-          <div class="dashboard-header">
-            <div>
-              <h2>오늘의 회비 상황 <small lang="en">Today’s Payment Command Center</small></h2>
-              <p id="dashboardMonthLabel"></p>
-            </div>
-            <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
-          </div>
-
-          <div class="command-grid">
-            <section class="command-panel risk-panel">
-              <div class="panel-heading">
-                <span>먼저 연락할 곳 <small lang="en">Follow-up Priority</small></span>
-                <strong id="dashboardDelinquentCount">0명</strong>
-              </div>
-              <div class="money-stack">
-                <div class="money-line primary-risk">
-                  <span>총 지난 미납 <small lang="en">Total Past-Due</small></span>
-                  <strong id="dashboardPastDue">$0.00</strong>
-                </div>
-                <div class="money-line">
-                  <span>10일 이상 늦음 <small lang="en">10+ Days Late</small></span>
-                  <strong id="dashboardTenDaysLate">$0.00</strong>
-                </div>
-                <div class="money-line">
-                  <span>그 회원들의 이번 달 위험 금액 <small lang="en">Current-Month Risk from Same Members</small></span>
-                  <strong id="dashboardDelinquentCurrent">$0.00</strong>
-                </div>
-              </div>
-            </section>
-
-            <section class="command-panel good-panel">
-              <div class="panel-heading">
-                <span>잘 들어온 회비 <small lang="en">Healthy Cash Flow</small></span>
-                <strong id="dashboardActiveCount">0명</strong>
-              </div>
-              <div class="money-stack">
-                <div class="money-line primary-good">
-                  <span>이번 달 받은 금액 <small lang="en">Paid This Month</small></span>
-                  <strong id="dashboardPaidMonth">$0.00</strong>
-                </div>
-                <div class="money-line">
-                  <span>올해 받은 금액 <small lang="en">Paid This Year</small></span>
-                  <strong id="dashboardPaidYear">$0.00</strong>
-                </div>
-                <div class="money-line">
-                  <span>정상 회원의 월말 예상 금액 <small lang="en">Expected by Month End from Up-to-Date Members</small></span>
-                  <strong id="dashboardExpectedMonth">$0.00</strong>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <div class="metric-grid compact-metrics">
-            <button id="dashboardPaid" class="metric-card status-paid" type="button">
-              <span>완납 <small lang="en">Paid Up</small></span>
-              <strong>0</strong>
-            </button>
-            <button id="dashboardPending" class="metric-card status-pending" type="button">
-              <span>대기 <small lang="en">Pending</small></span>
-              <strong>0</strong>
-            </button>
-            <button id="dashboardWatch" class="metric-card status-watch" type="button">
-              <span>확인 필요 <small lang="en">Needs Attention</small></span>
-              <strong>0</strong>
-            </button>
-            <button id="dashboardLate" class="metric-card status-late" type="button">
-              <span>미납 <small lang="en">Behind</small></span>
-              <strong>0</strong>
-            </button>
-          </div>
-
-          <div class="overview-grid">
-            <section class="overview-panel">
-              <h3>한눈에 보기 <small lang="en">At a Glance</small></h3>
-              <div id="fieldSnapshot" class="snapshot-list"></div>
-            </section>
-            <section class="overview-panel">
-              <h3>미납액 많은 회원 <small lang="en">Owes the Most</small></h3>
-              <div id="highestBalanceList" class="snapshot-list"></div>
-            </section>
-          </div>
-            </div>
-            <aside id="todayFollowups" class="today-followups" aria-labelledby="todayFollowupsTitle">
-              <div class="followup-heading">
+              <section class="daily-brief-hero" aria-labelledby="dailyBriefTitle">
                 <div>
-                  <h2 id="todayFollowupsTitle"><span lang="ko">오늘 확인할 회원</span><small lang="en">Today’s Follow-ups</small></h2>
-                  <p><span lang="ko">납부일이 오늘이거나 지난 회원</span><small lang="en">Due today or earlier</small></p>
+                  <p class="section-kicker"><span lang="ko">오늘의 운영</span><small lang="en">WMAC Daily Desk</small></p>
+                  <h2 id="dailyBriefTitle"><span lang="ko">오늘의 운영 브리핑</span><small lang="en">Today’s Dojo Brief</small></h2>
+                  <p id="dashboardMonthLabel"></p>
+                  <p id="dailyBriefSummary" class="daily-brief-summary"></p>
                 </div>
-                <strong id="todayFollowupCount">0</strong>
-              </div>
-              <div id="todayFollowupList" class="today-followup-list"></div>
-              <button id="reviewAllAttentionButton" class="button primary full bi" type="button">
-                <span lang="ko">모두 검토</span><small lang="en">Review All</small>
-              </button>
-            </aside>
+                <button id="startTodayReview" class="button daily-review-button bi" type="button">
+                  <span lang="ko">오늘 검토 시작</span><small lang="en">Start Today’s Review</small>
+                </button>
+              </section>
+
+              <section class="operator-stat-grid" aria-label="오늘의 주요 작업 Today’s key work">
+                <button id="briefDueCard" class="operator-stat danger" type="button">
+                  <span class="operator-stat-icon" aria-hidden="true">!</span>
+                  <span><b lang="ko">회비 확인</b><small lang="en">Tuition follow-ups</small></span>
+                  <strong id="briefDueCount">0명</strong>
+                  <em id="briefDueAmount">$0.00</em>
+                </button>
+                <button id="briefCardCard" class="operator-stat card" type="button">
+                  <span class="operator-stat-icon" aria-hidden="true">▣</span>
+                  <span><b lang="ko">카드 검토</b><small lang="en">Card payments</small></span>
+                  <strong id="briefCardCount">0건</strong>
+                  <em id="briefCardDetail"><span lang="ko">검토 대기</span><small lang="en">Awaiting review</small></em>
+                </button>
+                <button id="briefSetupCard" class="operator-stat setup" type="button">
+                  <span class="operator-stat-icon" aria-hidden="true">?</span>
+                  <span><b lang="ko">정보 보완</b><small lang="en">Records needing setup</small></span>
+                  <strong id="briefSetupCount">0명</strong>
+                  <em id="briefSetupDetail"><span lang="ko">납부일 또는 금액</span><small lang="en">Due date or amount</small></em>
+                </button>
+                <button id="briefWeekCard" class="operator-stat upcoming" type="button">
+                  <span class="operator-stat-icon" aria-hidden="true">7</span>
+                  <span><b lang="ko">앞으로 7일</b><small lang="en">Due in the next 7 days</small></span>
+                  <strong id="briefWeekCount">0명</strong>
+                  <em id="briefWeekAmount"><span lang="ko">$0.00 예정</span><small lang="en">$0.00 scheduled</small></em>
+                </button>
+              </section>
+
+              <section class="cash-pulse" aria-labelledby="cashPulseTitle">
+                <div class="cash-pulse-heading">
+                  <div>
+                    <p class="section-kicker"><span lang="ko">월간 흐름</span><small lang="en">Monthly Pulse</small></p>
+                    <h3 id="cashPulseTitle"><span lang="ko">이번 달 흐름</span><small lang="en">This Month’s Flow</small></h3>
+                  </div>
+                  <div class="coverage-score"><strong id="flowProgressText">0%</strong><small id="flowProgressLabel"><span lang="ko">이번 달 납부 회원</span><span lang="en">Members paid this month</span></small></div>
+                </div>
+                <div class="flow-progress" role="progressbar" aria-label="현재 월 회비 적용 Current-month tuition coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="flowProgress"></span></div>
+                <div class="cash-pulse-grid">
+                  <div><span><b lang="ko">실제 받은 금액</b><small lang="en">Cash received by payment date</small></span><strong id="flowCollected">$0.00</strong></div>
+                  <div><span><b lang="ko">이번 달에 적용</b><small lang="en">Applied to this tuition month</small></span><strong id="flowCovered">$0.00</strong></div>
+                  <div><span><b lang="ko">이번 달 예정</b><small lang="en">Expected tuition this month</small></span><strong id="flowExpected">$0.00</strong></div>
+                  <div><span><b lang="ko">오늘까지 미납</b><small lang="en">Due now</small></span><strong id="flowDue">$0.00</strong></div>
+                </div>
+                <div id="sixMonthFlow" class="six-month-flow" aria-label="최근 6개월 회비 적용 Six-month tuition coverage"></div>
+              </section>
+            </div>
+            <div class="home-rail">
+              <aside id="todayFollowups" class="today-followups" aria-labelledby="todayFollowupsTitle">
+                <div class="followup-heading">
+                  <div>
+                    <p class="section-kicker"><span lang="ko">오늘의 순서</span><small lang="en">Today’s Route</small></p>
+                    <h2 id="todayFollowupsTitle"><span lang="ko">오늘의 순서</span><small lang="en">Today’s Route</small></h2>
+                    <p><span lang="ko">가장 급한 회원부터</span><small lang="en">Most urgent members first</small></p>
+                  </div>
+                  <strong id="todayFollowupCount">0</strong>
+                </div>
+                <div id="todayFollowupList" class="today-followup-list"></div>
+                <button id="reviewAllAttentionButton" class="button primary full bi" type="button">
+                  <span lang="ko">모두 검토</span><small lang="en">Review All</small>
+                </button>
+              </aside>
+              <aside class="activity-center" aria-labelledby="activityCenterTitle">
+                <div class="activity-center-heading">
+                  <div>
+                    <p class="section-kicker"><span lang="ko">안전 장치</span><small lang="en">Safety Net</small></p>
+                    <h2 id="activityCenterTitle"><span lang="ko">최근 작업</span><small lang="en">Recent Activity &amp; Undo</small></h2>
+                  </div>
+                  <span class="safety-badge">↶</span>
+                </div>
+                <p class="activity-help"><span lang="ko">잘못 눌러도 괜찮습니다. 특정 작업을 다시 되돌릴 수 있습니다.</span><small lang="en">Mistakes are safe. Undo a specific payment action here.</small></p>
+                <div id="recentActivityList" class="recent-activity-list"></div>
+              </aside>
+            </div>
           </div>
         </div>
 
@@ -201,9 +198,18 @@
             <span><i class="matrix-key attention" aria-hidden="true">!</i><span lang="ko">확인 필요</span><small lang="en">Due</small></span>
             <span><i class="matrix-key behind" aria-hidden="true">!</i><span lang="ko">미납</span><small lang="en">10+ Days Behind</small></span>
             <span><i class="matrix-key pending" aria-hidden="true">…</i><span lang="ko">카드 검토</span><small lang="en">Pending Card Review</small></span>
+            <span><i class="matrix-key upcoming" aria-hidden="true">○</i><span lang="ko">납부일 전</span><small lang="en">Not Due Yet</small></span>
             <span><i class="matrix-key not-billable" aria-hidden="true">—</i><span lang="ko">해당 없음</span><small lang="en">Not Billable</small></span>
           </div>
-          <div class="landscape-table-wrap" role="region" aria-label="전체 회원 월별 납부표 All-member monthly payment matrix">
+          <div class="landscape-toolbar" role="group" aria-label="납부 현황 필터 Payment landscape filters">
+            <button class="landscape-filter active" type="button" data-landscape-filter="all"><span lang="ko">전체</span><small lang="en">All</small></button>
+            <button class="landscape-filter" type="button" data-landscape-filter="due"><span lang="ko">납부일 지남</span><small lang="en">Due now</small></button>
+            <button class="landscape-filter" type="button" data-landscape-filter="late"><span lang="ko">미납</span><small lang="en">Behind</small></button>
+            <button class="landscape-filter" type="button" data-landscape-filter="pending"><span lang="ko">카드 확인 중</span><small lang="en">Card pending</small></button>
+            <button class="landscape-filter" type="button" data-landscape-filter="setup"><span lang="ko">정보 필요</span><small lang="en">Setup needed</small></button>
+            <button class="landscape-filter" type="button" data-landscape-filter="upcoming"><span lang="ko">앞으로 7일</span><small lang="en">Next 7 days</small></button>
+          </div>
+          <div class="landscape-table-wrap" role="region" aria-label="전체 회원 월별 납부표 All-member monthly payment matrix" tabindex="0">
             <table class="landscape-table">
               <caption class="sr-only">모든 활동 회원의 최근 12개월 납부 현황 · Recent twelve-month payment status for every active participant</caption>
               <thead id="landscapeHead"></thead>

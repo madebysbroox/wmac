@@ -7,8 +7,6 @@ import {
   exportStoreRows,
   getMemberBalance,
   getLateFeeBalance,
-  getDashboardSummary,
-  getAttentionRows,
   getLandscapeRows,
   getMemberStatus,
   getMemberPaymentState,
@@ -31,6 +29,8 @@ import {
   undoPaymentBatch,
   upsertMember
 } from "./data.js";
+import { getOperatorBrief } from "./operator.js";
+import { createActivityLog, recordActivity, undoActivity } from "./activity.js";
 import {
   DEFAULT_EMAIL_TEMPLATE,
   ATTENTION_COPY,
@@ -55,6 +55,7 @@ import {
 const STORAGE_KEY = "master-lee-payment-tracker";
 const STORAGE_BACKUP_KEY = "master-lee-payment-tracker-v1-backup";
 const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
+const ACTIVITY_LOG_KEY = "master-lee-payment-tracker-activity";
 
 // ---------------------------------------------------------------------------
 // State and element lookup
@@ -70,6 +71,8 @@ const state = {
   review: null,
   attentionReview: null,
   lastPaymentBatch: null,
+  activityLog: loadActivityLog(),
+  landscapeFilter: "all",
   stagedPayments: [],
   selectedStagedId: "",
   paymentProviders: {
@@ -80,14 +83,15 @@ const state = {
 
 const elements = {};
 [
-  "saveStatus", "homeTab", "membersTab", "landscapeTab", "squareTab", "appLayout", "memberSidebar",
+  "saveStatus", "globalSearchInput", "globalSearchResults", "homeTab", "membersTab", "landscapeTab", "squareTab", "appLayout", "memberSidebar",
   "memberCsv", "paymentCsv", "exportButton",
   "searchInput", "addMemberButton", "paidCount", "pendingCount", "watchCount", "lateCount",
   "memberList", "dashboardView", "landscapeView", "landscapeSummary", "landscapeHead", "landscapeBody", "landscapeReviewButton",
-  "todayFollowupCount", "todayFollowupList", "reviewAllAttentionButton", "dashboardPaid", "dashboardPending", "dashboardWatch", "dashboardLate",
-  "dashboardMonthLabel", "dashboardDelinquentCount", "dashboardPastDue", "dashboardTenDaysLate",
-  "dashboardDelinquentCurrent", "dashboardActiveCount", "dashboardPaidMonth", "dashboardPaidYear",
-  "dashboardExpectedMonth", "fieldSnapshot", "highestBalanceList", "squareView", "squareStatusLine",
+  "todayFollowupCount", "todayFollowupList", "reviewAllAttentionButton", "startTodayReview", "dailyBriefSummary",
+  "briefDueCard", "briefDueCount", "briefDueAmount", "briefCardCard", "briefCardCount", "briefCardDetail",
+  "briefSetupCard", "briefSetupCount", "briefSetupDetail", "briefWeekCard", "briefWeekCount", "briefWeekAmount",
+  "dashboardMonthLabel", "flowCollected", "flowCovered", "flowExpected", "flowDue", "flowProgress", "flowProgressText", "flowProgressLabel", "sixMonthFlow", "recentActivityList",
+  "squareView", "squareStatusLine",
   "syncSquareButton", "syncWorldBankcardButton", "squareSummary", "squarePayments",
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
@@ -165,15 +169,19 @@ elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.me
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
 elements.exportButton.addEventListener("click", exportBackup);
 elements.searchInput.addEventListener("input", render);
+elements.globalSearchInput.addEventListener("input", renderGlobalSearch);
+elements.globalSearchInput.addEventListener("keydown", handleGlobalSearchKeydown);
+elements.globalSearchResults.addEventListener("keydown", handleGlobalResultsKeydown);
 elements.addMemberButton.addEventListener("click", addNewMember);
 elements.paidCount.addEventListener("click", () => showRoster("paid"));
 elements.pendingCount.addEventListener("click", () => showRoster("pending"));
 elements.watchCount.addEventListener("click", () => showRoster("watch"));
 elements.lateCount.addEventListener("click", () => showRoster("late"));
-elements.dashboardPaid.addEventListener("click", () => showRoster("paid"));
-elements.dashboardPending.addEventListener("click", () => showRoster("pending"));
-elements.dashboardWatch.addEventListener("click", () => showRoster("watch"));
-elements.dashboardLate.addEventListener("click", () => showRoster("late"));
+elements.startTodayReview.addEventListener("click", startDailyWork);
+elements.briefDueCard.addEventListener("click", () => openAttentionReview());
+elements.briefCardCard.addEventListener("click", showSquare);
+elements.briefSetupCard.addEventListener("click", () => showRoster("setup"));
+elements.briefWeekCard.addEventListener("click", showUpcomingLandscape);
 elements.backToDashboard.addEventListener("click", showDashboard);
 elements.syncSquareButton.addEventListener("click", syncSquarePayments);
 elements.syncWorldBankcardButton.addEventListener("click", syncWorldBankcardPayments);
@@ -189,6 +197,12 @@ elements.attentionExceptButton.addEventListener("click", toggleAttentionExceptio
 elements.attentionSaveExceptions.addEventListener("click", saveAttentionExceptions);
 elements.attentionUndoButton.addEventListener("click", undoAttentionAction);
 elements.closeAttentionReview.addEventListener("click", () => elements.attentionReviewDialog.close());
+document.querySelectorAll("[data-landscape-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.landscapeFilter = button.dataset.landscapeFilter;
+    renderLandscape();
+  });
+});
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
 elements.paymentForm.addEventListener("submit", savePayment);
@@ -249,6 +263,68 @@ function saveStore(message = MSG.savedOnComputer) {
   state.store.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.store));
   elements.saveStatus.textContent = message;
+}
+
+function loadActivityLog() {
+  return createActivityLog(localStorage.getItem(ACTIVITY_LOG_KEY));
+}
+
+function saveActivityLog() {
+  localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(state.activityLog));
+}
+
+function logAddedPayments(member, paymentIds, months, labels = {}, metadata = {}, replacedPayments = []) {
+  if (!paymentIds.length) {
+    return "";
+  }
+  state.activityLog = recordActivity(state.activityLog, {
+    kind: replacedPayments.length ? "payments-replaced" : "payments-added",
+    memberId: member.id,
+    memberName: member.name,
+    paymentIds,
+    months,
+    labelKo: labels.ko || "납부 기록 추가",
+    labelEn: labels.en || "Payment recorded",
+    payments: replacedPayments,
+    ...metadata
+  });
+  saveActivityLog();
+  return state.activityLog.entries[0]?.id || "";
+}
+
+function logRemovedPayments(member, payments, labels = {}) {
+  if (!payments.length) {
+    return "";
+  }
+  state.activityLog = recordActivity(state.activityLog, {
+    kind: "payments-removed",
+    memberId: member.id,
+    memberName: member.name,
+    payments,
+    months: payments.map((payment) => payment.month),
+    labelKo: labels.ko || "납부 기록 취소",
+    labelEn: labels.en || "Payment marked unpaid"
+  });
+  saveActivityLog();
+  return state.activityLog.entries[0]?.id || "";
+}
+
+function logProviderStatus(payment, labels = {}) {
+  if (!payment?.id) {
+    return "";
+  }
+  state.activityLog = recordActivity(state.activityLog, {
+    kind: "provider-status",
+    memberId: payment.memberId || payment.suggestedMemberId || "",
+    memberName: state.store.members.find((member) => member.id === (payment.memberId || payment.suggestedMemberId))?.name || payment.buyerName || "",
+    stagedPaymentId: payment.id,
+    provider: payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square"),
+    previousStatus: payment.status || "pending",
+    labelKo: labels.ko || "카드 검토 상태 변경",
+    labelEn: labels.en || "Card review status changed"
+  });
+  saveActivityLog();
+  return state.activityLog.entries[0]?.id || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -354,58 +430,122 @@ function renderSummary() {
   elements.lateCount.innerHTML = `미납 ${counts.late}명 <small lang="en">behind</small>`;
 }
 
+function renderGlobalSearch() {
+  const query = elements.globalSearchInput.value.trim().toLocaleLowerCase();
+  if (!query) {
+    elements.globalSearchResults.classList.add("hidden");
+    return;
+  }
+  const members = state.store.members
+    .filter((member) => member.name.toLocaleLowerCase().includes(query))
+    .sort((left, right) => Number(left.inactive) - Number(right.inactive) || left.name.localeCompare(right.name))
+    .slice(0, 8);
+  elements.globalSearchResults.innerHTML = members.length
+    ? members.map((member, index) => {
+      const status = member.participant === false ? null : displayedMemberStatus(member);
+      const context = member.inactive
+        ? "쉬는 회원 · Inactive"
+        : member.participant === false
+          ? "가족 연락처 · Family contact"
+          : `${STATUS_LABELS[status.level].ko} · ${STATUS_LABELS[status.level].en}`;
+      return `<button type="button" data-global-member="${escapeHtml(member.id)}" ${index === 0 ? "data-first-result" : ""}><span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.householdName || "개인 회원 · Individual")}</small></span><em>${escapeHtml(context)}</em></button>`;
+    }).join("")
+    : `<div class="global-find-empty">찾는 회원이 없습니다.<small lang="en">No matching members.</small></div>`;
+  elements.globalSearchResults.classList.remove("hidden");
+  elements.globalSearchResults.querySelectorAll("[data-global-member]").forEach((button) => {
+    button.addEventListener("click", () => {
+      elements.globalSearchInput.value = "";
+      elements.globalSearchResults.classList.add("hidden");
+      selectMember(button.dataset.globalMember);
+    });
+  });
+}
+
+function handleGlobalResultsKeydown(event) {
+  const buttons = Array.from(elements.globalSearchResults.querySelectorAll("[data-global-member]"));
+  const currentIndex = buttons.indexOf(document.activeElement);
+  if (event.key === "Escape") {
+    event.preventDefault();
+    elements.globalSearchInput.value = "";
+    renderGlobalSearch();
+    elements.globalSearchInput.focus();
+    return;
+  }
+  if ((event.key === "ArrowDown" || event.key === "ArrowUp") && currentIndex >= 0) {
+    event.preventDefault();
+    const offset = event.key === "ArrowDown" ? 1 : -1;
+    buttons[(currentIndex + offset + buttons.length) % buttons.length].focus();
+  }
+}
+
+function handleGlobalSearchKeydown(event) {
+  if (event.key === "Escape") {
+    elements.globalSearchInput.value = "";
+    renderGlobalSearch();
+  }
+  if (event.key === "Enter") {
+    const firstResult = elements.globalSearchResults.querySelector("[data-first-result]");
+    if (firstResult) {
+      event.preventDefault();
+      firstResult.click();
+    }
+  }
+  if (event.key === "ArrowDown") {
+    const firstResult = elements.globalSearchResults.querySelector("[data-first-result]");
+    if (firstResult) {
+      event.preventDefault();
+      firstResult.focus();
+    }
+  }
+}
+
 function renderDashboard() {
   elements.dashboardView.classList.toggle("hidden", state.view !== "dashboard");
   if (state.view !== "dashboard") {
     return;
   }
+  const brief = getOperatorBrief(state.store, state.stagedPayments);
+  const followups = brief.tuitionFollowups;
+  const actionCount = followups.length + brief.pendingCards.length + brief.setupRows.length;
+  const today = new Date(`${brief.asOf}T12:00:00`);
+  const koDate = today.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+  const enDate = today.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-  const rows = memberRows();
-  const counts = statusCounts(rows);
-  const summary = getDashboardSummary(state.store);
-  const activeTotal = summary.activeMembers;
-  const currentRate = activeTotal ? Math.round((counts.paid / activeTotal) * 100) : 0;
+  elements.dashboardMonthLabel.innerHTML = `<span lang="ko">${escapeHtml(koDate)}</span><small lang="en">${escapeHtml(enDate)}</small>`;
+  elements.dailyBriefSummary.innerHTML = actionCount
+    ? `<strong>${actionCount}개의 작업이 준비되어 있습니다.</strong><small lang="en">${actionCount} item${actionCount === 1 ? " is" : "s are"} ready for your attention.</small>`
+    : `<strong>오늘 처리할 긴급 작업이 없습니다.</strong><small lang="en">The desk is clear. Nothing urgent needs action.</small>`;
+  elements.startTodayReview.disabled = actionCount === 0;
+  elements.briefDueCard.disabled = followups.length === 0;
+  elements.briefDueCount.textContent = `${followups.length}명`;
+  elements.briefDueAmount.textContent = formatMoney(followups.reduce((sum, item) => sum + Number(item.actionableAmount || 0), 0));
+  elements.briefCardCount.textContent = `${brief.pendingCards.length}건`;
+  const cardAmount = formatMoney(brief.pendingCards.reduce((sum, item) => sum + item.amount, 0));
+  elements.briefCardDetail.innerHTML = `<span lang="ko">${cardAmount} 검토 대기</span><small lang="en">${cardAmount} awaiting review</small>`;
+  elements.briefSetupCount.textContent = `${brief.setupRows.length}명`;
+  elements.briefWeekCount.textContent = `${brief.totals.next7Days.members}명`;
+  const scheduledAmount = formatMoney(brief.totals.next7Days.amount);
+  elements.briefWeekAmount.innerHTML = `<span lang="ko">${scheduledAmount} 예정</span><small lang="en">${scheduledAmount} scheduled</small>`;
+  elements.flowCollected.textContent = formatMoney(brief.totals.cashReceivedThisMonth.amount);
+  elements.flowCovered.textContent = formatMoney(brief.totals.serviceMonthCovered.appliedAmount);
+  elements.flowExpected.textContent = formatMoney(brief.totals.serviceMonthExpected.amount);
+  elements.flowDue.textContent = formatMoney(brief.totals.dueNow.amount);
+  elements.flowProgressText.textContent = `${brief.totals.coverageRate}%`;
+  elements.flowProgressLabel.innerHTML = `<span lang="ko">이번 달 납부 회원 ${brief.totals.serviceMonthCovered.members}/${brief.totals.serviceMonthExpected.members}</span><span lang="en">Members paid this month ${brief.totals.serviceMonthCovered.members}/${brief.totals.serviceMonthExpected.members}</span>`;
+  elements.flowProgress.style.width = `${brief.totals.coverageRate}%`;
+  elements.flowProgress.parentElement.setAttribute("aria-valuenow", String(brief.totals.coverageRate));
+  const maximumFlow = Math.max(1, ...brief.sixMonthFlow.map((row) => row.tuitionAmount));
+  elements.sixMonthFlow.innerHTML = brief.sixMonthFlow.map((row) => {
+    const height = Math.max(row.tuitionAmount ? 12 : 2, Math.round((row.tuitionAmount / maximumFlow) * 100));
+    return `<div class="flow-month"><span class="flow-bar-track"><i style="height:${height}%"></i></span><strong>${escapeHtml(formatMonthKo(row.month).replace(/^\d+년 /, ""))}</strong><small>${formatMoney(row.tuitionAmount)}</small></div>`;
+  }).join("");
 
-  elements.dashboardPaid.querySelector("strong").textContent = counts.paid;
-  elements.dashboardPending.querySelector("strong").textContent = counts.pending;
-  elements.dashboardWatch.querySelector("strong").textContent = counts.watch;
-  elements.dashboardLate.querySelector("strong").textContent = counts.late;
-  elements.dashboardMonthLabel.textContent = `${formatMonthBi(summary.currentMonth)} · ${activeTotal} active member${activeTotal === 1 ? "" : "s"}`;
-  setAnimatedText(elements.dashboardDelinquentCount, `${summary.delinquentMembers}명`);
-  setAnimatedText(elements.dashboardPastDue, formatMoney(summary.pastDue));
-  setAnimatedText(elements.dashboardTenDaysLate, formatMoney(summary.tenDaysLate));
-  setAnimatedText(elements.dashboardDelinquentCurrent, formatMoney(summary.delinquentCurrentMonthRisk));
-  setAnimatedText(elements.dashboardActiveCount, `${activeTotal}명`);
-  setAnimatedText(elements.dashboardPaidMonth, formatMoney(summary.paidThisMonth));
-  setAnimatedText(elements.dashboardPaidYear, formatMoney(summary.paidThisYear));
-  setAnimatedText(elements.dashboardExpectedMonth, formatMoney(summary.expectedCurrentMonthFromUpToDate));
-
-  elements.fieldSnapshot.innerHTML = `
-    <div><span>활동 회원 <small lang="en">Active members</small></span><strong>${activeTotal}</strong></div>
-    <div><span>이번 달 완납 <small lang="en">Paid this month</small></span><strong>${currentRate}%</strong></div>
-    <div><span>이번 달 아직 예상 <small lang="en">Expected from up-to-date</small></span><strong>${formatMoney(summary.expectedCurrentMonthFromUpToDate)}</strong></div>
-    <div><span>비참가 가족 연락처 <small lang="en">Family contacts</small></span><strong>${summary.nonParticipantContacts}</strong></div>
-    <div><span>쉬는 회원 <small lang="en">Inactive members</small></span><strong>${summary.inactiveMembers}</strong></div>
-  `;
-
-  const highest = rows
-    .filter((row) => row.balance.totalDue > 0)
-    .sort((a, b) => b.balance.totalDue - a.balance.totalDue || a.member.name.localeCompare(b.member.name))
-    .slice(0, 6);
-
-  elements.highestBalanceList.innerHTML = highest.length
-    ? highest.map((row) => rosterSummaryMarkup(row)).join("")
-    : `<div><span>${MSG.allClear}</span><strong>✓</strong></div>`;
-
-  elements.highestBalanceList.querySelectorAll("[data-member-id]").forEach((button) => {
-    button.addEventListener("click", () => selectMember(button.dataset.memberId));
-  });
-
-  renderTodayFollowups();
+  renderTodayFollowups(brief);
+  renderRecentActivity();
 }
 
-function renderTodayFollowups() {
-  const rows = getAttentionRows(state.store, state.stagedPayments);
+function renderTodayFollowups(brief = getOperatorBrief(state.store, state.stagedPayments)) {
+  const rows = brief.tuitionFollowups;
   elements.todayFollowupCount.textContent = rows.length;
   elements.reviewAllAttentionButton.disabled = rows.length === 0;
   elements.reviewAllAttentionButton.querySelector("small").textContent = rows.length
@@ -413,14 +553,14 @@ function renderTodayFollowups() {
     : "Nothing due today";
   elements.todayFollowupList.innerHTML = rows.length
     ? rows.slice(0, 7).map((row) => `
-      <button class="today-followup-member" type="button" data-followup-member="${escapeHtml(row.member.id)}">
+      <button class="today-followup-member ${row.reason === "behind" ? "urgent" : ""}" type="button" data-followup-member="${escapeHtml(row.memberId)}">
         <span>
-          <strong>${escapeHtml(row.member.name)}</strong>
-          <small>${escapeHtml(row.member.householdName || "개인 회원 · Individual")}</small>
+          <strong>${escapeHtml(row.memberName)}</strong>
+          <small>${row.householdName ? escapeHtml(row.householdName) : `<span lang="ko">개인 회원</span><span lang="en">Individual</span>`}</small>
         </span>
         <span class="followup-amount">
-          <strong>${formatMoney(row.balance.dueNow)}</strong>
-          <small>${row.paymentState.oldestDaysLate === 0 ? "오늘 납부일 · Due today" : `${row.paymentState.oldestDaysLate}일 지남 · ${row.paymentState.oldestDaysLate} days late`}</small>
+          <strong>${formatMoney(row.actionableAmount)}</strong>
+          <small>${row.daysLate === 0 ? `<span lang="ko">오늘 납부일</span><span lang="en">Due today</span>` : `<span lang="ko">${row.daysLate}일 지남</span><span lang="en">${row.daysLate} days late</span>`}</small>
         </span>
       </button>
     `).join("")
@@ -430,15 +570,82 @@ function renderTodayFollowups() {
   });
 }
 
+function renderRecentActivity() {
+  const activities = state.activityLog.entries.slice(0, 6);
+  elements.recentActivityList.innerHTML = activities.length
+    ? activities.map((activity) => {
+      const monthText = activity.months.length === 1
+        ? formatMonthBi(activity.months[0])
+        : activity.months.length > 1
+          ? `${activity.months.length}개월 · ${activity.months.length} months`
+          : "카드 검토 · Card review";
+      return `<div class="activity-item ${activity.undoneAt ? "undone" : ""}">
+        <div><strong>${escapeHtml(activity.memberName || "회원 · Member")}</strong><span>${escapeHtml(activity.labelKo || "납부 변경")}</span><small lang="en">${escapeHtml(activity.labelEn || "Payment change")} · ${escapeHtml(monthText)}</small></div>
+        ${activity.undoneAt
+          ? `<span class="activity-undone">취소됨<small lang="en">Undone</small></span>`
+          : `<button type="button" class="activity-undo bi" data-undo-activity="${escapeHtml(activity.id)}"><span lang="ko">실행 취소</span><small lang="en">Oops — Undo</small></button>`}
+      </div>`;
+    }).join("")
+    : `<div class="activity-empty"><strong>아직 작업이 없습니다.</strong><small lang="en">Payment changes will appear here with Undo.</small></div>`;
+  elements.recentActivityList.querySelectorAll("[data-undo-activity]").forEach((button) => {
+    button.addEventListener("click", () => undoRecentActivity(button.dataset.undoActivity));
+  });
+}
+
+async function undoRecentActivity(activityId) {
+  const activity = state.activityLog.entries.find((entry) => entry.id === activityId);
+  const result = undoActivity(state.store, state.activityLog, activityId);
+  if (!result.undone) {
+    if (result.blockedBy) {
+      showToast("이 결제의 더 최근 작업을 먼저 취소하세요. · Undo the newer change for this payment first.");
+    }
+    return;
+  }
+  if (activity?.stagedPaymentId) {
+    const statusSaved = await saveStagedStatus(activity.stagedPaymentId, {
+      status: activity.previousStatus || "pending",
+      approvedAt: "",
+      ignoredAt: "",
+      ignoredReason: ""
+    });
+    if (!statusSaved) {
+      showToast("카드 결제 상태를 되돌리지 못했습니다. 다시 시도하세요. · Could not restore the card payment status. Please try again.");
+      render();
+      return;
+    }
+  }
+  state.store = result.store;
+  state.activityLog = result.log;
+  saveActivityLog();
+  saveStore("선택한 작업을 취소했습니다. · Selected action undone.");
+  showToast("선택한 작업을 취소했습니다. · Selected action undone.");
+  render();
+}
+
 function renderLandscape() {
   elements.landscapeView.classList.toggle("hidden", state.view !== "landscape");
   if (state.view !== "landscape") {
     return;
   }
   const landscape = getLandscapeRows(state.store, state.stagedPayments);
-  const attentionCount = getAttentionRows(state.store, state.stagedPayments).length;
-  elements.landscapeSummary.textContent = `${landscape.rows.length}명 · ${landscape.rows.length} active participant${landscape.rows.length === 1 ? "" : "s"} · ${attentionCount}명 확인 필요`;
+  const brief = getOperatorBrief(state.store, state.stagedPayments);
+  const months = [...landscape.months].reverse();
+  const upcomingMemberIds = new Set(brief.dueNext7Days.map((row) => row.memberId));
+  const rows = landscape.rows.filter((row) => {
+    if (state.landscapeFilter === "due") return row.paymentState.dueUnpaidMonths.length > 0 && !row.paymentState.flags.setupNeeded;
+    if (state.landscapeFilter === "late") return row.paymentState.level === "late";
+    if (state.landscapeFilter === "pending") return row.paymentState.flags.pending;
+    if (state.landscapeFilter === "setup") return row.paymentState.flags.setupNeeded;
+    if (state.landscapeFilter === "upcoming") return upcomingMemberIds.has(row.member.id);
+    return true;
+  });
+  const attentionCount = brief.tuitionFollowups.length;
+  elements.landscapeSummary.textContent = `${rows.length}명 표시 · ${rows.length} shown / ${landscape.rows.length} active · ${attentionCount}명 오늘 검토`;
   elements.landscapeReviewButton.disabled = attentionCount === 0;
+  document.querySelectorAll("[data-landscape-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.landscapeFilter === state.landscapeFilter);
+    button.setAttribute("aria-pressed", String(button.dataset.landscapeFilter === state.landscapeFilter));
+  });
   elements.landscapeHead.innerHTML = `
     <tr>
       <th scope="col" class="sticky-member"><span lang="ko">회원</span><small lang="en">Member</small></th>
@@ -446,14 +653,15 @@ function renderLandscape() {
       <th scope="col"><span lang="ko">자격</span><small lang="en">Certification</small></th>
       <th scope="col"><span lang="ko">납부일</span><small lang="en">Due Day</small></th>
       <th scope="col"><span lang="ko">상태</span><small lang="en">Status</small></th>
-      <th scope="col"><span lang="ko">미납액</span><small lang="en">Balance</small></th>
-      ${landscape.months.map((month) => `<th scope="col"><span>${formatMonthKo(month)}</span><small lang="en">${escapeHtml(formatMonthEn(month))}</small></th>`).join("")}
+      <th scope="col"><span lang="ko">오늘까지 미납</span><small lang="en">Due Now</small></th>
+      ${months.map((month, index) => `<th scope="col" class="${index === 0 ? "current-month-column" : ""}"><span>${formatMonthKo(month)}</span><small lang="en">${escapeHtml(formatMonthEn(month))}</small></th>`).join("")}
     </tr>
   `;
-  elements.landscapeBody.innerHTML = landscape.rows.map((row) => {
+  elements.landscapeBody.innerHTML = rows.length ? rows.map((row) => {
     const mainStatus = STATUS_LABELS[row.paymentState.level];
     const pending = row.paymentState.flags.pending ? `<small class="pending-flag">카드 검토 중 · Card pending</small>` : "";
     const setup = row.paymentState.flags.setupNeeded ? `<small class="setup-flag">정보 확인 필요 · Setup needed</small>` : "";
+    const cellsByMonth = new Map(row.cells.map((cell) => [cell.month, cell]));
     return `
       <tr class="landscape-row payment-${row.paymentState.level}">
         <th scope="row" class="sticky-member"><button type="button" class="landscape-member-link" data-landscape-member="${escapeHtml(row.member.id)}">${escapeHtml(row.member.name)}</button></th>
@@ -461,17 +669,21 @@ function renderLandscape() {
         <td>${escapeHtml(row.certification || "미설정 · Not set")}</td>
         <td>${row.dueDay ? `${row.dueDay}일<small lang="en">Day ${row.dueDay}</small>` : "—"}</td>
         <td><span class="matrix-status status-${row.paymentState.level}">${mainStatus.ko}<small lang="en">${mainStatus.en}</small></span>${pending}${setup}</td>
-        <td class="money-cell">${row.paymentState.flags.setupNeeded ? "—<small lang=\"en\">Setup needed</small>" : `${formatMoney(row.balance.totalDue)}<small lang="en">${row.balance.unpaidMonths.length} missing</small>`}</td>
-        ${row.cells.map((cell) => landscapeCellMarkup(row.member.name, cell)).join("")}
+        <td class="money-cell">${row.paymentState.flags.setupNeeded ? "—<small lang=\"en\">Setup needed</small>" : `${formatMoney(row.balance.dueNow)}<small lang="en">${row.paymentState.dueUnpaidMonths.length} due installment${row.paymentState.dueUnpaidMonths.length === 1 ? "" : "s"}</small>`}</td>
+        ${months.map((month, index) => landscapeCellMarkup(row.member.name, cellsByMonth.get(month), index === 0)).join("")}
       </tr>
     `;
-  }).join("");
+  }).join("") : `<tr class="landscape-empty-row"><td colspan="18"><strong>이 조건에 맞는 회원이 없습니다.</strong><small lang="en">No members match this filter.</small><button type="button" class="button secondary bi" data-landscape-reset><span lang="ko">전체 보기</span><small lang="en">Show All</small></button></td></tr>`;
   elements.landscapeBody.querySelectorAll("[data-landscape-member]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.landscapeMember));
   });
+  elements.landscapeBody.querySelector("[data-landscape-reset]")?.addEventListener("click", () => {
+    state.landscapeFilter = "all";
+    renderLandscape();
+  });
 }
 
-function landscapeCellMarkup(memberName, cell) {
+function landscapeCellMarkup(memberName, cell, current = false) {
   const details = {
     paid: ["✓", "납부 완료 · Paid"],
     attention: ["!", "확인 필요 · Due now"],
@@ -480,7 +692,7 @@ function landscapeCellMarkup(memberName, cell) {
     upcoming: ["○", "아직 납부일 전 · Not due yet"],
     not_billable: ["—", "해당 없음 · Not billable"]
   }[cell.state];
-  return `<td class="matrix-cell ${cell.state}" aria-label="${escapeHtml(memberName)} ${escapeHtml(formatMonthEn(cell.month))}: ${details[1]}"><span aria-hidden="true">${details[0]}</span><span class="sr-only">${details[1]}</span></td>`;
+  return `<td class="matrix-cell ${cell.state} ${current ? "current-month-column" : ""}" aria-label="${escapeHtml(memberName)} ${escapeHtml(formatMonthEn(cell.month))}: ${details[1]}"><span aria-hidden="true">${details[0]}</span><span class="sr-only">${details[1]}</span></td>`;
 }
 
 function renderSquare() {
@@ -534,7 +746,9 @@ function renderRoster() {
   const title = ROSTER_TITLES[state.statusFilter] || ROSTER_TITLES.all;
   const rows = memberRows().filter((row) =>
     state.statusFilter === "all" ||
-    (state.statusFilter === "pending" ? row.status.flags?.pending : row.status.level === state.statusFilter)
+    (state.statusFilter === "pending" ? row.status.flags?.pending :
+      state.statusFilter === "setup" ? row.status.flags?.setupNeeded :
+        row.status.level === state.statusFilter)
   );
   elements.rosterTitle.innerHTML = `${title.ko} <small lang="en">${title.en}</small>`;
   elements.rosterHelp.textContent = `${rows.length}명 · ${rows.length} member${rows.length === 1 ? "" : "s"}`;
@@ -762,6 +976,22 @@ function showLandscape() {
   state.view = "landscape";
   state.statusFilter = "all";
   render();
+}
+
+function showUpcomingLandscape() {
+  state.landscapeFilter = "upcoming";
+  showLandscape();
+}
+
+function startDailyWork() {
+  const brief = getOperatorBrief(state.store, state.stagedPayments);
+  if (brief.tuitionFollowups.length > 0) {
+    openAttentionReview();
+  } else if (brief.pendingCards.length > 0) {
+    showSquare();
+  } else if (brief.setupRows.length > 0) {
+    showRoster("setup");
+  }
 }
 
 function showMembers() {
@@ -1327,7 +1557,9 @@ async function approveStagedPayment(paymentId, category = "tuition") {
   const provider = payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square");
   const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
   const amount = Number(payment.amountCents || 0) / 100;
-  state.store = addPayment(state.store, {
+  const beforePayments = state.store.payments;
+  const beforeIds = new Set(state.store.payments.map((item) => item.id));
+  const nextStore = addPayment(state.store, {
     memberId: member.id,
     month,
     amount,
@@ -1340,8 +1572,7 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.worldBankcardPaymentId || payment.id,
     paymentProvider: provider
   });
-  saveStore(MSG.paymentSaved);
-  await saveStagedStatus(payment.id, {
+  const statusSaved = await saveStagedStatus(payment.id, {
     status: "approved",
     memberId: member.id,
     suggestedMemberId: member.id,
@@ -1349,6 +1580,24 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     paymentCategory: category,
     reviewNote: payment.reviewNote || ""
   });
+  if (!statusSaved) {
+    showToast("카드 검토 상태를 저장하지 못했습니다. 다시 시도하세요. · Could not save the card review status. Please try again.");
+    render();
+    return;
+  }
+  state.store = nextStore;
+  saveStore(MSG.paymentSaved);
+  const afterIds = new Set(state.store.payments.map((item) => item.id));
+  const addedIds = state.store.payments.filter((item) => !beforeIds.has(item.id)).map((item) => item.id);
+  const replacedPayments = beforePayments.filter((item) => !afterIds.has(item.id));
+  logAddedPayments(member, addedIds, [month], {
+    ko: `${label} 결제 승인`,
+    en: `${label} payment approved`
+  }, {
+    stagedPaymentId: payment.id,
+    provider,
+    previousStatus: payment.status || "pending"
+  }, replacedPayments);
   selectNextStagedPayment(payment.id);
   const categoryLabel = category === "one-off" ? "기타 매출 · other sale" : "회비 · tuition";
   showToast(`${member.name} — ${formatMonthBi(month)} ${label} 결제 승인됨 (${categoryLabel}) · ${label} payment approved`);
@@ -1356,7 +1605,17 @@ async function approveStagedPayment(paymentId, category = "tuition") {
 }
 
 async function ignoreStagedPayment(paymentId) {
-  await saveStagedStatus(paymentId, { status: "ignored", ignoredReason: "manual-review" });
+  const payment = state.stagedPayments.find((item) => item.id === paymentId);
+  const statusSaved = await saveStagedStatus(paymentId, { status: "ignored", ignoredReason: "manual-review" });
+  if (!statusSaved) {
+    showToast("카드 검토 상태를 저장하지 못했습니다. 다시 시도하세요. · Could not save the card review status. Please try again.");
+    render();
+    return;
+  }
+  logProviderStatus(payment, {
+    ko: "카드 결제 검토에서 제외",
+    en: "Card payment ignored"
+  });
   selectNextStagedPayment(paymentId);
   showToast("카드 결제를 무시했습니다 · Card payment ignored");
   render();
@@ -1382,10 +1641,12 @@ async function saveStagedStatus(paymentId, patch) {
         payment.id === paymentId ? data.payment : payment
       );
     }
+    return true;
   } catch {
     state.stagedPayments = state.stagedPayments.map((payment) =>
-      payment.id === paymentId ? { ...current, ...patch } : payment
+      payment.id === paymentId ? current : payment
     );
+    return false;
   }
 }
 
@@ -1529,11 +1790,14 @@ function quickPayCurrentMonth() {
   if (amount <= 0) {
     return;
   }
+  const beforeIds = new Set(state.store.payments.map((payment) => payment.id));
   state.store = addPayment(state.store, {
     memberId: member.id,
     month: status.currentMonth,
     amount
   });
+  const addedIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
+  logAddedPayments(member, addedIds, [status.currentMonth]);
   saveStore(MSG.paymentSaved);
   showToast(MSG.paymentSavedFor(member.name, formatMonthBi(status.currentMonth)));
   render();
@@ -1552,7 +1816,11 @@ function catchUpMemberPayments() {
 
   const result = reconcileDuePayments(state.store, member, [], new Date());
   state.store = result.store;
-  state.lastPaymentBatch = result.batch.paymentIds.length ? result.batch : null;
+  const activityId = logAddedPayments(member, result.batch.paymentIds, result.batch.months, {
+    ko: "미납 회비 일괄 납부",
+    en: "Catch-up payments recorded"
+  });
+  state.lastPaymentBatch = result.batch.paymentIds.length ? { ...result.batch, activityId } : null;
   saveStore(MSG.paymentsCaughtUpFor(member.name, result.batch.months.length));
   showToast(MSG.paymentsCaughtUpFor(member.name, result.batch.months.length));
   render();
@@ -1562,7 +1830,14 @@ function undoMemberCatchUp() {
   if (!state.lastPaymentBatch) {
     return;
   }
-  state.store = undoPaymentBatch(state.store, state.lastPaymentBatch);
+  if (state.lastPaymentBatch.activityId) {
+    const result = undoActivity(state.store, state.activityLog, state.lastPaymentBatch.activityId);
+    state.store = result.store;
+    state.activityLog = result.log;
+    saveActivityLog();
+  } else {
+    state.store = undoPaymentBatch(state.store, state.lastPaymentBatch);
+  }
   state.lastPaymentBatch = null;
   saveStore("방금 완납 처리를 취소했습니다. · Catch-up undone.");
   showToast("방금 완납 처리를 취소했습니다. · Catch-up undone.");
@@ -1570,12 +1845,12 @@ function undoMemberCatchUp() {
 }
 
 function openAttentionReview(startMemberId = "") {
-  const rows = getAttentionRows(state.store, state.stagedPayments);
-  if (rows.length === 0) {
+  const followups = getOperatorBrief(state.store, state.stagedPayments).tuitionFollowups;
+  if (followups.length === 0) {
     showToast("오늘 확인할 미납이 없습니다. · No tuition is due for review today.");
     return;
   }
-  const memberIds = rows.map((row) => row.member.id);
+  const memberIds = followups.map((row) => row.memberId);
   const requestedIndex = memberIds.indexOf(startMemberId);
   state.attentionReview = {
     memberIds,
@@ -1641,8 +1916,8 @@ function renderAttentionReview() {
   `).join("");
   elements.attentionExceptionMonths.innerHTML = paymentState.dueUnpaidMonths.map((month, index) => `
     <label class="attention-exception-choice">
-      <input type="checkbox" value="${escapeHtml(month.month)}" checked>
-      <span><strong>${formatMonthKo(month.month)}</strong><small lang="en">${formatMonthEn(month.month)} — Still missing</small></span>
+      <input type="checkbox" value="${escapeHtml(month.month)}" checked${month.pending ? " disabled" : ""}>
+      <span><strong>${formatMonthKo(month.month)}</strong><small lang="en">${formatMonthEn(month.month)} — ${month.pending ? "Card review pending" : "Still missing"}</small></span>
     </label>
   `).join("");
   const canChange = Number(member.monthlyAmount || 0) > 0 && paymentState.dueUnpaidMonths.length > 0;
@@ -1650,16 +1925,31 @@ function renderAttentionReview() {
   elements.attentionSaveExceptions.disabled = !canChange;
 }
 
+function pendingReviewMonths(member) {
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
+  return getMemberPaymentState(member, state.store.payments, new Date(), pending)
+    .dueUnpaidMonths
+    .filter((month) => month.pending)
+    .map((month) => month.month);
+}
+
 function markAttentionMemberPaid() {
   const member = currentAttentionMember();
   if (!member) {
     return;
   }
-  const result = reconcileDuePayments(state.store, member, [], new Date());
+  const pendingMonths = pendingReviewMonths(member);
+  const result = reconcileDuePayments(state.store, member, pendingMonths, new Date());
   state.store = result.store;
-  state.attentionReview.lastBatch = result.batch;
+  const activityId = logAddedPayments(member, result.batch.paymentIds, result.batch.months, {
+    ko: "검토에서 납부 완료",
+    en: "Review marked paid"
+  });
+  state.attentionReview.lastBatch = { ...result.batch, activityId };
   state.attentionReview.changed += 1;
-  advanceAttentionReview(`${member.name}: 모두 납부 완료 · All due months marked paid`);
+  advanceAttentionReview(pendingMonths.length
+    ? `${member.name}: 확인 가능한 월은 납부 완료, 카드 검토 ${pendingMonths.length}개월 유지 · Actionable months paid; ${pendingMonths.length} card-pending month${pendingMonths.length === 1 ? "" : "s"} unchanged`
+    : `${member.name}: 모두 납부 완료 · All due months marked paid`);
 }
 
 function keepAttentionMemberAsIs() {
@@ -1682,10 +1972,17 @@ function saveAttentionExceptions() {
   if (!member) {
     return;
   }
-  const stillMissing = Array.from(elements.attentionExceptionMonths.querySelectorAll("input:checked")).map((input) => input.value);
+  const stillMissing = Array.from(new Set([
+    ...Array.from(elements.attentionExceptionMonths.querySelectorAll("input:checked")).map((input) => input.value),
+    ...pendingReviewMonths(member)
+  ]));
   const result = reconcileDuePayments(state.store, member, stillMissing, new Date());
   state.store = result.store;
-  state.attentionReview.lastBatch = result.batch.paymentIds.length ? result.batch : null;
+  const activityId = logAddedPayments(member, result.batch.paymentIds, result.batch.months, {
+    ko: "일부 월 납부 완료",
+    en: "Selected months marked paid"
+  });
+  state.attentionReview.lastBatch = result.batch.paymentIds.length ? { ...result.batch, activityId } : null;
   if (result.batch.paymentIds.length > 0) {
     state.attentionReview.changed += 1;
   } else {
@@ -1710,7 +2007,14 @@ function undoAttentionAction() {
     return;
   }
   const batch = review.lastBatch;
-  state.store = undoPaymentBatch(state.store, batch);
+  if (batch.activityId) {
+    const result = undoActivity(state.store, state.activityLog, batch.activityId);
+    state.store = result.store;
+    state.activityLog = result.log;
+    saveActivityLog();
+  } else {
+    state.store = undoPaymentBatch(state.store, batch);
+  }
   review.index = Math.max(0, review.memberIds.indexOf(batch.memberId));
   review.reviewed = Math.max(0, review.reviewed - 1);
   review.changed = Math.max(0, review.changed - 1);
@@ -1727,11 +2031,17 @@ function savePayment(event) {
   if (!member) {
     return;
   }
+  const beforePayments = state.store.payments;
+  const beforeIds = new Set(beforePayments.map((payment) => payment.id));
   state.store = addPayment(state.store, {
     memberId: member.id,
     month: elements.paymentMonth.value,
     amount: elements.paymentAmount.value
   });
+  const afterIds = new Set(state.store.payments.map((payment) => payment.id));
+  const addedIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
+  const replacedPayments = beforePayments.filter((payment) => !afterIds.has(payment.id));
+  logAddedPayments(member, addedIds, [elements.paymentMonth.value], {}, {}, replacedPayments);
   saveStore(MSG.paymentSaved);
   showToast(MSG.paymentSavedFor(member.name, formatMonthBi(elements.paymentMonth.value)));
   render();
@@ -1743,7 +2053,9 @@ function markMonthUnpaid(month) {
     return;
   }
 
+  const removed = state.store.payments.filter((payment) => payment.memberId === member.id && payment.month === month && payment.category !== "one-off");
   state.store = removePayment(state.store, member.id, month);
+  logRemovedPayments(member, removed);
   saveStore(MSG.paymentRemoved);
   showToast(MSG.paymentRemovedFor(member.name, formatMonthBi(month)));
   render();

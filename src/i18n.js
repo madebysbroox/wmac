@@ -14,6 +14,7 @@ export const ROSTER_TITLES = {
   all: { ko: "전체 회원", en: "All Members" },
   paid: { ko: "완납 회원", en: "Paid Up Members" },
   pending: { ko: "대기 회원", en: "Pending Square Payments" },
+  setup: { ko: "정보 보완이 필요한 회원", en: "Records Needing Setup" },
   watch: { ko: "확인 필요 회원", en: "Needs Attention" },
   late: { ko: "미납 회원", en: "Behind on Payments" }
 };
