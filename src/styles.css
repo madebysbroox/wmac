@@ -3983,6 +3983,152 @@ dialog.collection-dialog {
   margin: 0;
 }
 
+/* ------------------------------------------------------------------------
+   Contract renewal reminders
+------------------------------------------------------------------------- */
+
+.detail-flags {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.contract-renewal-flag {
+  display: inline-grid;
+  justify-items: center;
+  min-width: 112px;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-weight: 850;
+  line-height: 1.05;
+  text-align: center;
+}
+
+.contract-renewal-flag small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.contract-renewal-flag.contract-expiring {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.contract-renewal-flag.contract-expired {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.member-item.contract-expiring {
+  box-shadow: inset 5px 0 #d79614;
+}
+
+.member-item.contract-expired {
+  box-shadow: inset 5px 0 var(--red);
+}
+
+.contract-renewal-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 18px 0;
+  padding: 18px 20px;
+  border: 2px solid currentColor;
+  border-radius: 12px;
+}
+
+.contract-renewal-notice.contract-expiring {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.contract-renewal-notice.contract-expired {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.contract-renewal-notice p,
+.contract-renewal-notice small {
+  margin: 5px 0 0;
+  line-height: 1.4;
+}
+
+.contract-renewal-notice small {
+  display: block;
+  opacity: 0.9;
+}
+
+.contract-renewal-actions,
+.contract-renewal-dialog-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+dialog.contract-renewal-dialog {
+  width: min(720px, calc(100vw - 30px));
+  border-top: 8px solid #d79614;
+  padding: 28px;
+}
+
+dialog.contract-renewal-dialog.contract-expired {
+  border-top-color: var(--red);
+}
+
+.contract-renewal-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.contract-renewal-dialog-head h2,
+.contract-renewal-dialog-head p,
+.contract-renewal-dialog-note p,
+.contract-renewal-dialog-note small {
+  margin: 0;
+}
+
+.contract-renewal-dialog-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.contract-renewal-dialog.contract-expired .contract-renewal-dialog-icon {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.contract-renewal-dialog-note {
+  display: grid;
+  gap: 5px;
+  margin: 20px 0;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: #eef5fb;
+  color: #183d64;
+  line-height: 1.4;
+}
+
+.contract-renewal-dialog-actions {
+  margin: 0;
+  padding: 0;
+}
+
 .collection-submission-note a {
   color: #0b5cad;
   font-weight: 800;
@@ -4006,5 +4152,20 @@ dialog.collection-dialog {
   .member-phone-grid,
   .member-consent-grid {
     grid-template-columns: 1fr;
+  }
+
+  .contract-renewal-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .contract-renewal-actions,
+  .contract-renewal-dialog-actions {
+    justify-content: stretch;
+  }
+
+  .contract-renewal-actions .button,
+  .contract-renewal-dialog-actions .button {
+    flex: 1 1 180px;
   }
 }

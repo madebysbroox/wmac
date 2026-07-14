@@ -6,6 +6,7 @@ import {
   defaultAgreementEndDate,
   exportRosterRows,
   exportStoreRows,
+  getAgreementExpirationStatus,
   getMemberBalance,
   getLateFeeBalance,
   getLandscapeRows,
@@ -32,6 +33,7 @@ import {
 } from "./data.js";
 import { getOperatorBrief } from "./operator.js";
 import { createActivityLog, recordActivity, undoActivity } from "./activity.js";
+import { buildRenewalEmail, formatAgreementDate } from "./renewals.js";
 import {
   DEFAULT_EMAIL_TEMPLATE,
   ATTENTION_COPY,
@@ -66,6 +68,8 @@ const STORAGE_KEY = "master-lee-payment-tracker";
 const STORAGE_BACKUP_KEY = "master-lee-payment-tracker-v1-backup";
 const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
 const ACTIVITY_LOG_KEY = "master-lee-payment-tracker-activity";
+const RENEWAL_CONTRACT_URL = new URL("./assets/WMAC-membership-agreement-with-contact-permission.pdf", import.meta.url).href;
+const RENEWAL_CONTRACT_FILENAME = "WMAC-membership-agreement-renewal.pdf";
 
 // ---------------------------------------------------------------------------
 // State and element lookup
@@ -81,6 +85,7 @@ const state = {
   review: null,
   attentionReview: null,
   lastPaymentBatch: null,
+  renewalNoticesShown: new Set(),
   activityLog: loadActivityLog(),
   landscapeFilter: "all",
   stagedPayments: [],
@@ -105,7 +110,8 @@ const elements = {};
   "syncSquareButton", "syncWorldBankcardButton", "squareSummary", "squarePayments",
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
-  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid", "householdCard", "progressCard",
+  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "contractRenewalFlag", "latestPaid", "householdCard", "progressCard",
+  "contractRenewalNotice", "contractRenewalTitle", "contractRenewalMessage", "contractRenewalOpenButton", "contractRenewalEmailButton",
   "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
@@ -130,7 +136,9 @@ const elements = {};
   "collectionFirstName", "collectionLastName", "collectionAddress", "collectionCity", "collectionState", "collectionZip", "collectionDob",
   "collectionHomePhone", "collectionWorkPhone", "collectionCellPhone", "collectionAgreementSign", "collectionAgreementExpiration",
   "collectionAgreementType", "collectionChargeOffDate", "collectionServiceFees", "collectionDownPayment", "collectionEmailConsent",
-  "collectionTextConsent", "collectionFinalized", "collectionDownloadButton", "collectionDownloadEmailButton"
+  "collectionTextConsent", "collectionFinalized", "collectionDownloadButton", "collectionDownloadEmailButton",
+  "contractRenewalDialog", "contractRenewalDialogIcon", "contractRenewalDialogTitle", "contractRenewalDialogMessage",
+  "contractRenewalDialogOpenButton", "contractRenewalDialogEmailButton", "contractRenewalDialogClose"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
@@ -261,6 +269,11 @@ elements.cancelCollectionDialog.addEventListener("click", () => elements.collect
 elements.collectionForm.addEventListener("submit", (event) => finalizeCollectionPlacement(event, false));
 elements.collectionDownloadEmailButton.addEventListener("click", (event) => finalizeCollectionPlacement(event, true));
 elements.collectionForm.addEventListener("input", updateCollectionPlacementPreview);
+elements.contractRenewalOpenButton.addEventListener("click", openRenewalContract);
+elements.contractRenewalEmailButton.addEventListener("click", openRenewalEmail);
+elements.contractRenewalDialogOpenButton.addEventListener("click", openRenewalContract);
+elements.contractRenewalDialogEmailButton.addEventListener("click", openRenewalEmail);
+elements.contractRenewalDialogClose.addEventListener("click", () => elements.contractRenewalDialog.close());
 
 populateCertificationControls();
 elements.memberBeltLevel.addEventListener("change", updateNextCertificationField);
@@ -804,13 +817,19 @@ function renderMemberList() {
 
   members.forEach((member) => {
     const status = displayedMemberStatus(member);
+    const renewal = getAgreementExpirationStatus(member);
     const contactOnly = member.participant === false;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `member-item ${member.id === state.selectedId ? "active" : ""}`;
+    button.className = `member-item ${member.id === state.selectedId ? "active" : ""} ${renewal.level === "expiring" || renewal.level === "expired" ? `contract-${renewal.level}` : ""}`;
+    const renewalLabel = renewal.level === "expired"
+      ? " · 계약 만료 · Contract expired"
+      : renewal.level === "expiring"
+      ? ` · 계약 ${renewal.daysUntil}일 남음 · Contract ${renewal.daysUntil}d`
+      : "";
     button.innerHTML = `
       <strong><span class="dot ${contactOnly ? "contact" : status.level}"></span>${escapeHtml(member.name)}</strong>
-      <span>${contactOnly ? "비참가 연락처 · Contact only" : `${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}`}</span>
+      <span>${contactOnly ? "비참가 연락처 · Contact only" : `${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}${renewalLabel}`}</span>
     `;
     button.addEventListener("click", () => selectMember(member.id));
     elements.memberList.append(button);
@@ -828,6 +847,7 @@ function renderDetail() {
   const collectionPlacement = member.collectionPlacement?.status === "charged_off" ? member.collectionPlacement : null;
   const collectionPlaced = Boolean(collectionPlacement);
   const status = displayedMemberStatus(member);
+  const renewal = getAgreementExpirationStatus(member);
   const balance = getMemberBalance(member, state.store.payments);
   elements.detailInitials.textContent = initialsFor(member.name);
   elements.detailName.textContent = member.name;
@@ -852,6 +872,7 @@ function renderDetail() {
     ? `마지막 납부: ${formatMonthBi(status.lastPaidMonth)}`
     : MSG.noPaymentsYet;
   elements.latestPaid.className = `latest-paid ${collectionPlaced || status.lastPaidMonth ? "has-payment" : "no-payment"}`;
+  renderContractRenewal(member, renewal);
 
   renderHouseholdCard(member);
   renderProgressCard(member);
@@ -1098,6 +1119,88 @@ function selectMember(memberId) {
   state.page = "members";
   state.view = "member";
   render();
+}
+
+function renderContractRenewal(member, renewal) {
+  const needsRenewal = renewal.level === "expiring" || renewal.level === "expired";
+  elements.contractRenewalFlag.classList.toggle("hidden", !needsRenewal);
+  elements.contractRenewalNotice.classList.toggle("hidden", !needsRenewal);
+  if (!needsRenewal) {
+    return;
+  }
+
+  const expiration = formatAgreementDate(renewal.expirationDate);
+  const expired = renewal.level === "expired";
+  const title = expired
+    ? "계약이 만료되었습니다 · Contract expired"
+    : `계약 만료 ${renewal.daysUntil}일 전 · Contract expires in ${renewal.daysUntil} days`;
+  const message = expired
+    ? `${expiration}에 계약이 만료되었습니다. 새 1년 계약을 안내하세요. · The agreement expired on ${expiration}. Ask whether the member would like another one-year agreement.`
+    : `${expiration}에 계약이 만료됩니다. 지금 갱신 여부를 확인하세요. · The agreement expires on ${expiration}. This is a good time to ask about renewal.`;
+
+  elements.contractRenewalFlag.className = `contract-renewal-flag contract-${renewal.level}`;
+  elements.contractRenewalFlag.innerHTML = expired
+    ? `계약 만료<small lang="en">Expired</small>`
+    : `${renewal.daysUntil}일 남음<small lang="en">Contract renewal</small>`;
+  elements.contractRenewalNotice.className = `contract-renewal-notice contract-${renewal.level}`;
+  elements.contractRenewalTitle.textContent = title;
+  elements.contractRenewalMessage.textContent = message;
+  setRenewalEmailButtonState(elements.contractRenewalEmailButton, member);
+  queueMicrotask(() => maybeShowContractRenewalDialog(member, renewal, title, message));
+}
+
+function maybeShowContractRenewalDialog(member, renewal, title, message) {
+  const noticeKey = `${member.id}:${renewal.level}:${renewal.expirationDate}`;
+  if (state.renewalNoticesShown.has(noticeKey) || elements.contractRenewalDialog.open) {
+    return;
+  }
+  state.renewalNoticesShown.add(noticeKey);
+  elements.contractRenewalDialog.className = `contract-renewal-dialog contract-${renewal.level}`;
+  elements.contractRenewalDialogIcon.textContent = renewal.level === "expired" ? "!" : String(renewal.daysUntil);
+  elements.contractRenewalDialogTitle.textContent = title;
+  elements.contractRenewalDialogMessage.textContent = message;
+  setRenewalEmailButtonState(elements.contractRenewalDialogEmailButton, member);
+  elements.contractRenewalDialog.showModal();
+}
+
+function setRenewalEmailButtonState(button, member) {
+  const enabled = Boolean(member.email && member.emailConsent === "Yes");
+  button.disabled = !enabled;
+  button.title = enabled
+    ? ""
+    : !member.email
+    ? "이메일 주소를 먼저 저장하세요. · Save an email address first."
+    : "서명된 이메일 연락 동의를 먼저 기록하세요. · Record signed email contact permission first.";
+}
+
+function openRenewalContract() {
+  const contractWindow = window.open(RENEWAL_CONTRACT_URL, "_blank");
+  if (!contractWindow) {
+    showToast(MSG.popupBlocked);
+  }
+}
+
+function downloadRenewalContract() {
+  const link = document.createElement("a");
+  link.href = RENEWAL_CONTRACT_URL;
+  link.download = RENEWAL_CONTRACT_FILENAME;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function openRenewalEmail() {
+  const member = selectedMember();
+  if (!member || !member.email || member.emailConsent !== "Yes") {
+    showToast("이메일 주소와 서명된 이메일 동의가 필요합니다. · An email address and signed email permission are required.");
+    return;
+  }
+  const renewal = getAgreementExpirationStatus(member);
+  const email = buildRenewalEmail(member, renewal);
+  downloadRenewalContract();
+  elements.contractRenewalDialog.open && elements.contractRenewalDialog.close();
+  showToast("계약서를 이메일에 첨부하세요 · Attach the downloaded contract to the email");
+  window.location.href = `mailto:${member.email}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
 }
 
 function initialsFor(name) {

@@ -5,6 +5,7 @@ import {
   bringMemberUpToDate,
   createEmptyStore,
   defaultAgreementEndDate,
+  getAgreementExpirationStatus,
   getDashboardSummary,
   exportStoreRows,
   exportRosterRows,
@@ -76,6 +77,45 @@ test("stores collection-ready member contact and agreement fields", () => {
 test("defaults agreement end to one year after signing and clamps leap-day anniversaries", () => {
   assert.equal(defaultAgreementEndDate("2026-07-14"), "2027-07-14");
   assert.equal(defaultAgreementEndDate("2024-02-29"), "2025-02-28");
+});
+
+test("flags contracts within 30 days and changes state on expiration", () => {
+  const member = {
+    startDate: "2025-08-01",
+    agreementEndDate: "2026-08-01",
+    agreementType: "Contract",
+    participant: true,
+    inactive: false
+  };
+  assert.deepEqual(getAgreementExpirationStatus(member, new Date("2026-06-30T12:00:00")), {
+    level: "active",
+    expirationDate: "2026-08-01",
+    daysUntil: 32
+  });
+  assert.deepEqual(getAgreementExpirationStatus(member, new Date("2026-07-02T12:00:00")), {
+    level: "expiring",
+    expirationDate: "2026-08-01",
+    daysUntil: 30
+  });
+  assert.equal(getAgreementExpirationStatus(member, new Date("2026-08-01T12:00:00")).level, "expired");
+  assert.equal(getAgreementExpirationStatus(member, new Date("2026-08-15T12:00:00")).daysUntil, -14);
+});
+
+test("uses a manual expiration date and skips non-renewing member records", () => {
+  const specialContract = {
+    startDate: "2026-01-01",
+    agreementEndDate: "2026-09-15",
+    agreementType: "Contract",
+    participant: true,
+    inactive: false
+  };
+  assert.equal(
+    getAgreementExpirationStatus(specialContract, new Date("2026-08-20T12:00:00")).expirationDate,
+    "2026-09-15"
+  );
+  assert.equal(getAgreementExpirationStatus({ ...specialContract, agreementType: "Month-to-Month" }).level, "none");
+  assert.equal(getAgreementExpirationStatus({ ...specialContract, inactive: true }).level, "none");
+  assert.equal(getAgreementExpirationStatus({ ...specialContract, participant: false }).level, "none");
 });
 
 test("imports members and supports partial name search", () => {

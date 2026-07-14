@@ -300,10 +300,29 @@
                 <p id="detailContact"></p>
                 <p id="detailDueDay" class="due-day"></p>
               </div>
-              <span id="statusBadge" class="status-badge"></span>
+              <div class="detail-flags">
+                <span id="statusBadge" class="status-badge"></span>
+                <span id="contractRenewalFlag" class="contract-renewal-flag hidden"></span>
+              </div>
             </div>
 
             <div id="latestPaid" class="latest-paid"></div>
+
+            <section id="contractRenewalNotice" class="contract-renewal-notice hidden" aria-live="polite">
+              <div>
+                <strong id="contractRenewalTitle"></strong>
+                <p id="contractRenewalMessage"></p>
+                <small>이메일을 열기 전에 계약서가 다운로드됩니다. 이메일에 직접 첨부하세요. · The contract downloads before the email opens; attach it to the message manually.</small>
+              </div>
+              <div class="contract-renewal-actions">
+                <button id="contractRenewalOpenButton" class="button secondary bi" type="button">
+                  <span lang="ko">계약서 열기</span><small lang="en">Open Renewal Contract</small>
+                </button>
+                <button id="contractRenewalEmailButton" class="button primary bi" type="button">
+                  <span lang="ko">계약서 저장 + 이메일</span><small lang="en">Download Contract + Email</small>
+                </button>
+              </div>
+            </section>
 
             <section id="householdCard" class="household-card"></section>
 
@@ -507,6 +526,33 @@
         </div>
       </section>
     </main>
+
+    <dialog id="contractRenewalDialog" class="contract-renewal-dialog">
+      <div class="contract-renewal-dialog-head">
+        <span id="contractRenewalDialogIcon" class="contract-renewal-dialog-icon" aria-hidden="true">!</span>
+        <div>
+          <p class="section-kicker">계약 갱신 · Contract Renewal</p>
+          <h2 id="contractRenewalDialogTitle"></h2>
+        </div>
+      </div>
+      <p id="contractRenewalDialogMessage" class="dialog-help"></p>
+      <div class="contract-renewal-dialog-note">
+        <strong>다음 단계 · Next step</strong>
+        <p>계약서를 이메일에 첨부한 뒤, 회원에게 작성하여 다음 수업에 가져오도록 안내하세요.</p>
+        <small lang="en">Attach the downloaded agreement, then ask the member to complete it and bring it to their next class.</small>
+      </div>
+      <menu class="contract-renewal-dialog-actions">
+        <button id="contractRenewalDialogOpenButton" class="button secondary bi" type="button">
+          <span lang="ko">계약서 열기</span><small lang="en">Open Contract</small>
+        </button>
+        <button id="contractRenewalDialogEmailButton" class="button primary bi" type="button">
+          <span lang="ko">계약서 저장 + 이메일</span><small lang="en">Download Contract + Email</small>
+        </button>
+        <button id="contractRenewalDialogClose" class="button tool bi" type="button">
+          <span lang="ko">나중에</span><small lang="en">Not Now</small>
+        </button>
+      </menu>
+    </dialog>
 
     <dialog id="yearDialog">
       <h2>연말 보고서 <small lang="en">Year-End Report</small></h2>

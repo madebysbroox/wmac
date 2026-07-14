@@ -704,6 +704,27 @@ export function defaultAgreementEndDate(startDate) {
   return `${year + 1}-${String(month).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
 }
 
+export function getAgreementExpirationStatus(member, today = new Date()) {
+  if (
+    !member ||
+    member.inactive ||
+    member.participant === false ||
+    member.collectionPlacement?.status === "charged_off" ||
+    normalizeAgreementType(member.agreementType) === "Month-to-Month"
+  ) {
+    return { level: "none", expirationDate: "", daysUntil: null };
+  }
+
+  const expirationDate = normalizeDate(member.agreementEndDate) || defaultAgreementEndDate(member.startDate);
+  if (!expirationDate) {
+    return { level: "none", expirationDate: "", daysUntil: null };
+  }
+
+  const daysUntil = Math.round((utcDateValue(expirationDate) - utcDateValue(today)) / 86400000);
+  const level = daysUntil <= 0 ? "expired" : daysUntil <= 30 ? "expiring" : "active";
+  return { level, expirationDate, daysUntil };
+}
+
 export function upsertMember(store, member) {
   const certifications = normalizeMemberCertifications(member);
   const startDate = normalizeDate(member.startDate);
