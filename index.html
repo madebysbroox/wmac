@@ -333,8 +333,13 @@
                 <button id="emailButton" class="button secondary bi" type="button">
                   <span lang="ko">알림 이메일 쓰기</span><small lang="en">Email Reminder (Outlook)</small>
                 </button>
+                <button id="collectionButton" class="button collection bi" type="button">
+                  <span lang="ko">추심 기관 파일 만들기</span><small lang="en">First Credit Services Placement</small>
+                </button>
               </div>
             </section>
+
+            <section id="collectionNotice" class="collection-notice hidden" aria-live="polite"></section>
 
             <form id="paymentForm" class="payment-form">
               <h3>다른 달 회비 입력 <small lang="en">Record a Different Month</small></h3>
@@ -360,8 +365,40 @@
                 <input id="memberName" required>
               </div>
               <div class="form-row">
-                <label for="memberPhone">전화번호 <small lang="en">Phone</small></label>
-                <input id="memberPhone">
+                <label for="memberAddress">주소 <small lang="en">Street address</small></label>
+                <input id="memberAddress" autocomplete="street-address">
+              </div>
+              <div class="member-address-grid">
+                <div class="form-row">
+                  <label for="memberCity">도시 <small lang="en">City</small></label>
+                  <input id="memberCity" autocomplete="address-level2">
+                </div>
+                <div class="form-row">
+                  <label for="memberState">주 <small lang="en">State</small></label>
+                  <input id="memberState" maxlength="2" autocomplete="address-level1">
+                </div>
+                <div class="form-row">
+                  <label for="memberZip">우편번호 <small lang="en">ZIP code</small></label>
+                  <input id="memberZip" inputmode="numeric" autocomplete="postal-code">
+                </div>
+              </div>
+              <div class="form-row">
+                <label for="memberDob">생년월일 <small lang="en">Date of birth</small></label>
+                <input id="memberDob" type="date" autocomplete="bday">
+              </div>
+              <div class="member-phone-grid">
+                <div class="form-row">
+                  <label for="memberHomePhone">집 전화 <small lang="en">Home phone</small></label>
+                  <input id="memberHomePhone" type="tel" autocomplete="home tel">
+                </div>
+                <div class="form-row">
+                  <label for="memberWorkPhone">직장 전화 <small lang="en">Work phone</small></label>
+                  <input id="memberWorkPhone" type="tel" autocomplete="work tel">
+                </div>
+                <div class="form-row">
+                  <label for="memberCellPhone">휴대전화 <small lang="en">Cell phone</small></label>
+                  <input id="memberCellPhone" type="tel" autocomplete="mobile tel">
+                </div>
               </div>
               <div class="form-row">
                 <label for="memberEmail">이메일 <small lang="en">Email</small></label>
@@ -422,10 +459,42 @@
                 <input id="memberAmount" type="number" min="0" step="0.01">
               </div>
               <div class="form-row">
+                <label for="memberLateFeeMinimum">최소 연체료 <small lang="en">Minimum late fee</small></label>
+                <input id="memberLateFeeMinimum" type="number" min="0" step="0.01">
+                <small class="field-help">계약서에 따라 $5 또는 $10을 입력하세요. · Enter $5 or $10 from this member's contract.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberLateFeePercentage">연체료 비율 <small lang="en">Late-fee percentage</small></label>
+                <input id="memberLateFeePercentage" type="number" min="0" max="100" step="0.01">
+                <small class="field-help">비율과 최소 금액 중 더 큰 금액이 적용됩니다. · The app charges whichever is greater, this percentage or the minimum amount.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberAgreementType">계약 유형 <small lang="en">Agreement type</small></label>
+                <select id="memberAgreementType">
+                  <option value="Contract">기간 계약 · Contract</option>
+                  <option value="Month-to-Month">월 단위 · Month-to-Month</option>
+                </select>
+              </div>
+              <div class="form-row">
                 <label for="memberStart">이 회원의 계약 시작일 <small lang="en">This member's contract start</small></label>
                 <input id="memberStart" type="date">
                 <small class="field-help">가족 구성원마다 따로 설정할 수 있습니다. · Set this separately for each family member.</small>
               </div>
+              <div class="form-row">
+                <label for="memberAgreementEnd">계약 종료일 <small lang="en">Agreement end date</small></label>
+                <input id="memberAgreementEnd" type="date">
+                <small class="field-help">시작일로부터 1년 뒤로 자동 설정됩니다. 특별 계약은 직접 변경할 수 있습니다. · Defaults to one year after signing; manually change it for a special contract.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberDownPayment">계약금 <small lang="en">Down payment</small></label>
+                <input id="memberDownPayment" type="number" min="0" step="0.01">
+              </div>
+              <div class="member-consent-grid">
+                <label class="check-row"><input id="memberEmailConsent" type="checkbox"> 이메일 연락 동의 <small lang="en">Signed email contact permission</small></label>
+                <label class="check-row"><input id="memberTextConsent" type="checkbox"> 문자 연락 동의 <small lang="en">Signed text-message permission</small></label>
+                <label class="check-row"><input id="memberPhoneConsent" type="checkbox"> 전화 연락 동의 <small lang="en">Signed live phone-call permission</small></label>
+              </div>
+              <small class="field-help consent-help">회원이 새 연락 동의서에서 해당 수단에 “예”를 표시하고 서명한 경우에만 체크하세요. · Check a channel only when the member selected “Yes” for it and signed the contact-permission addendum.</small>
               <label class="check-row">
                 <input id="memberInactive" type="checkbox">
                 쉬는 회원 <small lang="en">Inactive member</small>
@@ -447,6 +516,87 @@
         <button id="yearThisButton" class="button secondary bi" type="button"></button>
         <button id="cancelYearDialog" class="button secondary" type="button">취소 · Cancel</button>
       </menu>
+    </dialog>
+
+    <dialog id="collectionDialog" class="collection-dialog">
+      <form id="collectionForm">
+        <div class="collection-dialog-heading">
+          <div>
+            <p class="section-kicker"><span lang="ko">추심 배치</span><small lang="en">Collection Placement</small></p>
+            <h2><span lang="ko">First Credit Services 파일</span><small lang="en">First Credit Services Placement</small></h2>
+          </div>
+          <button id="cancelCollectionDialog" class="dialog-close" type="button" aria-label="Close">×</button>
+        </div>
+
+        <div class="collection-warning">
+          <strong>중요 · Important</strong>
+          <p>Charge-off 날짜를 정하기 전에 모든 결제와 수수료를 마무리하세요. 파일을 만들면 잔액이 고정되고 이 회원에 대한 청구, 자동 결제, 직접 추심을 중단해야 합니다.</p>
+          <small lang="en">Finalize every payment and fee first. Creating the file freezes the balance; billing, payment drafts, and direct collection attempts for this member must stop.</small>
+        </div>
+
+        <p id="collectionMissing" class="collection-missing"></p>
+        <div id="collectionSummary" class="collection-summary"></div>
+
+        <fieldset class="collection-fieldset">
+          <legend>필수 회원 정보 <small lang="en">Required member information</small></legend>
+          <div class="collection-form-grid">
+            <label>이름 <small lang="en">First name</small><input id="collectionFirstName" required></label>
+            <label>성 <small lang="en">Last name</small><input id="collectionLastName" required></label>
+            <label class="wide">주소 <small lang="en">Street address</small><input id="collectionAddress" required></label>
+            <label>도시 <small lang="en">City</small><input id="collectionCity" required></label>
+            <label>주 <small lang="en">State</small><input id="collectionState" maxlength="2" required></label>
+            <label>우편번호 <small lang="en">ZIP code</small><input id="collectionZip" inputmode="numeric" required></label>
+            <label>생년월일 <small lang="en">Date of birth</small><input id="collectionDob" type="date" required></label>
+            <label>집 전화 <small lang="en">Home phone</small><input id="collectionHomePhone" type="tel" required></label>
+            <label>직장 전화 <small lang="en">Work phone</small><input id="collectionWorkPhone" type="tel" required></label>
+            <label>휴대전화 <small lang="en">Cell phone</small><input id="collectionCellPhone" type="tel" required></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="collection-fieldset">
+          <legend>계약 및 Charge-off <small lang="en">Agreement and charge-off</small></legend>
+          <div class="collection-form-grid">
+            <label>계약 서명일 <small lang="en">Agreement sign date</small><input id="collectionAgreementSign" type="date" required></label>
+            <label>계약 유형 <small lang="en">Agreement type</small>
+              <select id="collectionAgreementType" required>
+                <option value="Month-to-Month">월 단위 · Month-to-Month</option>
+                <option value="Contract">기간 계약 · Contract</option>
+              </select>
+            </label>
+            <label>계약 만료일 <small lang="en">Agreement expiration</small><input id="collectionAgreementExpiration" type="date"></label>
+            <label>Charge-off 날짜 <small lang="en">Charge-off date</small><input id="collectionChargeOffDate" type="date" required></label>
+            <label>서비스 수수료 <small lang="en">Service fees</small><input id="collectionServiceFees" type="number" min="0" step="0.01" value="0" required></label>
+            <label>계약금 <small lang="en">Down payment (optional)</small><input id="collectionDownPayment" type="number" min="0" step="0.01"></label>
+            <label>이메일 동의 <small lang="en">Contractual email consent</small>
+              <select id="collectionEmailConsent" required><option value="No">아니요 · No</option><option value="Yes">예 · Yes</option></select>
+            </label>
+            <label>문자 동의 <small lang="en">Contractual text consent</small>
+              <select id="collectionTextConsent" required><option value="No">아니요 · No</option><option value="Yes">예 · Yes</option></select>
+            </label>
+          </div>
+        </fieldset>
+
+        <label class="collection-confirm">
+          <input id="collectionFinalized" type="checkbox" required>
+          <span><b>잔액을 최종 확인했습니다.</b> 이 날짜 이후 금액을 변경하지 않고 WMAC의 청구 및 결제 시도를 중단합니다.<small lang="en">I finalized the balance and will stop WMAC billing, drafts, and collection attempts as of the charge-off date.</small></span>
+        </label>
+
+        <menu class="collection-actions">
+          <button id="collectionDownloadButton" class="button secondary bi" type="submit">
+            <span lang="ko">스프레드시트 저장</span><small lang="en">Save Placement Spreadsheet</small>
+          </button>
+          <button id="collectionDownloadEmailButton" class="button primary bi" type="button">
+            <span lang="ko">파일 저장 + 이메일 열기</span><small lang="en">Save File + Open Email Draft</small>
+          </button>
+        </menu>
+        <div class="collection-submission-note">
+          <strong>보낼 곳 · Where to send</strong>
+          <p>새 스프레드시트를 <a href="mailto:placements@fcsbpo.com">placements@fcsbpo.com</a>으로 이메일로 보내세요. 제공된 자료에는 업로드 포털이 없습니다.</p>
+          <small lang="en">Email each fresh spreadsheet to placements@fcsbpo.com. No upload portal was provided in the agency materials.</small>
+          <p>접수 확인 보고서를 받은 뒤 10일 안에 오류, 취소, 동결 또는 사전 납부 여부를 확인하세요. 문의: <a href="mailto:cssupport@fcsbpo.com">cssupport@fcsbpo.com</a> · 800-606-7066, ext. 2#</p>
+        </div>
+        <p class="collection-attach-note">이메일이 열리면 방금 저장한 파일을 첨부하세요. 보안상 앱이 첨부 파일을 자동으로 넣을 수는 없습니다. · Attach the freshly saved file when the email opens; the app cannot add attachments automatically.</p>
+      </form>
     </dialog>
 
     <dialog id="paymentReviewDialog" class="review-dialog">

@@ -135,6 +135,36 @@ test("late fee is at least $5 for small monthly amounts", () => {
   assert.equal(balance.lines[0].lateFee, 5);
 });
 
+test("uses the minimum late fee saved on each member's contract", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Taylor Kim", Amount: "80", Start: "2026-05-01", Minimum: "10" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start", lateFeeMinimum: "Minimum" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const balance = getLateFeeBalance(member, [], new Date("2026-06-08T12:00:00"));
+  assert.equal(member.lateFeeMinimum, 10);
+  assert.equal(balance.lines[0].lateFee, 10, "$10 contract minimum is greater than 5% of $80");
+});
+
+test("uses the percentage saved on each member's contract", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Jordan Lee", Amount: "200", Start: "2026-05-01", Minimum: "5", Percentage: "8" }],
+    {
+      name: "Name",
+      monthlyAmount: "Amount",
+      startDate: "Start",
+      lateFeeMinimum: "Minimum",
+      lateFeePercentage: "Percentage"
+    },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const balance = getLateFeeBalance(member, [], new Date("2026-06-08T12:00:00"));
+  assert.equal(member.lateFeePercentage, 8);
+  assert.equal(balance.lines[0].lateFee, 16, "8% of $200 is greater than the $5 minimum");
+});
+
 test("next-year roster exports only active members with importable headers", () => {
   let store = buildStore();
   store = upsertMember(store, { ...store.members[1], inactive: true });

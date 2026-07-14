@@ -7,7 +7,8 @@ export const STATUS_LABELS = {
   paid: { ko: "완납", en: "Paid up" },
   pending: { ko: "대기", en: "Pending" },
   watch: { ko: "확인 필요", en: "Needs attention" },
-  late: { ko: "미납", en: "Behind" }
+  late: { ko: "미납", en: "Behind" },
+  collection: { ko: "추심 이관", en: "Placed for collection" }
 };
 
 export const ROSTER_TITLES = {
@@ -23,8 +24,24 @@ export const FIELD_LABELS = {
   name: { ko: "이름", en: "Member name" },
   startDate: { ko: "등록일", en: "Contract start date" },
   monthlyAmount: { ko: "월 회비", en: "Monthly amount" },
+  lateFeeMinimum: { ko: "최소 연체료", en: "Minimum late fee" },
+  lateFeePercentage: { ko: "연체료 비율", en: "Late-fee percentage" },
   email: { ko: "이메일", en: "Email" },
   phone: { ko: "전화번호", en: "Phone" },
+  homePhone: { ko: "집 전화", en: "Home phone" },
+  workPhone: { ko: "직장 전화", en: "Work phone" },
+  cellPhone: { ko: "휴대전화", en: "Cell phone" },
+  address: { ko: "주소", en: "Street address" },
+  city: { ko: "도시", en: "City" },
+  state: { ko: "주", en: "State" },
+  zip: { ko: "우편번호", en: "ZIP code" },
+  dob: { ko: "생년월일", en: "Date of birth" },
+  agreementType: { ko: "계약 유형", en: "Agreement type" },
+  agreementEndDate: { ko: "계약 종료일", en: "Agreement end date" },
+  emailConsent: { ko: "이메일 연락 동의", en: "Email contact consent" },
+  textConsent: { ko: "문자 연락 동의", en: "Text-message consent" },
+  phoneConsent: { ko: "전화 연락 동의", en: "Phone-call consent" },
+  downPayment: { ko: "계약금", en: "Down payment" },
   parentName: { ko: "부모/보호자", en: "Parent or guardian" },
   externalId: { ko: "회원 번호", en: "Member ID" },
   squareCustomerId: { ko: "Square 고객 ID", en: "Square customer ID" },
@@ -187,8 +204,13 @@ export function buildReminderEmail(member, balance, template = DEFAULT_EMAIL_TEM
       ? `${label}: ${money(line.amount)} + ${money(line.lateFee)} late fee* = ${money(line.total)}`
       : `${label}: ${money(line.amount)}`;
   });
+  const configuredMinimum = balance.lateFeeMinimum ?? member.lateFeeMinimum;
+  const lateFeeMinimum = Number.isFinite(Number(configuredMinimum)) ? Number(configuredMinimum) : 5;
+  const configuredPercentage = balance.lateFeePercentage ?? member.lateFeePercentage;
+  const lateFeePercentage = Number.isFinite(Number(configuredPercentage)) ? Number(configuredPercentage) : 5;
+  const minimumText = `$${lateFeeMinimum.toLocaleString("en-US", { minimumFractionDigits: lateFeeMinimum % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
   const lateFeeNote = balance.feeDue > 0
-    ? `\r\n* Payments are due each month on the same day of the month as the signing date. A one-time late fee of 5% or $5 (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
+    ? `\r\n* Payments are due each month on the same day of the month as the signing date. A one-time late fee of ${lateFeePercentage}% or ${minimumText} (whichever is greater) is added to each payment that is ${LATE_FEE_GRACE_DAYS} or more days past due.`
     : "";
   const collectionNote = balance.lines.length >= 2
     ? "\r\nPlease note: accounts that fall 3 or more months behind may be sent to a collection agency. We would much rather work something out together, so please reach out before it ever comes to that."

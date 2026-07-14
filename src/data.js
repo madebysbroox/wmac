@@ -8,8 +8,24 @@ const MEMBER_FIELD_ALIASES = {
   name: ["name", "member name", "student name", "student", "full name"],
   startDate: ["contract start date", "start date", "joined", "join date", "contract date"],
   monthlyAmount: ["monthly payment amount", "monthly amount", "payment amount", "amount", "tuition", "monthly tuition"],
+  lateFeeMinimum: ["late fee minimum", "minimum late fee", "late charge minimum", "minimum late charge"],
+  lateFeePercentage: ["late fee percentage", "late fee percent", "late charge percentage", "late charge percent"],
   email: ["email", "email address"],
   phone: ["phone", "phone number", "mobile", "cell"],
+  homePhone: ["home phone", "home phone number"],
+  workPhone: ["work phone", "work phone number", "business phone"],
+  cellPhone: ["cell phone", "cell phone number", "mobile phone"],
+  address: ["address", "street address", "mailing address"],
+  city: ["city"],
+  state: ["state", "st"],
+  zip: ["zip", "zip code", "postal code"],
+  dob: ["dob", "date of birth", "birth date"],
+  agreementType: ["agreement type", "contract type", "membership type"],
+  agreementEndDate: ["agreement expiration date", "agreement end date", "contract end date", "contract expiration date"],
+  emailConsent: ["email consent", "contractual email consent"],
+  textConsent: ["text consent", "sms consent", "contractual text consent"],
+  phoneConsent: ["phone consent", "call consent", "contractual phone consent"],
+  downPayment: ["down payment"],
   parentName: ["parent/guardian name", "parent name", "guardian", "guardian name", "parent"],
   externalId: ["id", "member id", "student id", "customer id"],
   squareCustomerId: ["square customer id", "square customer", "square id"],
@@ -170,13 +186,38 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
       normalize(member.name) === normalize(name)
     );
 
+    const startDate = normalizeDate(record[columnMap.startDate]) || existing?.startDate || "";
+    const importedCellPhone = cleanPhone(record[columnMap.cellPhone]) || cleanPhone(record[columnMap.phone]);
+    const agreementEndDate = normalizeDate(record[columnMap.agreementEndDate])
+      || existing?.agreementEndDate
+      || defaultAgreementEndDate(startDate);
     const member = {
       id: existing?.id ?? cryptoId("mem"),
       name,
-      startDate: normalizeDate(record[columnMap.startDate]) || existing?.startDate || "",
+      startDate,
       monthlyAmount: parseMoney(record[columnMap.monthlyAmount]) || existing?.monthlyAmount || 0,
+      lateFeeMinimum: clean(record[columnMap.lateFeeMinimum]) === ""
+        ? getLateFeeMinimum(existing)
+        : normalizeLateFeeMinimum(record[columnMap.lateFeeMinimum]),
+      lateFeePercentage: clean(record[columnMap.lateFeePercentage]) === ""
+        ? getLateFeePercentage(existing)
+        : normalizeLateFeePercentage(record[columnMap.lateFeePercentage]),
       email: email || existing?.email || "",
-      phone: phone || existing?.phone || "",
+      phone: importedCellPhone || phone || existing?.cellPhone || existing?.phone || "",
+      homePhone: cleanPhone(record[columnMap.homePhone]) || existing?.homePhone || "",
+      workPhone: cleanPhone(record[columnMap.workPhone]) || existing?.workPhone || "",
+      cellPhone: importedCellPhone || existing?.cellPhone || phone || existing?.phone || "",
+      address: clean(record[columnMap.address]) || existing?.address || "",
+      city: clean(record[columnMap.city]) || existing?.city || "",
+      state: clean(record[columnMap.state]).toUpperCase() || existing?.state || "",
+      zip: clean(record[columnMap.zip]) || existing?.zip || "",
+      dob: normalizeDate(record[columnMap.dob]) || existing?.dob || "",
+      agreementType: normalizeAgreementType(record[columnMap.agreementType]) || existing?.agreementType || "Contract",
+      agreementEndDate,
+      emailConsent: normalizeConsent(record[columnMap.emailConsent]) || existing?.emailConsent || "No",
+      textConsent: normalizeConsent(record[columnMap.textConsent]) || existing?.textConsent || "No",
+      phoneConsent: normalizeConsent(record[columnMap.phoneConsent]) || existing?.phoneConsent || "No",
+      downPayment: clean(record[columnMap.downPayment]) === "" ? (existing?.downPayment ?? "") : parseMoney(record[columnMap.downPayment]),
       parentName: clean(record[columnMap.parentName]) || existing?.parentName || "",
       externalId: externalId || existing?.externalId || "",
       squareCustomerId: clean(record[columnMap.squareCustomerId]) || existing?.squareCustomerId || "",
@@ -653,15 +694,44 @@ export function bringMemberUpToDate(store, member, today = new Date()) {
   );
 }
 
+export function defaultAgreementEndDate(startDate) {
+  const normalized = normalizeDate(startDate);
+  if (!normalized) {
+    return "";
+  }
+  const [year, month, day] = normalized.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year + 1, month, 0)).getUTCDate();
+  return `${year + 1}-${String(month).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
 export function upsertMember(store, member) {
   const certifications = normalizeMemberCertifications(member);
+  const startDate = normalizeDate(member.startDate);
+  const cellPhone = cleanPhone(member.cellPhone || member.phone);
   const nextMember = {
     ...member,
     id: member.id || cryptoId("mem"),
     name: clean(member.name),
     email: clean(member.email).toLowerCase(),
-    phone: cleanPhone(member.phone),
+    phone: cellPhone,
+    homePhone: cleanPhone(member.homePhone),
+    workPhone: cleanPhone(member.workPhone),
+    cellPhone,
+    address: clean(member.address),
+    city: clean(member.city),
+    state: clean(member.state).toUpperCase(),
+    zip: clean(member.zip),
+    dob: normalizeDate(member.dob),
+    startDate,
+    agreementType: normalizeAgreementType(member.agreementType) || "Contract",
+    agreementEndDate: normalizeDate(member.agreementEndDate) || defaultAgreementEndDate(startDate),
+    emailConsent: normalizeConsent(member.emailConsent) || "No",
+    textConsent: normalizeConsent(member.textConsent) || "No",
+    phoneConsent: normalizeConsent(member.phoneConsent) || "No",
+    downPayment: clean(member.downPayment) === "" ? "" : Number(member.downPayment) || 0,
     monthlyAmount: Number(member.monthlyAmount) || 0,
+    lateFeeMinimum: getLateFeeMinimum(member),
+    lateFeePercentage: getLateFeePercentage(member),
     participant: member.participant !== false,
     householdRole: normalizeHouseholdRole(member.householdRole) || "adult",
     householdName: clean(member.householdName),
@@ -689,6 +759,23 @@ export function migrateStore(store) {
       const certifications = normalizeMemberCertifications(member);
       return {
         ...member,
+        phone: cleanPhone(member.cellPhone || member.phone),
+        homePhone: cleanPhone(member.homePhone),
+        workPhone: cleanPhone(member.workPhone),
+        cellPhone: cleanPhone(member.cellPhone || member.phone),
+        address: clean(member.address),
+        city: clean(member.city),
+        state: clean(member.state).toUpperCase(),
+        zip: clean(member.zip),
+        dob: normalizeDate(member.dob),
+        agreementType: normalizeAgreementType(member.agreementType) || "Contract",
+        agreementEndDate: normalizeDate(member.agreementEndDate) || defaultAgreementEndDate(member.startDate),
+        emailConsent: normalizeConsent(member.emailConsent) || "No",
+        textConsent: normalizeConsent(member.textConsent) || "No",
+        phoneConsent: normalizeConsent(member.phoneConsent) || "No",
+        downPayment: clean(member.downPayment) === "" ? "" : Number(member.downPayment) || 0,
+        lateFeeMinimum: getLateFeeMinimum(member),
+        lateFeePercentage: getLateFeePercentage(member),
         certifications,
         beltLevel: primaryCertificationLabel({ ...member, certifications }),
         nextLevel: nextMemberCertification({ ...member, certifications }) || member.nextLevel || ""
@@ -936,18 +1023,30 @@ export function getDashboardSummary(store, today = new Date()) {
 // Each month's payment is due on the same day of the month as the member's
 // signing (contract start) date, clamped for short months (signed the 31st
 // means due Feb 28). Once a payment is 10 or more days late it picks up a
-// one-time fee of 5% or $5, whichever is greater.
+// one-time fee of 5% or the minimum stated in that member's contract,
+// whichever is greater. Older records default to the historically used $5.
 export const LATE_FEE_GRACE_DAYS = 10;
 export const LATE_FEE_RATE = 0.05;
 export const LATE_FEE_MINIMUM = 5;
+export const LATE_FEE_PERCENTAGE = 5;
+
+export function getLateFeeMinimum(member) {
+  return normalizeLateFeeMinimum(member?.lateFeeMinimum);
+}
+
+export function getLateFeePercentage(member) {
+  return normalizeLateFeePercentage(member?.lateFeePercentage);
+}
 
 export function getLateFeeBalance(member, payments, today = new Date()) {
   const paymentState = getMemberPaymentState(member, payments, today);
   const monthlyAmount = Number(member.monthlyAmount || 0);
+  const lateFeeMinimum = getLateFeeMinimum(member);
+  const lateFeePercentage = getLateFeePercentage(member);
   const lines = paymentState.months.filter((month) => !month.paid).map((monthState) => {
     const daysLate = monthState.daysLate;
     const lateFee = daysLate >= LATE_FEE_GRACE_DAYS
-      ? Math.max(LATE_FEE_MINIMUM, Math.round(monthlyAmount * LATE_FEE_RATE * 100) / 100)
+      ? Math.max(lateFeeMinimum, Math.round(monthlyAmount * (lateFeePercentage / 100) * 100) / 100)
       : 0;
     return {
       month: monthState.month,
@@ -961,7 +1060,7 @@ export function getLateFeeBalance(member, payments, today = new Date()) {
 
   const baseDue = lines.reduce((sum, line) => sum + line.amount, 0);
   const feeDue = lines.reduce((sum, line) => sum + line.lateFee, 0);
-  return { monthlyAmount, lines, baseDue, feeDue, totalDue: baseDue + feeDue };
+  return { monthlyAmount, lateFeeMinimum, lateFeePercentage, lines, baseDue, feeDue, totalDue: baseDue + feeDue };
 }
 
 export function exportStoreRows(store) {
@@ -1021,8 +1120,24 @@ export function exportRosterRows(store) {
       "Member Name": member.name,
       "Contract Start Date": member.startDate || "",
       "Monthly Amount": moneyText(member.monthlyAmount),
+      "Late Fee Minimum": moneyText(getLateFeeMinimum(member)),
+      "Late Fee Percentage": String(getLateFeePercentage(member)),
       Email: member.email || "",
       Phone: member.phone || "",
+      "Home Phone": member.homePhone || "",
+      "Work Phone": member.workPhone || "",
+      "Cell Phone": member.cellPhone || member.phone || "",
+      Address: member.address || "",
+      City: member.city || "",
+      State: member.state || "",
+      "Zip Code": member.zip || "",
+      "Date of Birth": member.dob || "",
+      "Agreement Type": member.agreementType || "Contract",
+      "Agreement End Date": member.agreementEndDate || defaultAgreementEndDate(member.startDate),
+      "Email Consent": member.emailConsent || "No",
+      "Text Consent": member.textConsent || "No",
+      "Phone Consent": member.phoneConsent || "No",
+      "Down Payment": member.downPayment === "" || member.downPayment == null ? "" : moneyText(member.downPayment),
       "Parent/Guardian Name": member.parentName || "",
       "Member ID": member.externalId || "",
       "Square Customer ID": member.squareCustomerId || "",
@@ -1044,8 +1159,24 @@ function memberRow(member, payment) {
     "Member Name": member.name,
     "Contract Start Date": member.startDate || "",
     "Monthly Amount": moneyText(member.monthlyAmount),
+    "Late Fee Minimum": moneyText(getLateFeeMinimum(member)),
+    "Late Fee Percentage": String(getLateFeePercentage(member)),
     Email: member.email || "",
     Phone: member.phone || "",
+    "Home Phone": member.homePhone || "",
+    "Work Phone": member.workPhone || "",
+    "Cell Phone": member.cellPhone || member.phone || "",
+    Address: member.address || "",
+    City: member.city || "",
+    State: member.state || "",
+    "Zip Code": member.zip || "",
+    "Date of Birth": member.dob || "",
+    "Agreement Type": member.agreementType || "Contract",
+    "Agreement End Date": member.agreementEndDate || defaultAgreementEndDate(member.startDate),
+    "Email Consent": member.emailConsent || "No",
+    "Text Consent": member.textConsent || "No",
+    "Phone Consent": member.phoneConsent || "No",
+    "Down Payment": member.downPayment === "" || member.downPayment == null ? "" : moneyText(member.downPayment),
     "Parent/Guardian": member.parentName || "",
     "Member ID": member.externalId || "",
     "Square Customer ID": member.squareCustomerId || "",
@@ -1073,6 +1204,26 @@ function memberRow(member, payment) {
 
 function isTuitionPayment(payment) {
   return !payment?.category || payment.category === "tuition";
+}
+
+function normalizeLateFeeMinimum(value) {
+  const normalized = String(value ?? "").replace(/[$,]/g, "").trim();
+  if (!normalized) {
+    return LATE_FEE_MINIMUM;
+  }
+  const amount = Number(normalized);
+  return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) / 100 : LATE_FEE_MINIMUM;
+}
+
+function normalizeLateFeePercentage(value) {
+  const normalized = String(value ?? "").replace(/%/g, "").trim();
+  if (!normalized) {
+    return LATE_FEE_PERCENTAGE;
+  }
+  const percentage = Number(normalized);
+  return Number.isFinite(percentage) && percentage >= 0 && percentage <= 100
+    ? Math.round(percentage * 100) / 100
+    : LATE_FEE_PERCENTAGE;
 }
 
 export function isActiveParticipant(member) {
@@ -1253,6 +1404,28 @@ function parseParticipant(value, existingValue) {
     return existingValue !== false;
   }
   return !["no", "n", "false", "0", "non participant", "non-participant", "contact only"].includes(cleaned);
+}
+
+function normalizeAgreementType(value) {
+  const cleaned = normalize(value);
+  if (["contract", "fixed", "fixed term", "term"].includes(cleaned)) {
+    return "Contract";
+  }
+  if (["month to month", "monthly", "month-to-month"].includes(cleaned)) {
+    return "Month-to-Month";
+  }
+  return "";
+}
+
+function normalizeConsent(value) {
+  const cleaned = normalize(value);
+  if (["yes", "y", "true", "1", "consented", "authorized"].includes(cleaned)) {
+    return "Yes";
+  }
+  if (["no", "n", "false", "0", "declined", "not authorized"].includes(cleaned)) {
+    return "No";
+  }
+  return "";
 }
 
 function normalizeHouseholdRole(value) {

@@ -4,6 +4,7 @@ import {
   addPayment,
   bringMemberUpToDate,
   createEmptyStore,
+  defaultAgreementEndDate,
   getDashboardSummary,
   exportStoreRows,
   exportRosterRows,
@@ -44,6 +45,37 @@ test("guesses member columns with friendly aliases", () => {
   assert.equal(map.name, "Student Name");
   assert.equal(map.monthlyAmount, "Tuition");
   assert.equal(map.phone, "Cell");
+});
+
+test("stores collection-ready member contact and agreement fields", () => {
+  const parsed = parseCsv([
+    "Member Name,Contract Start Date,Address,City,State,Zip Code,Date of Birth,Home Phone,Work Phone,Cell Phone,Agreement Type,Agreement End Date,Email Consent,Text Consent,Phone Consent,Down Payment,Monthly Amount,Late Fee Minimum,Late Fee Percentage",
+    "Sam Park,2026-07-14,123 Main St,Warrenton,VA,20186,1990-05-20,540-555-0101,540-555-0102,540-555-0103,Contract,2027-08-01,Yes,No,Yes,50,120,10,7.5"
+  ].join("\n"));
+  const result = importMembersFromRecords(parsed.records, guessColumnMap(parsed.headers), createEmptyStore());
+  const member = result.store.members[0];
+  assert.equal(member.address, "123 Main St");
+  assert.equal(member.city, "Warrenton");
+  assert.equal(member.state, "VA");
+  assert.equal(member.zip, "20186");
+  assert.equal(member.dob, "1990-05-20");
+  assert.equal(member.homePhone, "5405550101");
+  assert.equal(member.workPhone, "5405550102");
+  assert.equal(member.cellPhone, "5405550103");
+  assert.equal(member.phone, "5405550103", "cell phone remains the primary matching phone");
+  assert.equal(member.agreementType, "Contract");
+  assert.equal(member.agreementEndDate, "2027-08-01", "manual contract exceptions are preserved");
+  assert.equal(member.emailConsent, "Yes");
+  assert.equal(member.textConsent, "No");
+  assert.equal(member.phoneConsent, "Yes");
+  assert.equal(member.downPayment, 50);
+  assert.equal(member.lateFeeMinimum, 10);
+  assert.equal(member.lateFeePercentage, 7.5);
+});
+
+test("defaults agreement end to one year after signing and clamps leap-day anniversaries", () => {
+  assert.equal(defaultAgreementEndDate("2026-07-14"), "2027-07-14");
+  assert.equal(defaultAgreementEndDate("2024-02-29"), "2025-02-28");
 });
 
 test("imports members and supports partial name search", () => {

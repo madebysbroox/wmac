@@ -3,6 +3,7 @@ import {
   PAYMENT_FIELD_ALIASES,
   addPayment,
   createEmptyStore,
+  defaultAgreementEndDate,
   exportRosterRows,
   exportStoreRows,
   getMemberBalance,
@@ -51,6 +52,15 @@ import {
   normalizeMemberCertifications,
   primaryCertificationLabel
 } from "./certification.js";
+import {
+  buildCollectionPlacement,
+  collectionInfoFromDraft,
+  collectionPlacementFilename,
+  createCollectionDraft,
+  createFirstCreditServicesWorkbook,
+  firstCreditServicesEmailDraft,
+  getCollectionMissingFields
+} from "./collections.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
 const STORAGE_BACKUP_KEY = "master-lee-payment-tracker-v1-backup";
@@ -96,10 +106,12 @@ const elements = {};
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "latestPaid", "householdCard", "progressCard",
-  "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton",
+  "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
-  "memberPhone", "memberEmail", "memberParent", "memberHousehold", "memberRole", "memberParticipant",
-  "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberStart",
+  "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
+  "memberEmail", "memberParent", "memberHousehold", "memberRole", "memberParticipant",
+  "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberLateFeeMinimum", "memberLateFeePercentage", "memberStart",
+  "memberAgreementType", "memberAgreementEnd", "memberDownPayment", "memberEmailConsent", "memberTextConsent", "memberPhoneConsent",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
   "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
@@ -113,7 +125,12 @@ const elements = {};
   "attentionReviewDialog", "attentionReviewProgress", "attentionReviewName", "attentionReviewContext", "attentionReviewFacts",
   "attentionReviewMonths", "attentionAllPaid", "attentionKeepAsIs", "attentionExceptButton", "attentionExceptionPanel",
   "attentionExceptionMonths", "attentionSaveExceptions", "attentionReviewMessage", "attentionUndoButton", "closeAttentionReview",
-  "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton"
+  "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton",
+  "collectionDialog", "collectionForm", "cancelCollectionDialog", "collectionMissing", "collectionSummary",
+  "collectionFirstName", "collectionLastName", "collectionAddress", "collectionCity", "collectionState", "collectionZip", "collectionDob",
+  "collectionHomePhone", "collectionWorkPhone", "collectionCellPhone", "collectionAgreementSign", "collectionAgreementExpiration",
+  "collectionAgreementType", "collectionChargeOffDate", "collectionServiceFees", "collectionDownPayment", "collectionEmailConsent",
+  "collectionTextConsent", "collectionFinalized", "collectionDownloadButton", "collectionDownloadEmailButton"
 ].forEach((id) => {
   elements[id] = document.querySelector(`#${id}`);
 });
@@ -155,6 +172,15 @@ function updateNextCertificationField() {
     }
   };
   elements.memberNextLevel.value = nextMemberCertification(member) || (primaryCertificationLabel(member) ? "최고 자격 레벨 · Highest certification level" : "");
+}
+
+function syncMemberAgreementEndDate() {
+  const previousStart = elements.memberStart.dataset.previousValue || selectedMember()?.startDate || "";
+  const previousDefault = defaultAgreementEndDate(previousStart);
+  if (!elements.memberAgreementEnd.value || elements.memberAgreementEnd.value === previousDefault) {
+    elements.memberAgreementEnd.value = defaultAgreementEndDate(elements.memberStart.value);
+  }
+  elements.memberStart.dataset.previousValue = elements.memberStart.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +231,7 @@ document.querySelectorAll("[data-landscape-filter]").forEach((button) => {
 });
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
+elements.collectionButton.addEventListener("click", openCollectionPlacement);
 elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
@@ -230,10 +257,15 @@ elements.cancelGroupEmailButton.addEventListener("click", () => elements.groupEm
 elements.openGroupEmailButton.addEventListener("click", openGroupEmail);
 elements.checkUpdateButton.addEventListener("click", checkForAppUpdate);
 elements.installUpdateButton.addEventListener("click", installAppUpdate);
+elements.cancelCollectionDialog.addEventListener("click", () => elements.collectionDialog.close());
+elements.collectionForm.addEventListener("submit", (event) => finalizeCollectionPlacement(event, false));
+elements.collectionDownloadEmailButton.addEventListener("click", (event) => finalizeCollectionPlacement(event, true));
+elements.collectionForm.addEventListener("input", updateCollectionPlacementPreview);
 
 populateCertificationControls();
 elements.memberBeltLevel.addEventListener("change", updateNextCertificationField);
 elements.memberMuayThaiLevel.addEventListener("change", updateNextCertificationField);
+elements.memberStart.addEventListener("change", syncMemberAgreementEndDate);
 
 initAppUpdates();
 render();
@@ -793,6 +825,8 @@ function renderDetail() {
     return;
   }
 
+  const collectionPlacement = member.collectionPlacement?.status === "charged_off" ? member.collectionPlacement : null;
+  const collectionPlaced = Boolean(collectionPlacement);
   const status = displayedMemberStatus(member);
   const balance = getMemberBalance(member, state.store.payments);
   elements.detailInitials.textContent = initialsFor(member.name);
@@ -801,23 +835,30 @@ function renderDetail() {
     .filter(Boolean)
     .join("  ");
   const dueDay = Number(member.startDate?.split("-")[2]) || 1;
-  elements.detailDueDay.textContent = member.participant === false
+  elements.detailDueDay.textContent = collectionPlaced
+    ? `Charge-off: ${collectionPlacement.chargeOffDate} · Frozen balance ${formatMoney(collectionPlacement.frozenBalance)}`
+    : member.participant === false
     ? "회비 일정 없음 · Contact only - no tuition schedule"
     : `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
-  elements.statusBadge.innerHTML = member.participant === false
+  elements.statusBadge.innerHTML = collectionPlaced
+    ? `${STATUS_LABELS.collection.ko}<small lang="en">${STATUS_LABELS.collection.en}</small>`
+    : member.participant === false
     ? `비참가<small lang="en">Contact only</small>`
     : `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>${status.flags?.pending ? `<small class="status-pending-note">카드 검토 중 · Card pending</small>` : ""}${status.flags?.setupNeeded ? `<small class="status-setup-note">정보 확인 필요 · Setup needed</small>` : ""}`;
   elements.statusBadge.className = `status-badge status-${status.level}`;
-  elements.latestPaid.textContent = status.lastPaidMonth
+  elements.latestPaid.textContent = collectionPlaced
+    ? `First Credit Services 파일 생성: ${collectionPlacement.chargeOffDate} · Placement file created`
+    : status.lastPaidMonth
     ? `마지막 납부: ${formatMonthBi(status.lastPaidMonth)}`
     : MSG.noPaymentsYet;
-  elements.latestPaid.className = `latest-paid ${status.lastPaidMonth ? "has-payment" : "no-payment"}`;
+  elements.latestPaid.className = `latest-paid ${collectionPlaced || status.lastPaidMonth ? "has-payment" : "no-payment"}`;
 
   renderHouseholdCard(member);
   renderProgressCard(member);
 
   renderQuickPay(member, status);
-  elements.catchUpButton.disabled = member.participant === false || balance.dueUnpaidMonths.length === 0 || Number(member.monthlyAmount || 0) <= 0;
+  elements.quickPayButton.disabled = collectionPlaced || elements.quickPayButton.disabled;
+  elements.catchUpButton.disabled = collectionPlaced || member.participant === false || balance.dueUnpaidMonths.length === 0 || Number(member.monthlyAmount || 0) <= 0;
   elements.undoCatchUpButton.classList.toggle("hidden", state.lastPaymentBatch?.memberId !== member.id);
 
   elements.monthStrip.innerHTML = "";
@@ -829,7 +870,7 @@ function renderDetail() {
       <strong>${formatMonthKo(month.month)}</strong>
       <small lang="en">${formatMonthEn(month.month)}</small>
       <span>${month.paid ? "납부함 · Paid" : "미납 · Not paid"}</span>
-      ${month.paid ? `<button class="text-button mark-unpaid-button" type="button" data-month="${month.month}">미납으로 변경 · Mark unpaid</button>` : ""}
+      ${month.paid && !collectionPlaced ? `<button class="text-button mark-unpaid-button" type="button" data-month="${month.month}">미납으로 변경 · Mark unpaid</button>` : ""}
     `;
     elements.monthStrip.append(item);
   });
@@ -840,13 +881,35 @@ function renderDetail() {
   elements.invoiceSummary.textContent = balance.unpaidMonths.length
     ? `미납 ${balance.unpaidMonths.length}개월 · ${formatMoney(balance.totalDue)} (${balance.unpaidMonths.length} unpaid month${balance.unpaidMonths.length === 1 ? "" : "s"})`
     : MSG.noUnpaidBalance;
-  elements.invoiceButton.disabled = balance.totalDue <= 0;
+  elements.invoiceButton.disabled = collectionPlaced || balance.totalDue <= 0;
   renderEmailButton(member, balance);
+  elements.emailButton.disabled = collectionPlaced || elements.emailButton.disabled;
+  elements.collectionButton.disabled = !collectionPlaced && (status.level !== "late" || balance.dueNow <= 0 || Number(member.monthlyAmount || 0) <= 0);
+  elements.collectionButton.title = !collectionPlaced && status.level !== "late"
+    ? "회원이 미납 상태일 때 사용할 수 있습니다. · Available when the member is behind on payments."
+    : "";
+  elements.collectionButton.innerHTML = collectionPlaced
+    ? `<span lang="ko">추심 파일 다시 저장</span><small lang="en">Download Placement Again</small>`
+    : `<span lang="ko">추심 기관 파일 만들기</span><small lang="en">First Credit Services Placement</small>`;
+  elements.collectionNotice.classList.toggle("hidden", !collectionPlaced);
+  elements.collectionNotice.innerHTML = collectionPlaced
+    ? `<strong>First Credit Services 이관 완료 · Placed for collection</strong><span>${escapeHtml(collectionPlacement.chargeOffDate)}에 잔액 ${formatMoney(collectionPlacement.frozenBalance)} 고정. 이 회원에 대한 청구 및 직접 결제 수집은 중단되었습니다. · Balance frozen; billing and direct payment collection are stopped.</span>`
+    : "";
 
   elements.paymentMonth.value = status.currentMonth;
   elements.paymentAmount.value = Number(member.monthlyAmount || 0).toFixed(2);
+  elements.paymentForm.querySelectorAll("input, button").forEach((control) => {
+    control.disabled = collectionPlaced;
+  });
   elements.memberName.value = member.name;
-  elements.memberPhone.value = formatPhone(member.phone);
+  elements.memberHomePhone.value = formatPhone(member.homePhone);
+  elements.memberWorkPhone.value = formatPhone(member.workPhone);
+  elements.memberCellPhone.value = formatPhone(member.cellPhone || member.phone);
+  elements.memberAddress.value = member.address || "";
+  elements.memberCity.value = member.city || "";
+  elements.memberState.value = member.state || "";
+  elements.memberZip.value = member.zip || "";
+  elements.memberDob.value = member.dob || "";
   elements.memberEmail.value = member.email || "";
   elements.memberParent.value = member.parentName || "";
   elements.memberHousehold.value = member.householdName || "";
@@ -860,8 +923,22 @@ function renderDetail() {
   elements.memberNextLevel.value = nextMemberCertification(member) || member.nextLevel || "";
   elements.memberSquareCustomerId.value = member.squareCustomerId || "";
   elements.memberAmount.value = member.monthlyAmount || "";
+  elements.memberLateFeeMinimum.value = member.lateFeeMinimum ?? 5;
+  elements.memberLateFeePercentage.value = member.lateFeePercentage ?? 5;
   elements.memberStart.value = member.startDate || "";
+  elements.memberStart.dataset.previousValue = member.startDate || "";
+  elements.memberAgreementType.value = member.agreementType || "Contract";
+  elements.memberAgreementEnd.value = member.agreementEndDate || defaultAgreementEndDate(member.startDate);
+  elements.memberDownPayment.value = member.downPayment ?? "";
+  elements.memberEmailConsent.checked = member.emailConsent === "Yes";
+  elements.memberTextConsent.checked = member.textConsent === "Yes";
+  elements.memberPhoneConsent.checked = member.phoneConsent === "Yes";
   elements.memberInactive.checked = Boolean(member.inactive);
+  elements.memberAmount.disabled = collectionPlaced;
+  elements.memberLateFeeMinimum.disabled = collectionPlaced;
+  elements.memberLateFeePercentage.disabled = collectionPlaced;
+  elements.memberStart.disabled = collectionPlaced;
+  elements.memberInactive.disabled = collectionPlaced;
 }
 
 function renderHouseholdCard(member) {
@@ -1063,7 +1140,11 @@ function statusCounts(rows = memberRows()) {
 
 function displayedMemberStatus(member) {
   const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
-  return getMemberPaymentState(member, state.store.payments, new Date(), pending);
+  const status = getMemberPaymentState(member, state.store.payments, new Date(), pending);
+  if (member.collectionPlacement?.status === "charged_off") {
+    return { ...status, level: "collection", label: "Placed for collection" };
+  }
+  return status;
 }
 
 function rosterSummaryMarkup(row) {
@@ -1108,7 +1189,8 @@ function stagedPaymentView(payment) {
   const selectedMemberId = payment.memberId || payment.suggestedMemberId || suggested?.id || "";
   const month = stagedPaymentMonth(payment);
   const statusClass = payment.status === "approved" ? "status-paid" : payment.status === "ignored" ? "neutral" : "status-pending";
-  const canApprove = (payment.status === "pending" || payment.status === "needs_match") && selectedMemberId && month;
+  const selectedMember = state.store.members.find((member) => member.id === selectedMemberId);
+  const canApprove = (payment.status === "pending" || payment.status === "needs_match") && selectedMemberId && month && selectedMember?.collectionPlacement?.status !== "charged_off";
   const provider = payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square");
   const providerLabel = provider === "worldbankcard" ? "World Bankcard" : "Square";
   const options = [
@@ -1391,6 +1473,10 @@ function exportNextYearRoster() {
 
 function downloadCsv(csv, filename) {
   const blob = new Blob([csv], { type: "text/csv" });
+  downloadBlob(blob, filename);
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -1544,6 +1630,10 @@ async function approveStagedPayment(paymentId, category = "tuition") {
   const member = state.store.members.find((item) => item.id === memberId);
   if (!payment || !member) {
     showToast("회원과 납부 월을 먼저 선택하세요. · Choose a member and payment month first.");
+    return;
+  }
+  if (member.collectionPlacement?.status === "charged_off") {
+    showToast("추심 이관 후에는 카드 결제를 적용할 수 없습니다. · Card payments cannot change a charged-off balance.");
     return;
   }
   const month = category === "tuition" && !payment.paymentMonth
@@ -1717,13 +1807,30 @@ function selectNextStagedPayment(previousId) {
 // ---------------------------------------------------------------------------
 
 function addNewMember() {
+  const startDate = new Date().toISOString().slice(0, 10);
   const member = {
     id: makeId("mem"),
     name: "New Member",
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate,
+    agreementEndDate: defaultAgreementEndDate(startDate),
+    agreementType: "Contract",
     monthlyAmount: 0,
+    lateFeeMinimum: 5,
+    lateFeePercentage: 5,
     email: "",
     phone: "",
+    homePhone: "",
+    workPhone: "",
+    cellPhone: "",
+    address: "",
+    city: "",
+    state: "",
+    zip: "",
+    dob: "",
+    emailConsent: "No",
+    textConsent: "No",
+    phoneConsent: "No",
+    downPayment: "",
     parentName: "",
     householdName: "",
     householdRole: "adult",
@@ -1749,13 +1856,30 @@ function addFamilyMember() {
     return;
   }
 
+  const startDate = familyMember.startDate || new Date().toISOString().slice(0, 10);
   const member = {
     id: makeId("mem"),
     name: "New Family Member",
-    startDate: familyMember.startDate || new Date().toISOString().slice(0, 10),
+    startDate,
+    agreementEndDate: defaultAgreementEndDate(startDate),
+    agreementType: familyMember.agreementType || "Contract",
     monthlyAmount: familyMember.monthlyAmount || 0,
+    lateFeeMinimum: familyMember.lateFeeMinimum ?? 5,
+    lateFeePercentage: familyMember.lateFeePercentage ?? 5,
     email: "",
     phone: "",
+    homePhone: "",
+    workPhone: "",
+    cellPhone: "",
+    address: familyMember.address || "",
+    city: familyMember.city || "",
+    state: familyMember.state || "",
+    zip: familyMember.zip || "",
+    dob: "",
+    emailConsent: "No",
+    textConsent: "No",
+    phoneConsent: "No",
+    downPayment: "",
     parentName: "",
     householdName: familyMember.householdName,
     householdId: familyMember.householdId || "",
@@ -1778,7 +1902,7 @@ function addFamilyMember() {
 
 function quickPayCurrentMonth() {
   const member = selectedMember();
-  if (!member) {
+  if (!member || member.collectionPlacement?.status === "charged_off") {
     return;
   }
   const status = getMemberStatus(member, state.store.payments);
@@ -1805,7 +1929,7 @@ function quickPayCurrentMonth() {
 
 function catchUpMemberPayments() {
   const member = selectedMember();
-  if (!member) {
+  if (!member || member.collectionPlacement?.status === "charged_off") {
     return;
   }
 
@@ -2028,7 +2152,7 @@ function undoAttentionAction() {
 function savePayment(event) {
   event.preventDefault();
   const member = selectedMember();
-  if (!member) {
+  if (!member || member.collectionPlacement?.status === "charged_off") {
     return;
   }
   const beforePayments = state.store.payments;
@@ -2049,7 +2173,7 @@ function savePayment(event) {
 
 function markMonthUnpaid(month) {
   const member = selectedMember();
-  if (!member || !month) {
+  if (!member || !month || member.collectionPlacement?.status === "charged_off") {
     return;
   }
 
@@ -2070,7 +2194,15 @@ function saveMember(event) {
   state.store = upsertMember(state.store, {
     ...member,
     name: elements.memberName.value,
-    phone: elements.memberPhone.value,
+    phone: elements.memberCellPhone.value,
+    homePhone: elements.memberHomePhone.value,
+    workPhone: elements.memberWorkPhone.value,
+    cellPhone: elements.memberCellPhone.value,
+    address: elements.memberAddress.value,
+    city: elements.memberCity.value,
+    state: elements.memberState.value,
+    zip: elements.memberZip.value,
+    dob: elements.memberDob.value,
     email: elements.memberEmail.value,
     parentName: elements.memberParent.value,
     householdName: elements.memberHousehold.value,
@@ -2090,12 +2222,193 @@ function saveMember(event) {
     nextLevel: elements.memberNextLevel.value,
     squareCustomerId: elements.memberSquareCustomerId.value,
     monthlyAmount: elements.memberAmount.value,
+    lateFeeMinimum: elements.memberLateFeeMinimum.value,
+    lateFeePercentage: elements.memberLateFeePercentage.value,
     startDate: elements.memberStart.value,
+    agreementType: elements.memberAgreementType.value,
+    agreementEndDate: elements.memberAgreementEnd.value || defaultAgreementEndDate(elements.memberStart.value),
+    downPayment: elements.memberDownPayment.value,
+    emailConsent: elements.memberEmailConsent.checked ? "Yes" : "No",
+    textConsent: elements.memberTextConsent.checked ? "Yes" : "No",
+    phoneConsent: elements.memberPhoneConsent.checked ? "Yes" : "No",
     inactive: elements.memberInactive.checked
   });
   saveStore(MSG.memberSaved);
   showToast(MSG.memberSavedToast);
   render();
+}
+
+// ---------------------------------------------------------------------------
+// First Credit Services collection placement
+// ---------------------------------------------------------------------------
+
+function openCollectionPlacement() {
+  const member = selectedMember();
+  if (!member) {
+    return;
+  }
+  if (member.collectionPlacement?.status === "charged_off") {
+    downloadCollectionPlacement(member.collectionPlacement);
+    showToast("추심 파일을 다시 저장했습니다. · Placement spreadsheet saved again.");
+    return;
+  }
+
+  const draft = createCollectionDraft(member, state.store.payments);
+  const values = {
+    collectionFirstName: draft.firstName,
+    collectionLastName: draft.lastName,
+    collectionAddress: draft.address,
+    collectionCity: draft.city,
+    collectionState: draft.state,
+    collectionZip: draft.zip,
+    collectionDob: draft.dob,
+    collectionHomePhone: formatPhone(draft.homePhone),
+    collectionWorkPhone: formatPhone(draft.workPhone),
+    collectionCellPhone: formatPhone(draft.cellPhone),
+    collectionAgreementSign: draft.agreementSignDate,
+    collectionAgreementExpiration: draft.agreementExpirationDate,
+    collectionAgreementType: draft.agreementType,
+    collectionChargeOffDate: draft.chargeOffDate,
+    collectionServiceFees: Number(draft.serviceFees || 0).toFixed(2),
+    collectionDownPayment: draft.downPayment,
+    collectionEmailConsent: draft.emailConsent,
+    collectionTextConsent: draft.textConsent
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    elements[id].value = value ?? "";
+  });
+  elements.collectionFinalized.checked = false;
+  updateCollectionPlacementPreview();
+  elements.collectionDialog.showModal();
+  const firstMissing = elements.collectionForm.querySelector(":invalid");
+  (firstMissing || elements.collectionFirstName).focus();
+}
+
+function readCollectionDraft() {
+  const member = selectedMember();
+  return {
+    ...createCollectionDraft(member, state.store.payments),
+    firstName: elements.collectionFirstName.value.trim(),
+    lastName: elements.collectionLastName.value.trim(),
+    address: elements.collectionAddress.value.trim(),
+    city: elements.collectionCity.value.trim(),
+    state: elements.collectionState.value.trim().toUpperCase(),
+    zip: elements.collectionZip.value.trim(),
+    dob: elements.collectionDob.value,
+    homePhone: elements.collectionHomePhone.value.trim(),
+    workPhone: elements.collectionWorkPhone.value.trim(),
+    cellPhone: elements.collectionCellPhone.value.trim(),
+    agreementSignDate: elements.collectionAgreementSign.value,
+    agreementExpirationDate: elements.collectionAgreementExpiration.value,
+    agreementType: elements.collectionAgreementType.value,
+    chargeOffDate: elements.collectionChargeOffDate.value,
+    serviceFees: Number(elements.collectionServiceFees.value || 0),
+    downPayment: elements.collectionDownPayment.value,
+    emailConsent: elements.collectionEmailConsent.value,
+    textConsent: elements.collectionTextConsent.value,
+    ssn: "",
+    gender: ""
+  };
+}
+
+function updateCollectionPlacementPreview() {
+  const member = selectedMember();
+  if (!member) {
+    return;
+  }
+  const draft = readCollectionDraft();
+  const contract = draft.agreementType === "Contract";
+  elements.collectionAgreementExpiration.disabled = !contract;
+  elements.collectionAgreementExpiration.required = contract;
+  const missing = getCollectionMissingFields(draft, member, state.store.payments);
+  elements.collectionMissing.textContent = missing.length
+    ? `필요한 정보 ${missing.length}개: ${missing.join(" · ")} · ${missing.length} required item${missing.length === 1 ? "" : "s"} remaining`
+    : "모든 필수 정보가 준비되었습니다. · All required placement fields are ready.";
+  elements.collectionMissing.classList.toggle("ready", missing.length === 0);
+
+  let summary = `
+    <div><span>월 회비 · Monthly</span><strong>${formatMoney(member.monthlyAmount)}</strong></div>
+    <div><span>연체료 조건 · Late-fee term</span><strong>${member.lateFeePercentage ?? 5}% or ${formatMoney(member.lateFeeMinimum ?? 5)}</strong></div>`;
+  if (missing.length === 0) {
+    try {
+      const preview = buildCollectionPlacement(member, state.store.payments, draft);
+      summary += `
+        <div><span>미납 원금 · Past due</span><strong>${formatMoney(preview.pastDueAmount)}</strong></div>
+        <div><span>연체료 · Late fees</span><strong>${formatMoney(preview.lateFees)}</strong></div>
+        <div class="total"><span>고정 잔액 · Frozen balance</span><strong>${formatMoney(preview.frozenBalance)}</strong></div>`;
+    } catch {
+      // The missing-field message above remains the source of truth.
+    }
+  }
+  elements.collectionSummary.innerHTML = summary;
+  const ready = missing.length === 0 && elements.collectionFinalized.checked;
+  elements.collectionDownloadButton.disabled = !ready;
+  elements.collectionDownloadEmailButton.disabled = !ready;
+}
+
+function finalizeCollectionPlacement(event, openEmail) {
+  event.preventDefault();
+  const member = selectedMember();
+  if (!member || member.collectionPlacement?.status === "charged_off") {
+    return;
+  }
+  if (!elements.collectionForm.reportValidity()) {
+    return;
+  }
+  const draft = readCollectionDraft();
+  const missing = getCollectionMissingFields(draft, member, state.store.payments);
+  if (missing.length || !elements.collectionFinalized.checked) {
+    updateCollectionPlacementPreview();
+    return;
+  }
+
+  let placement;
+  try {
+    placement = buildCollectionPlacement(member, state.store.payments, draft);
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+  const filename = collectionPlacementFilename(placement);
+  state.store = upsertMember(state.store, {
+    ...member,
+    inactive: true,
+    address: draft.address,
+    city: draft.city,
+    state: draft.state,
+    zip: draft.zip,
+    dob: draft.dob,
+    homePhone: draft.homePhone,
+    workPhone: draft.workPhone,
+    cellPhone: draft.cellPhone,
+    phone: draft.cellPhone,
+    startDate: draft.agreementSignDate,
+    agreementEndDate: draft.agreementExpirationDate || defaultAgreementEndDate(draft.agreementSignDate),
+    agreementType: draft.agreementType,
+    downPayment: draft.downPayment,
+    emailConsent: draft.emailConsent,
+    textConsent: draft.textConsent,
+    collectionInfo: collectionInfoFromDraft(draft),
+    collectionPlacement: placement
+  });
+  saveStore("추심 배치가 저장되었습니다 · Collection placement saved");
+  downloadCollectionPlacement(placement, filename);
+  elements.collectionDialog.close();
+  render();
+  showToast(`First Credit Services 파일 저장됨 · Saved ${filename}`);
+
+  if (openEmail) {
+    const email = firstCreditServicesEmailDraft(placement, filename);
+    window.location.href = `mailto:${email.to}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
+  }
+}
+
+function downloadCollectionPlacement(placement, filename = collectionPlacementFilename(placement)) {
+  const bytes = createFirstCreditServicesWorkbook(placement);
+  downloadBlob(
+    new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    filename
+  );
 }
 
 // ---------------------------------------------------------------------------

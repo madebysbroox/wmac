@@ -83,6 +83,20 @@ test("reminder email includes the collection note only when 2 or more months are
   assert.match(single, /call Master Lee at \(540\) 347-7266/);
 });
 
+test("reminder email describes the member's $10 contract minimum", () => {
+  const member = { name: "Taylor Kim", lateFeeMinimum: 10 };
+  const balance = feeBalance([{ month: "2026-05", dueDate: "2026-05-01", amount: 80, lateFee: 10 }]);
+  const { body } = buildReminderEmail(member, balance);
+  assert.match(body, /late fee of 5% or \$10 \(whichever is greater\)/);
+});
+
+test("reminder email describes the member's saved percentage", () => {
+  const member = { name: "Jordan Lee", lateFeeMinimum: 5, lateFeePercentage: 8 };
+  const balance = feeBalance([{ month: "2026-05", dueDate: "2026-05-01", amount: 200, lateFee: 16 }]);
+  const { body } = buildReminderEmail(member, balance);
+  assert.match(body, /late fee of 8% or \$5 \(whichever is greater\)/);
+});
+
 test("formats months in both languages", () => {
   assert.equal(formatMonthKo("2026-06"), "2026년 6월");
   assert.equal(formatMonthEn("2026-06"), "June 2026");
