@@ -724,12 +724,15 @@ function renderLandscape() {
         <td>${row.dueDay ? `${row.dueDay}일<small lang="en">Day ${row.dueDay}</small>` : "—"}</td>
         <td><span class="matrix-status status-${row.paymentState.level}">${mainStatus.ko}<small lang="en">${mainStatus.en}</small></span>${pending}${setup}</td>
         <td class="money-cell">${row.paymentState.flags.setupNeeded ? "—<small lang=\"en\">Setup needed</small>" : `${formatMoney(row.balance.dueNow)}<small lang="en">${row.paymentState.dueUnpaidMonths.length} due installment${row.paymentState.dueUnpaidMonths.length === 1 ? "" : "s"}</small>`}</td>
-        ${months.map((month, index) => landscapeCellMarkup(row.member.name, cellsByMonth.get(month), index === 0)).join("")}
+        ${months.map((month, index) => landscapeCellMarkup(row.member.id, row.member.name, cellsByMonth.get(month), index === 0)).join("")}
       </tr>
     `;
   }).join("") : `<tr class="landscape-empty-row"><td colspan="18"><strong>이 조건에 맞는 회원이 없습니다.</strong><small lang="en">No members match this filter.</small><button type="button" class="button secondary bi" data-landscape-reset><span lang="ko">전체 보기</span><small lang="en">Show All</small></button></td></tr>`;
   elements.landscapeBody.querySelectorAll("[data-landscape-member]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.landscapeMember));
+  });
+  elements.landscapeBody.querySelectorAll("[data-landscape-review-member]").forEach((button) => {
+    button.addEventListener("click", () => openAttentionReview(button.dataset.landscapeReviewMember));
   });
   elements.landscapeBody.querySelector("[data-landscape-reset]")?.addEventListener("click", () => {
     state.landscapeFilter = "all";
@@ -737,7 +740,7 @@ function renderLandscape() {
   });
 }
 
-function landscapeCellMarkup(memberName, cell, current = false) {
+function landscapeCellMarkup(memberId, memberName, cell, current = false) {
   const details = {
     paid: ["✓", "납부 완료 · Paid"],
     attention: ["!", "확인 필요 · Due now"],
@@ -746,7 +749,11 @@ function landscapeCellMarkup(memberName, cell, current = false) {
     upcoming: ["○", "아직 납부일 전 · Not due yet"],
     not_billable: ["—", "해당 없음 · Not billable"]
   }[cell.state];
-  return `<td class="matrix-cell ${cell.state} ${current ? "current-month-column" : ""}" aria-label="${escapeHtml(memberName)} ${escapeHtml(formatMonthEn(cell.month))}: ${details[1]}"><span aria-hidden="true">${details[0]}</span><span class="sr-only">${details[1]}</span></td>`;
+  const actionable = cell.state === "attention" || cell.state === "behind";
+  const contents = actionable
+    ? `<button type="button" class="matrix-cell-button" data-landscape-review-member="${escapeHtml(memberId)}" aria-label="Review ${escapeHtml(memberName)} ${escapeHtml(formatMonthEn(cell.month))}: ${details[1]}"><span aria-hidden="true">${details[0]}</span><span class="sr-only">${details[1]}</span></button>`
+    : `<span aria-hidden="true">${details[0]}</span><span class="sr-only">${details[1]}</span>`;
+  return `<td class="matrix-cell ${cell.state} ${actionable ? "actionable" : ""} ${current ? "current-month-column" : ""}" aria-label="${escapeHtml(memberName)} ${escapeHtml(formatMonthEn(cell.month))}: ${details[1]}">${contents}</td>`;
 }
 
 function renderSquare() {

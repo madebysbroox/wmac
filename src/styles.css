@@ -2924,6 +2924,28 @@ body {
   font-weight: 900;
 }
 
+.matrix-cell.actionable {
+  padding: 0;
+}
+
+.matrix-cell-button {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.matrix-cell-button:hover,
+.matrix-cell-button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: -3px;
+}
+
 .pending-flag,
 .setup-flag {
   display: block;
