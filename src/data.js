@@ -352,15 +352,17 @@ export function squarePaymentMonth(squarePayment) {
   return stagedPaymentMonth(squarePayment);
 }
 
-export function nextUnpaidTuitionMonth(member, payments, today = new Date()) {
-  const unpaidMonths = getUnpaidMonths(member, payments, today);
+export function nextUnpaidTuitionMonth(member, payments, today = new Date(), members = []) {
+  const unpaidMonths = getUnpaidMonths(member, payments, today, members);
   return unpaidMonths[0] || monthKey(today);
 }
 
-export function pendingStagedPaymentsForMember(providerPayments, member) {
+export function pendingStagedPaymentsForMember(providerPayments, member, members = []) {
+  const payer = getResponsibleParty(member, members) || member;
+  const accountIds = members.length ? accountMembers(members, payer).map((person) => person.id) : [member.id];
   return (providerPayments || []).filter((payment) =>
     payment.status === "pending" &&
-    (payment.memberId === member.id || payment.suggestedMemberId === member.id)
+    (accountIds.includes(payment.memberId) || accountIds.includes(payment.suggestedMemberId))
   );
 }
 
@@ -817,35 +819,74 @@ export function migrateStore(store) {
   };
 }
 
-export function getMemberPaymentState(member, payments, today = new Date(), pendingPayments = []) {
-  const currentMonth = monthKey(today);
-  if (member.participant === false || member.inactive) {
-    return {
-      level: "paid",
-      label: member.inactive ? "Inactive" : "Non-participant",
-      currentMonth,
-      lastPaidMonth: "",
-      recentMonths: [],
-      billableMonths: [],
-      paidMonths: new Set(),
-      unpaidMonths: [],
-      dueUnpaidMonths: [],
-      upcomingUnpaidMonths: [],
-      months: [],
-      oldestDaysLate: 0,
-      flags: { pending: false, setupNeeded: false }
-    };
+function notBilledPaymentState(member, currentMonth, label = "Covered by payer") {
+  return {
+    level: "paid",
+    label: member?.inactive ? "Inactive" : label,
+    currentMonth,
+    lastPaidMonth: "",
+    recentMonths: [],
+    billableMonths: [],
+    paidMonths: new Set(),
+    unpaidMonths: [],
+    dueUnpaidMonths: [],
+    upcomingUnpaidMonths: [],
+    months: [],
+    oldestDaysLate: 0,
+    flags: { pending: false, setupNeeded: false }
+  };
+}
+
+function billingAccount(member, members = []) {
+  const allMembers = Array.isArray(members) ? members : [];
+  if (!allMembers.length) {
+    return { payer: member, billingMember: member, accountMemberIds: [member?.id], isPayer: true };
   }
-  const firstDueMonth = getFirstDueMonth(member, currentMonth);
+  const payer = getResponsibleParty(member, allMembers) || member;
+  const isPayer = payer?.id === member?.id;
+  const contributors = accountMembers(allMembers, payer).filter(isActiveParticipant);
+  const startDates = contributors.map((person) => person.startDate).filter(isIsoDate).sort();
+  const monthlyAmount = contributors.reduce((sum, person) => sum + Number(person.monthlyAmount || 0), 0);
+  return {
+    payer,
+    isPayer,
+    accountMemberIds: accountMembers(allMembers, payer).map((person) => person.id),
+    billingMember: {
+      ...payer,
+      participant: contributors.length > 0,
+      inactive: false,
+      monthlyAmount,
+      startDate: startDates[0] || ""
+    }
+  };
+}
+
+export function getMemberPaymentState(member, payments, today = new Date(), pendingPayments = [], members = []) {
+  const currentMonth = monthKey(today);
+  const account = billingAccount(member, members);
+  if (!account.isPayer) {
+    return notBilledPaymentState(member, currentMonth);
+  }
+  const billingMember = account.billingMember;
+  if (billingMember.participant === false || billingMember.inactive) {
+    return notBilledPaymentState(billingMember, currentMonth, "Non-participant");
+  }
+  const firstDueMonth = getFirstDueMonth(billingMember, currentMonth);
   const billableMonths = monthsInRange(firstDueMonth, currentMonth);
-  const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
+  const paidByMonth = new Map();
+  payments.filter((payment) => account.accountMemberIds.includes(payment.memberId) && isTuitionPayment(payment)).forEach((payment) => {
+    paidByMonth.set(payment.month, (paidByMonth.get(payment.month) || 0) + Number(payment.amount || 0));
+  });
+  const paidMonths = new Set([...paidByMonth]
+    .filter(([, amount]) => amount + 0.005 >= Number(billingMember.monthlyAmount || 0))
+    .map(([month]) => month));
   const pendingMonths = new Set((pendingPayments || [])
     .filter((payment) => payment.status === "pending" || payment.status === "needs_match")
     .map((payment) => normalizeMonth(payment.paymentMonth || payment.month || payment.paidAt))
     .filter(Boolean));
   const todayUtc = utcDateValue(today);
   const months = billableMonths.map((month) => {
-    const dueDate = dueDateForMonth(member, month);
+    const dueDate = dueDateForMonth(billingMember, month);
     const daysLate = Math.floor((todayUtc - utcDateValue(dueDate)) / 86400000);
     const paid = paidMonths.has(month);
     const pending = !paid && pendingMonths.has(month);
@@ -876,7 +917,7 @@ export function getMemberPaymentState(member, payments, today = new Date(), pend
     level = "watch";
     label = "Needs attention";
   }
-  const setupNeeded = !isIsoDate(member.startDate) || Number(member.monthlyAmount || 0) <= 0;
+  const setupNeeded = !isIsoDate(billingMember.startDate) || Number(billingMember.monthlyAmount || 0) <= 0;
   if (setupNeeded) {
     level = "watch";
     label = "Needs information";
@@ -902,18 +943,19 @@ export function getMemberPaymentState(member, payments, today = new Date(), pend
   };
 }
 
-export function getMemberStatus(member, payments, today = new Date()) {
-  return getMemberPaymentState(member, payments, today);
+export function getMemberStatus(member, payments, today = new Date(), members = []) {
+  return getMemberPaymentState(member, payments, today, [], members);
 }
 
-export function getUnpaidMonths(member, payments, today = new Date()) {
-  return getMemberPaymentState(member, payments, today).unpaidMonths;
+export function getUnpaidMonths(member, payments, today = new Date(), members = []) {
+  return getMemberPaymentState(member, payments, today, [], members).unpaidMonths;
 }
 
-export function getMemberBalance(member, payments, today = new Date()) {
-  const state = getMemberPaymentState(member, payments, today);
+export function getMemberBalance(member, payments, today = new Date(), members = []) {
+  const account = billingAccount(member, members);
+  const state = getMemberPaymentState(member, payments, today, [], members);
   const unpaidMonths = state.unpaidMonths;
-  const monthlyAmount = Number(member.monthlyAmount || 0);
+  const monthlyAmount = Number(account.billingMember?.monthlyAmount || 0);
   return {
     unpaidMonths,
     dueUnpaidMonths: state.dueUnpaidMonths.map((month) => month.month),
@@ -926,11 +968,11 @@ export function getMemberBalance(member, payments, today = new Date()) {
 
 export function getAttentionRows(store, pendingPayments = [], today = new Date()) {
   return store.members
-    .filter(isActiveParticipant)
+    .filter((member) => isBillingPayer(member, store.members))
     .map((member) => {
-      const pending = pendingPaymentsFor(member, pendingPayments);
-      const paymentState = getMemberPaymentState(member, store.payments, today, pending);
-      const balance = getMemberBalance(member, store.payments, today);
+      const pending = pendingPaymentsFor(member, pendingPayments, store.members);
+      const paymentState = getMemberPaymentState(member, store.payments, today, pending, store.members);
+      const balance = getMemberBalance(member, store.payments, today, store.members);
       return { member, paymentState, balance, pending };
     })
     .filter((row) => row.paymentState.dueUnpaidMonths.length > 0 && !row.paymentState.flags.setupNeeded)
@@ -941,9 +983,9 @@ export function getLandscapeRows(store, pendingPayments = [], today = new Date()
   const currentMonth = monthKey(today);
   const firstMonth = shiftMonth(currentMonth, -(Math.max(1, monthCount) - 1));
   const visibleMonths = monthsInRange(firstMonth, currentMonth);
-  const rows = store.members.filter(isActiveParticipant).map((member) => {
-    const pending = pendingPaymentsFor(member, pendingPayments);
-    const paymentState = getMemberPaymentState(member, store.payments, today, pending);
+  const rows = store.members.filter((member) => isBillingPayer(member, store.members)).map((member) => {
+    const pending = pendingPaymentsFor(member, pendingPayments, store.members);
+    const paymentState = getMemberPaymentState(member, store.payments, today, pending, store.members);
     const stateByMonth = new Map(paymentState.months.map((month) => [month.month, month]));
     const cells = visibleMonths.map((month) => ({
       month,
@@ -952,9 +994,9 @@ export function getLandscapeRows(store, pendingPayments = [], today = new Date()
     return {
       member,
       paymentState,
-      balance: getMemberBalance(member, store.payments, today),
+      balance: getMemberBalance(member, store.payments, today, store.members),
       certification: primaryCertificationLabel(member),
-      dueDay: isIsoDate(member.startDate) ? Number(member.startDate.split("-")[2]) : null,
+      dueDay: Number(paymentState.months[0]?.dueDate?.split("-")[2]) || (isIsoDate(member.startDate) ? Number(member.startDate.split("-")[2]) : null),
       cells
     };
   });
@@ -962,26 +1004,28 @@ export function getLandscapeRows(store, pendingPayments = [], today = new Date()
 }
 
 export function reconcileDuePayments(store, member, stillMissingMonths = [], today = new Date()) {
+  const payer = getResponsibleParty(member, store.members) || member;
   const keepMissing = new Set(stillMissingMonths.map(normalizeMonth).filter(Boolean));
-  const dueMonths = getMemberPaymentState(member, store.payments, today).dueUnpaidMonths.map((month) => month.month);
+  const dueMonths = getMemberPaymentState(payer, store.payments, today, [], store.members).dueUnpaidMonths.map((month) => month.month);
+  const amount = getMemberBalance(payer, store.payments, today, store.members).monthlyAmount;
   const monthsToPay = dueMonths.filter((month) => !keepMissing.has(month));
   const batchId = cryptoId("batch");
   let nextStore = store;
   const paymentIds = [];
   monthsToPay.forEach((month) => {
     nextStore = addPayment(nextStore, {
-      memberId: member.id,
+      memberId: payer.id,
       month,
-      amount: member.monthlyAmount,
+      amount,
       source: "attention-review",
       batchId
     });
-    const payment = nextStore.payments.find((item) => item.memberId === member.id && item.month === month && item.batchId === batchId);
+    const payment = nextStore.payments.find((item) => item.memberId === payer.id && item.month === month && item.batchId === batchId);
     if (payment) {
       paymentIds.push(payment.id);
     }
   });
-  return { store: nextStore, batch: { id: batchId, memberId: member.id, months: monthsToPay, paymentIds } };
+  return { store: nextStore, batch: { id: batchId, memberId: payer.id, months: monthsToPay, paymentIds } };
 }
 
 export function undoPaymentBatch(store, batch) {
@@ -1010,14 +1054,15 @@ export function getDashboardSummary(store, today = new Date()) {
     .filter((payment) => String(payment.month || "").startsWith(`${currentYear}-`))
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
-  const rows = activeMembers.map((member) => {
-    const status = getMemberStatus(member, payments, today);
-    const balance = getMemberBalance(member, payments, today);
-    const lateFeeBalance = getLateFeeBalance(member, payments, today);
+  const billingMembers = store.members.filter((member) => isBillingPayer(member, store.members));
+  const rows = billingMembers.map((member) => {
+    const status = getMemberStatus(member, payments, today, store.members);
+    const balance = getMemberBalance(member, payments, today, store.members);
+    const lateFeeBalance = getLateFeeBalance(member, payments, today, store.members);
     const overdueLines = lateFeeBalance.lines.filter((line) => line.daysLate > 0);
     const tenDaysLateLines = lateFeeBalance.lines.filter((line) => line.daysLate >= LATE_FEE_GRACE_DAYS);
     const olderTenDaysLateLines = tenDaysLateLines.filter((line) => line.month < currentMonth);
-    const paidMonths = new Set(payments.filter((payment) => payment.memberId === member.id && isTuitionPayment(payment)).map((payment) => payment.month));
+    const paidMonths = status.paidMonths;
     const currentMonthUnpaid = balance.unpaidMonths.includes(currentMonth) && !paidMonths.has(currentMonth);
     const currentMonthLine = lateFeeBalance.lines.find((line) => line.month === currentMonth);
     const currentMonthAlreadyLate = Number(currentMonthLine?.daysLate || 0) >= LATE_FEE_GRACE_DAYS;
@@ -1028,7 +1073,7 @@ export function getDashboardSummary(store, today = new Date()) {
       balance,
       overdueDue: overdueLines.reduce((sum, line) => sum + line.amount, 0),
       tenDaysLateDue: tenDaysLateLines.reduce((sum, line) => sum + line.amount, 0),
-      currentMonthUnpaidAmount: currentMonthUnpaid && !currentMonthAlreadyLate ? Number(member.monthlyAmount || 0) : 0,
+      currentMonthUnpaidAmount: currentMonthUnpaid && !currentMonthAlreadyLate ? balance.monthlyAmount : 0,
       hasDelinquentPayment
     };
   });
@@ -1071,9 +1116,10 @@ export function getLateFeePercentage(member) {
   return normalizeLateFeePercentage(member?.lateFeePercentage);
 }
 
-export function getLateFeeBalance(member, payments, today = new Date()) {
-  const paymentState = getMemberPaymentState(member, payments, today);
-  const monthlyAmount = Number(member.monthlyAmount || 0);
+export function getLateFeeBalance(member, payments, today = new Date(), members = []) {
+  const account = billingAccount(member, members);
+  const paymentState = getMemberPaymentState(member, payments, today, [], members);
+  const monthlyAmount = Number(account.billingMember?.monthlyAmount || 0);
   const lateFeeMinimum = getLateFeeMinimum(member);
   const lateFeePercentage = getLateFeePercentage(member);
   const lines = paymentState.months.filter((month) => !month.paid).map((monthState) => {
@@ -1161,12 +1207,13 @@ export function exportDailyPaymentStatusRows(store, today = new Date()) {
   return sortMembersByAccount(store?.members || [])
     .map((member) => {
       const responsibleParty = getResponsibleParty(member, store?.members || []);
+      const isPayer = (responsibleParty?.id || member.id) === member.id;
       const accountHolder = member.responsiblePartyId
         ? responsibleParty?.name || member.name || ""
         : member.parentName || responsibleParty?.name || member.name || "";
-      const paymentState = getMemberPaymentState(member, store?.payments || [], today);
+      const paymentState = getMemberPaymentState(member, store?.payments || [], today, [], store?.members || []);
       const statusByMonth = new Map(paymentState.months.map((month) => [month.month, month.state]));
-      const balance = getMemberBalance(member, store?.payments || [], today);
+      const balance = getMemberBalance(member, store?.payments || [], today, store?.members || []);
       const row = {
         "Report Date": reportDate,
         "Account Holder / Contract Signer": accountHolder,
@@ -1174,13 +1221,13 @@ export function exportDailyPaymentStatusRows(store, today = new Date()) {
         "Member Name": member.name || "",
         "Member ID": member.externalId || member.id || "",
         Household: member.householdName || "",
-        "Current Status": dailyAccountStatus(member, paymentState),
-        "Monthly Amount": moneyText(member.monthlyAmount),
+        "Current Status": dailyAccountStatus(member, paymentState, isPayer),
+        "Monthly Amount": moneyText(balance.monthlyAmount),
         "Amount Due Now": moneyText(balance.dueNow)
       };
 
       monthLabels.forEach(({ key, label }) => {
-        row[`${label} ${year}`] = dailyMonthStatus(member, key, reportMonth, statusByMonth);
+        row[`${label} ${year}`] = dailyMonthStatus(member, key, reportMonth, statusByMonth, isPayer);
       });
       return row;
     });
@@ -1402,6 +1449,15 @@ export function accountMembers(members, member) {
   ));
 }
 
+// A household's payment schedule belongs exclusively to its designated payer.
+// That payer may be a non-participating parent; the active participants linked
+// to them determine whether the account is billable and what it totals.
+function isBillingPayer(member, members = []) {
+  if (!member || member.inactive) return false;
+  const payer = getResponsibleParty(member, members) || member;
+  return payer.id === member.id && accountMembers(members, payer).some(isActiveParticipant);
+}
+
 function linkResponsibleParties(members) {
   const knownIds = new Set((members || []).map((member) => member.id));
   return (members || []).map((member) => {
@@ -1573,9 +1629,11 @@ function isIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 
-function pendingPaymentsFor(member, pendingPayments) {
+function pendingPaymentsFor(member, pendingPayments, members = []) {
+  const payer = getResponsibleParty(member, members) || member;
+  const accountIds = members.length ? accountMembers(members, payer).map((person) => person.id) : [member.id];
   return (pendingPayments || []).filter((payment) =>
-    payment.memberId === member.id || payment.suggestedMemberId === member.id
+    accountIds.includes(payment.memberId) || accountIds.includes(payment.suggestedMemberId)
   );
 }
 
@@ -1675,20 +1733,19 @@ function cryptoId(prefix) {
   return `${prefix}-${random}`;
 }
 
-function dailyAccountStatus(member, paymentState) {
+function dailyAccountStatus(member, paymentState, isPayer = true) {
   if (member.collectionPlacement?.status === "charged_off") return "Placed for collection";
   if (member.inactive) return "Inactive";
-  if (member.participant === false) return "Contact only";
+  if (!isPayer) return "Covered by payer";
+  if (member.participant === false && paymentState.flags.setupNeeded) return "Contact only";
   if (paymentState.flags.setupNeeded) return "Needs setup";
   return paymentState.label;
 }
 
-function dailyMonthStatus(member, month, reportMonth, statusByMonth) {
+function dailyMonthStatus(member, month, reportMonth, statusByMonth, isPayer = true) {
   if (member.collectionPlacement?.status === "charged_off") return "Collection";
   if (member.inactive) return "Inactive";
-  if (member.participant === false) return "Contact only";
-  if (!isIsoDate(member.startDate) || Number(member.monthlyAmount || 0) <= 0) return "Needs setup";
-  if (month < member.startDate.slice(0, 7)) return "Not started";
+  if (!isPayer) return "Covered by payer";
   if (month > reportMonth) return "Future";
   const state = statusByMonth.get(month);
   return {

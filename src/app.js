@@ -613,13 +613,16 @@ function renderGlobalSearch() {
   const members = searchMembers(state.store.members, query).slice(0, 8);
   elements.globalSearchResults.innerHTML = members.length
     ? members.map((member, index) => {
-      const status = member.participant === false ? null : displayedMemberStatus(member);
+      const payer = getResponsibleParty(member, state.store.members) || member;
+      const isPayer = payer.id === member.id;
+      const status = isPayer ? displayedMemberStatus(member) : null;
       const context = member.inactive
         ? "쉬는 회원 · Inactive"
-        : member.participant === false
+        : !isPayer
+          ? `${payer.name} 계정에서 납부 관리 · Payer account`
+          : member.participant === false && !accountMembers(state.store.members, payer).some(isActiveParticipant)
           ? "가족 연락처 · Family contact"
           : `${STATUS_LABELS[status.level].ko} · ${STATUS_LABELS[status.level].en}`;
-      const payer = getResponsibleParty(member, state.store.members) || member;
       const accountLabel = payer.id === member.id
         ? member.householdName || "개인 계정 · Individual account"
         : `${payer.name} · Payer account`;
@@ -962,9 +965,10 @@ function renderMemberList() {
       heading.textContent = `계정 · Account: ${payer.name || "Unnamed member"}`;
       elements.memberList.append(heading);
     }
+    const isPayer = member.id === payer.id;
     const status = displayedMemberStatus(member);
     const renewal = getAgreementExpirationStatus(member);
-    const contactOnly = member.participant === false;
+    const contactOnly = member.participant === false && !isPayer;
     const button = document.createElement("button");
     button.type = "button";
     button.className = `member-item ${member.id === state.selectedId ? "active" : ""} ${member.id !== payer.id ? "account-dependent" : "account-payer"} ${renewal.level === "expiring" || renewal.level === "expired" ? `contract-${renewal.level}` : ""}`;
@@ -973,9 +977,14 @@ function renderMemberList() {
       : renewal.level === "expiring"
       ? ` · 계약 ${renewal.daysUntil}일 남음 · Contract ${renewal.daysUntil}d`
       : "";
+    const paymentSummary = !isPayer
+      ? `${payer.name} 납부자 계정 · Covered by payer`
+      : contactOnly
+        ? "비참가 연락처 · Contact only"
+        : `${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}${renewalLabel}`;
     button.innerHTML = `
       <strong><span class="dot ${contactOnly ? "contact" : status.level}"></span>${escapeHtml(member.name)}${member.id === payer.id ? " <small class=\"account-owner-label\">Payer</small>" : ""}</strong>
-      <span>${contactOnly ? "비참가 연락처 · Contact only" : `${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}${renewalLabel}`}</span>
+      <span>${escapeHtml(paymentSummary)}</span>
     `;
     button.addEventListener("click", () => selectMember(member.id));
     elements.memberList.append(button);
@@ -992,23 +1001,27 @@ function renderDetail() {
 
   const collectionPlacement = member.collectionPlacement?.status === "charged_off" ? member.collectionPlacement : null;
   const collectionPlaced = Boolean(collectionPlacement);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  const isPayer = payer.id === member.id;
   const status = displayedMemberStatus(member);
   const renewal = getAgreementExpirationStatus(member);
-  const balance = getMemberBalance(member, state.store.payments);
+  const balance = getMemberBalance(member, state.store.payments, new Date(), state.store.members);
   elements.detailInitials.textContent = initialsFor(member.name);
   elements.detailName.textContent = member.name;
   elements.detailContact.textContent = [formatPhone(member.phone), member.email, member.parentName && `보호자 ${member.parentName}`]
     .filter(Boolean)
     .join("  ");
-  const dueDay = Number(member.startDate?.split("-")[2]) || 1;
+  const dueDay = Number(status.months[0]?.dueDate?.split("-")[2]) || Number(member.startDate?.split("-")[2]) || 1;
   elements.detailDueDay.textContent = collectionPlaced
     ? `Charge-off: ${collectionPlacement.chargeOffDate} · Frozen balance ${formatMoney(collectionPlacement.frozenBalance)}`
-    : member.participant === false
-    ? "회비 일정 없음 · Contact only - no tuition schedule"
+    : !isPayer
+    ? `${payer.name} 계정에서 납부 관리 · Payments are managed on ${payer.name}'s payer account`
     : `납부일: 매월 ${dueDay}일 · Payment due the ${ordinalEn(dueDay)} of each month`;
   elements.statusBadge.innerHTML = collectionPlaced
     ? `${STATUS_LABELS.collection.ko}<small lang="en">${STATUS_LABELS.collection.en}</small>`
-    : member.participant === false
+    : !isPayer
+    ? `납부자 계정<small lang="en">Covered by ${escapeHtml(payer.name)}</small>`
+    : member.participant === false && balance.monthlyAmount <= 0
     ? `비참가<small lang="en">Contact only</small>`
     : `${STATUS_LABELS[status.level].ko}<small lang="en">${STATUS_LABELS[status.level].en}</small>${status.flags?.pending ? `<small class="status-pending-note">카드 검토 중 · Card pending</small>` : ""}${status.flags?.setupNeeded ? `<small class="status-setup-note">정보 확인 필요 · Setup needed</small>` : ""}`;
   elements.statusBadge.className = `status-badge status-${status.level}`;
@@ -1025,16 +1038,16 @@ function renderDetail() {
   renderProgressCard(member);
 
   renderQuickPay(member, status);
-  elements.quickPayButton.disabled = collectionPlaced || elements.quickPayButton.disabled;
-  elements.catchUpButton.disabled = collectionPlaced || member.participant === false || balance.dueUnpaidMonths.length === 0 || Number(member.monthlyAmount || 0) <= 0;
-  elements.undoCatchUpButton.classList.toggle("hidden", state.lastPaymentBatch?.memberId !== member.id);
+  elements.quickPayButton.disabled = !isPayer || collectionPlaced || elements.quickPayButton.disabled;
+  elements.catchUpButton.disabled = !isPayer || collectionPlaced || balance.dueUnpaidMonths.length === 0 || balance.monthlyAmount <= 0;
+  elements.undoCatchUpButton.classList.toggle("hidden", state.lastPaymentBatch?.memberId !== payer.id);
 
   elements.monthStrip.innerHTML = "";
   status.billableMonths.forEach((monthKey) => {
     const month = { month: monthKey, paid: status.paidMonths.has(monthKey) };
     const item = document.createElement("button");
     item.type = "button";
-    item.disabled = collectionPlaced || Number(member.monthlyAmount || 0) <= 0;
+    item.disabled = !isPayer || collectionPlaced || balance.monthlyAmount <= 0;
     item.className = `month-box ${month.paid ? "paid" : "unpaid"}`;
     item.dataset.monthToggle = month.month;
     item.title = month.paid ? "Mark this month unpaid" : "Mark this month paid";
@@ -1054,10 +1067,10 @@ function renderDetail() {
   elements.invoiceSummary.textContent = balance.unpaidMonths.length
     ? `미납 ${balance.unpaidMonths.length}개월 · ${formatMoney(balance.totalDue)} (${balance.unpaidMonths.length} unpaid month${balance.unpaidMonths.length === 1 ? "" : "s"})`
     : MSG.noUnpaidBalance;
-  elements.invoiceButton.disabled = collectionPlaced || balance.totalDue <= 0;
-  renderEmailButton(member, balance);
-  elements.emailButton.disabled = collectionPlaced || elements.emailButton.disabled;
-  elements.collectionButton.disabled = !collectionPlaced && (status.level !== "late" || balance.dueNow <= 0 || Number(member.monthlyAmount || 0) <= 0);
+  elements.invoiceButton.disabled = !isPayer || collectionPlaced || balance.totalDue <= 0;
+  const emailReady = renderEmailButton(member, balance);
+  elements.emailButton.disabled = !isPayer || collectionPlaced || !emailReady;
+  elements.collectionButton.disabled = !isPayer || (!collectionPlaced && (status.level !== "late" || balance.dueNow <= 0 || balance.monthlyAmount <= 0));
   elements.collectionButton.title = !collectionPlaced && status.level !== "late"
     ? "회원이 미납 상태일 때 사용할 수 있습니다. · Available when the member is behind on payments."
     : "";
@@ -1262,16 +1275,22 @@ function renderEmailButton(member, balance) {
   const ready = balance.totalDue > 0;
   elements.emailButton.classList.toggle("disabled", !ready);
   elements.emailButton.setAttribute("aria-disabled", String(!ready));
+  return ready;
 }
 
 function renderQuickPay(member, status) {
   const button = elements.quickPayButton;
-  const amount = Number(member.monthlyAmount || 0);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  const isPayer = payer.id === member.id;
+  const amount = getMemberBalance(member, state.store.payments, new Date(), state.store.members).monthlyAmount;
   const paidThisMonth = status.paidMonths.has(status.currentMonth);
 
   button.classList.toggle("done", paidThisMonth);
   button.classList.toggle("undo", paidThisMonth);
-  if (member.participant === false) {
+  if (!isPayer) {
+    button.disabled = true;
+    button.innerHTML = `<span lang="ko">${escapeHtml(payer.name)} 납부자 계정</span><small lang="en">Payments are recorded on the payer account</small>`;
+  } else if (member.participant === false && amount <= 0) {
     button.disabled = true;
     button.innerHTML = `<span lang="ko">비참가 연락처</span><small lang="en">Contact only - no tuition due</small>`;
   } else if (paidThisMonth) {
@@ -1454,11 +1473,14 @@ function initialsFor(name) {
 
 function memberRows() {
   return state.store.members
-    .filter(isActiveParticipant)
+    .filter((member) => {
+      const payer = getResponsibleParty(member, state.store.members) || member;
+      return payer.id === member.id && !member.inactive && accountMembers(state.store.members, payer).some(isActiveParticipant);
+    })
     .map((member) => ({
       member,
       status: displayedMemberStatus(member),
-      balance: getMemberBalance(member, state.store.payments)
+      balance: getMemberBalance(member, state.store.payments, new Date(), state.store.members)
     }))
     .sort((a, b) => a.member.name.localeCompare(b.member.name));
 }
@@ -1477,8 +1499,8 @@ function statusCounts(rows = memberRows()) {
 }
 
 function displayedMemberStatus(member) {
-  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
-  const status = getMemberPaymentState(member, state.store.payments, new Date(), pending);
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member, state.store.members);
+  const status = getMemberPaymentState(member, state.store.payments, new Date(), pending, state.store.members);
   if (member.collectionPlacement?.status === "charged_off") {
     return { ...status, level: "collection", label: "Placed for collection" };
   }
@@ -1546,7 +1568,7 @@ function stagedPaymentView(payment) {
   ].filter(Boolean).join(" · ");
   const statusLabel = payment.status === "needs_match" ? "회원 선택 필요 · Needs match" : stagedStatusLabel(payment.status);
   const member = state.store.members.find((item) => item.id === selectedMemberId);
-  const recommendedMonth = member ? nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment)) : "";
+  const recommendedMonth = member ? nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment), state.store.members) : "";
   const isSelected = payment.id === state.selectedStagedId;
 
   return {
@@ -1970,7 +1992,7 @@ function setStagedPaymentMember(paymentId, memberId) {
       return payment;
     }
     const member = state.store.members.find((item) => item.id === memberId);
-    const nextMonth = member ? nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment)) : payment.paymentMonth;
+    const nextMonth = member ? nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment), state.store.members) : payment.paymentMonth;
     return {
       ...payment,
       memberId,
@@ -1999,7 +2021,7 @@ function setStagedPaymentNextOwedMonth(paymentId) {
     const memberId = payment.memberId || payment.suggestedMemberId;
     const member = state.store.members.find((item) => item.id === memberId);
     return member
-      ? { ...payment, paymentMonth: nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment)) }
+      ? { ...payment, paymentMonth: nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment), state.store.members) }
       : payment;
   });
   render();
@@ -2032,8 +2054,9 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     showToast("추심 이관 후에는 카드 결제를 적용할 수 없습니다. · Card payments cannot change a charged-off balance.");
     return;
   }
+  const payer = getResponsibleParty(member, state.store.members) || member;
   const month = category === "tuition" && !payment.paymentMonth
-    ? nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment))
+    ? nextUnpaidTuitionMonth(member, state.store.payments, dateForPayment(payment), state.store.members)
     : stagedPaymentMonth(payment);
   if (!month) {
     showToast("납부 월을 먼저 선택하세요. · Choose a payment month first.");
@@ -2046,7 +2069,7 @@ async function approveStagedPayment(paymentId, category = "tuition") {
   const beforePayments = state.store.payments;
   const beforeIds = new Set(state.store.payments.map((item) => item.id));
   const nextStore = addPayment(state.store, {
-    memberId: member.id,
+    memberId: category === "tuition" ? payer.id : member.id,
     month,
     amount,
     paidAt: payment.paidAt,
@@ -2060,8 +2083,8 @@ async function approveStagedPayment(paymentId, category = "tuition") {
   });
   const statusSaved = await saveStagedStatus(payment.id, {
     status: "approved",
-    memberId: member.id,
-    suggestedMemberId: member.id,
+    memberId: category === "tuition" ? payer.id : member.id,
+    suggestedMemberId: category === "tuition" ? payer.id : member.id,
     paymentMonth: month,
     paymentCategory: category,
     reviewNote: payment.reviewNote || ""
@@ -2513,8 +2536,13 @@ function quickPayCurrentMonth() {
   if (!member || member.collectionPlacement?.status === "charged_off") {
     return;
   }
-  const status = getMemberStatus(member, state.store.payments);
-  const amount = Number(member.monthlyAmount || 0);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`납부는 ${payer.name} 계정에서 관리합니다. · Record payments on the payer account.`);
+    return;
+  }
+  const status = getMemberStatus(member, state.store.payments, new Date(), state.store.members);
+  const amount = getMemberBalance(member, state.store.payments, new Date(), state.store.members).monthlyAmount;
   if (status.paidMonths.has(status.currentMonth)) {
     markMonthUnpaid(status.currentMonth);
     return;
@@ -2531,8 +2559,13 @@ function catchUpMemberPayments() {
     return;
   }
 
-  const balance = getMemberBalance(member, state.store.payments);
-  if (!balance.dueUnpaidMonths.length || Number(member.monthlyAmount || 0) <= 0) {
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`납부는 ${payer.name} 계정에서 관리합니다. · Record payments on the payer account.`);
+    return;
+  }
+  const balance = getMemberBalance(member, state.store.payments, new Date(), state.store.members);
+  if (!balance.dueUnpaidMonths.length || balance.monthlyAmount <= 0) {
     return;
   }
 
@@ -2618,16 +2651,16 @@ function renderAttentionReview() {
   }
 
   [elements.attentionAllPaid, elements.attentionKeepAsIs, elements.attentionExceptButton].forEach((button) => button.classList.remove("hidden"));
-  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
-  const paymentState = getMemberPaymentState(member, state.store.payments, new Date(), pending);
-  const balance = getMemberBalance(member, state.store.payments);
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member, state.store.members);
+  const paymentState = getMemberPaymentState(member, state.store.payments, new Date(), pending, state.store.members);
+  const balance = getMemberBalance(member, state.store.payments, new Date(), state.store.members);
   const certifications = normalizeMemberCertifications(member);
   elements.attentionReviewProgress.textContent = `${review.index + 1} / ${review.memberIds.length}`;
   elements.attentionReviewName.textContent = member.name;
   elements.attentionReviewContext.textContent = `${member.householdName || "개인 회원"} · ${paymentState.oldestDaysLate === 0 ? "오늘 납부일 · Due today" : `${paymentState.oldestDaysLate}일 지남 · ${paymentState.oldestDaysLate} days late`}`;
   elements.attentionReviewFacts.innerHTML = `
     <div><small>자격 · Certification</small><strong>${escapeHtml(certifications.tae_kwon_do || certifications.muay_thai || certifications.legacyLabel || "미설정 · Not set")}</strong></div>
-    <div><small>납부일 · Due day</small><strong>매월 ${Number(member.startDate?.split("-")[2]) || 1}일</strong></div>
+    <div><small>납부일 · Due day</small><strong>매월 ${Number(paymentState.months[0]?.dueDate?.split("-")[2]) || Number(member.startDate?.split("-")[2]) || 1}일</strong></div>
     <div><small>현재 미납액 · Balance</small><strong>${formatMoney(balance.dueNow)}</strong></div>
   `;
   const visibleMonths = review.visibleMonths[member.id] || paymentState.dueUnpaidMonths.map((month) => month.month);
@@ -2652,14 +2685,14 @@ function renderAttentionReview() {
       <span><strong>${formatMonthKo(month.month)}</strong><small lang="en">${formatMonthEn(month.month)} — ${month.pending ? "Card review pending" : "Still missing"}</small></span>
     </label>
   `).join("");
-  const canChange = Number(member.monthlyAmount || 0) > 0 && paymentState.dueUnpaidMonths.length > 0;
+  const canChange = balance.monthlyAmount > 0 && paymentState.dueUnpaidMonths.length > 0;
   elements.attentionAllPaid.disabled = !canChange;
   elements.attentionSaveExceptions.disabled = !canChange;
 }
 
 function pendingReviewMonths(member) {
-  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
-  return getMemberPaymentState(member, state.store.payments, new Date(), pending)
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member, state.store.members);
+  return getMemberPaymentState(member, state.store.payments, new Date(), pending, state.store.members)
     .dueUnpaidMonths
     .filter((month) => month.pending)
     .map((month) => month.month);
@@ -2686,21 +2719,24 @@ function markAttentionMemberPaid() {
 
 function toggleAttentionMonthPaid(month) {
   const member = currentAttentionMember();
-  if (!member || !month || Number(member.monthlyAmount || 0) <= 0) {
+  if (!member || !month) {
     return;
   }
-  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
-  const paymentState = getMemberPaymentState(member, state.store.payments, new Date(), pending);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  const amount = getMemberBalance(member, state.store.payments, new Date(), state.store.members).monthlyAmount;
+  if (payer.id !== member.id || amount <= 0) return;
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member, state.store.members);
+  const paymentState = getMemberPaymentState(member, state.store.payments, new Date(), pending, state.store.members);
   if (paymentState.paidMonths.has(month)) {
     const removed = state.store.payments.filter((payment) =>
-      payment.memberId === member.id && payment.month === month && payment.category !== "one-off"
+      payment.memberId === payer.id && payment.month === month && payment.category !== "one-off"
     );
-    state.store = removePayment(state.store, member.id, month);
+    state.store = removePayment(state.store, payer.id, month);
     const activityId = logRemovedPayments(member, removed, {
       ko: "검토에서 한 달 미납으로 변경",
       en: "Review marked one month unpaid"
     });
-    state.attentionReview.lastBatch = { memberId: member.id, months: [month], paymentIds: [], activityId };
+    state.attentionReview.lastBatch = { memberId: payer.id, months: [month], paymentIds: [], activityId };
     state.attentionReview.changed += 1;
     state.attentionReview.message = `${member.name}: ${formatMonthBi(month)} 미납으로 변경 · Marked unpaid`;
     saveStore(MSG.paymentRemoved);
@@ -2711,9 +2747,9 @@ function toggleAttentionMonthPaid(month) {
   }
   const beforeIds = new Set(state.store.payments.map((payment) => payment.id));
   state.store = addPayment(state.store, {
-    memberId: member.id,
+    memberId: payer.id,
     month,
-    amount: member.monthlyAmount,
+    amount,
     source: "attention-review"
   });
   const paymentIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
@@ -2722,7 +2758,7 @@ function toggleAttentionMonthPaid(month) {
     ko: "검토에서 한 달 납부 완료",
     en: "Review marked one month paid"
   });
-  state.attentionReview.lastBatch = { memberId: member.id, months: [month], paymentIds, activityId };
+  state.attentionReview.lastBatch = { memberId: payer.id, months: [month], paymentIds, activityId };
   state.attentionReview.changed += 1;
   state.attentionReview.message = `${member.name}: ${formatMonthBi(month)} 납부 완료 · Payment recorded`;
   saveStore(MSG.paymentSaved);
@@ -2809,9 +2845,14 @@ function markMonthUnpaid(month) {
   if (!member || !month || member.collectionPlacement?.status === "charged_off") {
     return;
   }
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`납부는 ${payer.name} 계정에서 관리합니다. · Record payments on the payer account.`);
+    return;
+  }
 
-  const removed = state.store.payments.filter((payment) => payment.memberId === member.id && payment.month === month && payment.category !== "one-off");
-  state.store = removePayment(state.store, member.id, month);
+  const removed = state.store.payments.filter((payment) => payment.memberId === payer.id && payment.month === month && payment.category !== "one-off");
+  state.store = removePayment(state.store, payer.id, month);
   logRemovedPayments(member, removed);
   saveStore(MSG.paymentRemoved);
   showToast(MSG.paymentRemovedFor(member.name, formatMonthBi(month)));
@@ -2823,13 +2864,18 @@ function markMonthPaid(month) {
   if (!member || !month || member.collectionPlacement?.status === "charged_off") {
     return;
   }
-  const amount = Number(member.monthlyAmount || 0);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`납부는 ${payer.name} 계정에서 관리합니다. · Record payments on the payer account.`);
+    return;
+  }
+  const amount = getMemberBalance(member, state.store.payments, new Date(), state.store.members).monthlyAmount;
   if (amount <= 0) {
     showToast("월 회비를 먼저 입력하세요. · Enter the monthly amount first.");
     return;
   }
   const beforeIds = new Set(state.store.payments.map((payment) => payment.id));
-  state.store = addPayment(state.store, { memberId: member.id, month, amount });
+  state.store = addPayment(state.store, { memberId: payer.id, month, amount });
   const addedIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
   logAddedPayments(member, addedIds, [month]);
   saveStore(MSG.paymentSaved);
@@ -2840,7 +2886,7 @@ function markMonthPaid(month) {
 function toggleMonthPaid(month) {
   const member = selectedMember();
   if (!member) return;
-  const status = getMemberStatus(member, state.store.payments);
+  const status = getMemberStatus(member, state.store.payments, new Date(), state.store.members);
   if (status.paidMonths.has(month)) {
     markMonthUnpaid(month);
   } else {
@@ -3256,7 +3302,7 @@ function openPaymentReview(mode) {
     return;
   }
 
-  const balance = getLateFeeBalance(member, state.store.payments);
+  const balance = getLateFeeBalance(member, state.store.payments, new Date(), state.store.members);
   if (balance.lines.length === 0 || balance.totalDue <= 0) {
     showToast(mode === "email" ? MSG.noBalanceToRemind : MSG.noBalanceToInvoice);
     return;

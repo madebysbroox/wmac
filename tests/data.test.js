@@ -105,13 +105,16 @@ test("daily status export records every account and every month in the report ye
     payments: [{ id: "jan", memberId: student.id, month: "2026-01", amount: 120, paidAt: "2026-01-15" }]
   }, new Date("2026-02-20T12:00:00"));
   const studentRow = rows.find((row) => row["Member Name"] === "Jamie Lee");
+  const payerRow = rows.find((row) => row["Member Name"] === "Morgan Lee");
 
   assert.equal(rows.length, 2);
   assert.equal(studentRow["Account Holder / Contract Signer"], "Morgan Lee");
-  assert.equal(studentRow["Jan 2026"], "Paid");
-  assert.equal(studentRow["Feb 2026"], "Due");
-  assert.equal(studentRow["Mar 2026"], "Future");
-  assert.equal(studentRow["Dec 2026"], "Future");
+  assert.equal(studentRow["Current Status"], "Covered by payer");
+  assert.equal(studentRow["Jan 2026"], "Covered by payer");
+  assert.equal(payerRow["Jan 2026"], "Paid");
+  assert.equal(payerRow["Feb 2026"], "Due");
+  assert.equal(payerRow["Mar 2026"], "Future");
+  assert.equal(payerRow["Dec 2026"], "Future");
 });
 
 test("uses the saved responsible party before falling back to a matching parent name", () => {
@@ -638,6 +641,41 @@ test("groups parents and children while excluding contact-only parents from tuit
   const childRow = roster.find((row) => row["Member Name"] === "Sam Park");
   assert.equal(childRow["Household Name"], "Park Family");
   assert.equal(childRow.Programs, "tae_kwon_do; muay_thai");
+});
+
+test("uses the payer account for a non-participating parent's family payment schedule", () => {
+  const payer = {
+    id: "payer",
+    name: "Morgan Lee",
+    participant: false,
+    householdRole: "parent_guardian",
+    responsiblePartyId: "payer"
+  };
+  const child = {
+    id: "child",
+    name: "Jamie Lee",
+    participant: true,
+    householdRole: "child",
+    responsiblePartyId: "payer",
+    monthlyAmount: 120,
+    startDate: "2026-04-15"
+  };
+  const members = [payer, child];
+  const today = new Date("2026-06-18T12:00:00");
+
+  const payerState = getMemberPaymentState(payer, [], today, [], members);
+  const childState = getMemberPaymentState(child, [], today, [], members);
+
+  assert.deepEqual(payerState.unpaidMonths, ["2026-04", "2026-05", "2026-06"]);
+  assert.equal(getMemberBalance(payer, [], today, members).monthlyAmount, 120);
+  assert.deepEqual(childState.billableMonths, []);
+  assert.equal(getMemberBalance(child, [], today, members).dueNow, 0);
+  assert.equal(getLandscapeRows({ members, payments: [] }, [], today).rows.length, 1);
+  assert.equal(getAttentionRows({ members, payments: [] }, [], today).length, 1);
+
+  const reconciled = reconcileDuePayments({ members, payments: [] }, payer, ["2026-05"], today);
+  assert.deepEqual(reconciled.store.payments.map((payment) => payment.memberId), ["payer", "payer"]);
+  assert.deepEqual(getMemberBalance(payer, reconciled.store.payments, today, members).unpaidMonths, ["2026-05"]);
 });
 
 test("matches a Square subscription payment by dedicated Square customer ID", () => {
