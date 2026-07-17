@@ -1040,21 +1040,99 @@ textarea {
 }
 
 .quick-profile-panel > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
   padding: 14px 16px;
   cursor: pointer;
   color: #183c5c;
   font-size: 18px;
   font-weight: 800;
+  list-style: none;
 }
 
 .quick-profile-panel > summary small {
-  margin-left: 6px;
   color: #5e7186;
   font-size: 13px;
 }
 
 .quick-profile-form {
   padding: 0 16px 16px;
+}
+
+.member-action-panel,
+.contract-renewal-notice {
+  margin: 18px 0;
+  border: 1px solid #c8d8e8;
+  border-radius: 14px;
+  background: #f7fbff;
+}
+
+.member-action-panel > summary,
+.contract-renewal-notice > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: #183c5c;
+  font-size: 18px;
+  font-weight: 850;
+  list-style: none;
+}
+
+.quick-profile-panel > summary::-webkit-details-marker,
+.member-action-panel > summary::-webkit-details-marker,
+.contract-renewal-notice > summary::-webkit-details-marker {
+  display: none;
+}
+
+.quick-profile-panel > summary::before,
+.member-action-panel > summary::before,
+.contract-renewal-notice > summary::before {
+  content: "▸";
+  display: inline-block;
+  flex: none;
+  color: currentColor;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.quick-profile-panel[open] > summary::before,
+.member-action-panel[open] > summary::before,
+.contract-renewal-notice[open] > summary::before {
+  content: "▾";
+}
+
+.member-action-panel > summary small,
+.contract-renewal-notice > summary small {
+  color: #5e7186;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.member-action-panel[open] > summary,
+.contract-renewal-notice[open] > summary {
+  border-bottom: 1px solid #c8d8e8;
+}
+
+.member-action-panel-content {
+  padding: 16px;
+}
+
+.member-action-panel-content > .button {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.member-action-panel-content h3 {
+  margin: 14px 0 6px;
+}
+
+.action-panel-help {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .quick-profile-grid {
@@ -4200,13 +4278,8 @@ dialog.collection-dialog {
   box-shadow: inset 5px 0 var(--red);
 }
 
-.contract-renewal-notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin: 18px 0;
-  padding: 18px 20px;
+details.contract-renewal-notice {
+  display: block;
   border: 2px solid currentColor;
   border-radius: 12px;
 }
@@ -4219,6 +4292,23 @@ dialog.collection-dialog {
 .contract-renewal-notice.contract-expired {
   background: var(--red-soft);
   color: var(--red);
+}
+
+.contract-renewal-notice > summary {
+  color: inherit;
+}
+
+.contract-renewal-notice > summary small {
+  color: inherit;
+  opacity: .85;
+}
+
+.contract-renewal-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
 }
 
 .contract-renewal-notice p,
@@ -4303,6 +4393,150 @@ dialog.contract-renewal-dialog.contract-expired {
   font-weight: 800;
 }
 
+.contract-date-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.contract-date-control input {
+  min-width: 0;
+}
+
+.contract-calendar-launch {
+  justify-self: start;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #2b628f;
+  border-radius: 9px;
+  background: #edf6fd;
+  color: #144a75;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.contract-calendar-launch:hover,
+.contract-calendar-launch:focus-visible {
+  background: #dbeefa;
+  border-color: #0e5f99;
+}
+
+.contract-calendar-launch small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+dialog.contract-date-picker-dialog {
+  width: min(1180px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  padding: 26px;
+  border-top: 8px solid #0e5f99;
+}
+
+.contract-date-picker-head,
+.contract-date-picker-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.contract-date-picker-head h2,
+.contract-date-picker-head p {
+  margin: 0;
+}
+
+.contract-date-picker-controls {
+  margin: 22px 0 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #edf6fd;
+}
+
+.contract-date-picker-controls .button {
+  min-height: 44px;
+}
+
+.contract-date-picker-controls strong {
+  font-size: clamp(24px, 4vw, 36px);
+  line-height: 1;
+}
+
+.contract-date-picker-dialog .dialog-help {
+  margin: 12px 0 18px;
+}
+
+.contract-year-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.contract-calendar-month {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.contract-calendar-month h3 {
+  margin: 0 0 9px;
+  color: var(--ink);
+  font-size: 16px;
+  text-align: center;
+}
+
+.contract-calendar-weekdays,
+.contract-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.contract-calendar-weekdays {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.contract-calendar-day,
+.contract-calendar-day-empty {
+  aspect-ratio: 1;
+  min-width: 0;
+}
+
+.contract-calendar-day {
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.contract-calendar-day:hover,
+.contract-calendar-day:focus-visible {
+  border-color: #2b628f;
+  background: #dbeefa;
+  outline: none;
+}
+
+.contract-calendar-day.selected {
+  border-color: #1c7a46;
+  background: #d8f1df;
+  color: #155a35;
+  font-weight: 900;
+}
+
 @media (max-width: 760px) {
   .collection-summary,
   .collection-form-grid {
@@ -4323,7 +4557,7 @@ dialog.contract-renewal-dialog.contract-expired {
     grid-template-columns: 1fr;
   }
 
-  .contract-renewal-notice {
+  .contract-renewal-content {
     align-items: stretch;
     flex-direction: column;
   }
@@ -4336,5 +4570,28 @@ dialog.contract-renewal-dialog.contract-expired {
   .contract-renewal-actions .button,
   .contract-renewal-dialog-actions .button {
     flex: 1 1 180px;
+  }
+
+  dialog.contract-date-picker-dialog {
+    padding: 18px;
+  }
+
+  .contract-date-picker-head,
+  .contract-date-picker-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .contract-date-picker-controls .button {
+    width: 100%;
+  }
+
+  .contract-year-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .contract-calendar-month {
+    padding: 8px;
   }
 }

@@ -22,6 +22,7 @@ import {
   householdMembers,
   importMembersFromRecords,
   importPaymentsFromRecords,
+  isFullBackupCsv,
   normalizeSquarePayment,
   normalizeWorldBankcardPayment,
   nextUnpaidTuitionMonth,
@@ -29,6 +30,7 @@ import {
   parseCsv,
   removePayment,
   reconcileDuePayments,
+  restoreStoreFromBackupRows,
   searchMembers,
   isActiveParticipant,
   squarePaymentMonth,
@@ -42,6 +44,41 @@ test("parses CSV with quoted commas", () => {
   const parsed = parseCsv('Member Name,Monthly Amount\n"Lee, Sam","$120.00"\n');
   assert.deepEqual(parsed.headers, ["Member Name", "Monthly Amount"]);
   assert.equal(parsed.records[0]["Member Name"], "Lee, Sam");
+});
+
+test("full backup CSV restores every member field and payment to a fresh store", () => {
+  const source = {
+    version: 2,
+    members: [
+      {
+        id: "payer-1", name: "Morgan Lee", email: "morgan@example.com", householdName: "Lee",
+        householdRole: "parent_guardian", responsiblePartyId: "payer-1", participant: false,
+        collectionPlacement: { status: "charged_off", chargeOffDate: "2026-05-01", frozenBalance: 240 }
+      },
+      {
+        id: "student-1", name: "Jamie Lee", responsiblePartyId: "payer-1", parentName: "Morgan Lee",
+        householdName: "Lee", householdRole: "child", monthlyAmount: 120, startDate: "2026-01-15",
+        agreementEndDate: "2027-01-15", cellPhone: "5550101", emailConsent: "Yes", participant: true
+      }
+    ],
+    payments: [{
+      id: "payment-1", memberId: "student-1", month: "2026-04", amount: 120, paidAt: "2026-04-15",
+      source: "Square", category: "tuition", note: "Paid at front desk", providerPaymentId: "square-123"
+    }]
+  };
+  const parsed = parseCsv(toCsv(exportStoreRows(source)));
+  const restored = restoreStoreFromBackupRows(parsed.records);
+  const student = restored.store.members.find((member) => member.id === "student-1");
+  const payer = restored.store.members.find((member) => member.id === "payer-1");
+
+  assert.equal(isFullBackupCsv(parsed.headers), true);
+  assert.equal(restored.memberCount, 2);
+  assert.equal(restored.paymentCount, 1);
+  assert.equal(student.responsiblePartyId, "payer-1");
+  assert.equal(student.agreementEndDate, "2027-01-15");
+  assert.equal(student.emailConsent, "Yes");
+  assert.deepEqual(payer.collectionPlacement, source.members[0].collectionPlacement);
+  assert.deepEqual(restored.store.payments[0], source.payments[0]);
 });
 
 test("daily status export records every account and every month in the report year", () => {

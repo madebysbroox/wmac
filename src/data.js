@@ -1110,6 +1110,43 @@ export function exportStoreRows(store) {
   return rows;
 }
 
+const FULL_BACKUP_SCHEMA = "wmac-full-backup-v1";
+const FULL_BACKUP_SCHEMA_COLUMN = "WMAC Backup Schema";
+const FULL_BACKUP_MEMBER_COLUMN = "WMAC Member JSON";
+const FULL_BACKUP_PAYMENT_COLUMN = "WMAC Payment JSON";
+
+export function isFullBackupCsv(headers = []) {
+  return Array.isArray(headers)
+    && headers.includes(FULL_BACKUP_SCHEMA_COLUMN)
+    && headers.includes(FULL_BACKUP_MEMBER_COLUMN)
+    && headers.includes(FULL_BACKUP_PAYMENT_COLUMN);
+}
+
+// A full backup intentionally replaces the local member/payment ledger. The
+// CSV keeps readable columns alongside exact JSON snapshots so a fresh app can
+// restore every saved member field, payer link, collection snapshot, and payment.
+export function restoreStoreFromBackupRows(records = []) {
+  const members = new Map();
+  const payments = new Map();
+  (records || []).forEach((record) => {
+    if (clean(record?.[FULL_BACKUP_SCHEMA_COLUMN]) !== FULL_BACKUP_SCHEMA) return;
+    const member = parseBackupSnapshot(record?.[FULL_BACKUP_MEMBER_COLUMN]);
+    if (member?.id && member.name) members.set(member.id, member);
+    const payment = parseBackupSnapshot(record?.[FULL_BACKUP_PAYMENT_COLUMN]);
+    if (payment?.id && payment.memberId && payment.month) payments.set(payment.id, payment);
+  });
+  if (members.size === 0) {
+    throw new Error("This file does not contain a valid WMAC full backup.");
+  }
+  const store = migrateStore({
+    version: 2,
+    members: [...members.values()],
+    payments: [...payments.values()],
+    updatedAt: new Date().toISOString()
+  });
+  return { store, memberCount: store.members.length, paymentCount: store.payments.length };
+}
+
 // A dated organization snapshot: one row per account, with a status for every
 // month in the report year. This complements the detailed payment backup.
 export function exportDailyPaymentStatusRows(store, today = new Date()) {
@@ -1254,6 +1291,9 @@ export { MEMBER_FIELD_ALIASES, PAYMENT_FIELD_ALIASES };
 
 function memberRow(member, payment, accountHolder = member) {
   return {
+    [FULL_BACKUP_SCHEMA_COLUMN]: FULL_BACKUP_SCHEMA,
+    [FULL_BACKUP_MEMBER_COLUMN]: JSON.stringify(member),
+    [FULL_BACKUP_PAYMENT_COLUMN]: payment ? JSON.stringify(payment) : "",
     "Member Name": member.name,
     "Account Holder / Payer": accountHolder?.name || member.name,
     "Contract Start Date": member.startDate || "",
@@ -1304,6 +1344,15 @@ function memberRow(member, payment, accountHolder = member) {
 
 function isTuitionPayment(payment) {
   return !payment?.category || payment.category === "tuition";
+}
+
+function parseBackupSnapshot(value) {
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeLateFeeMinimum(value) {

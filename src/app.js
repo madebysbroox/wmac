@@ -20,12 +20,14 @@ import {
   householdMembers,
   importMembersFromRecords,
   importPaymentsFromRecords,
+  isFullBackupCsv,
   migrateStore,
   nextUnpaidTuitionMonth,
   pendingStagedPaymentsForMember,
   parseCsv,
   removePayment,
   reconcileDuePayments,
+  restoreStoreFromBackupRows,
   searchMembers,
   isActiveParticipant,
   stagedPaymentMonth,
@@ -87,6 +89,7 @@ const state = {
   mapping: null,
   review: null,
   attentionReview: null,
+  contractDatePicker: null,
   lastPaymentBatch: null,
   renewalNoticesShown: new Set(),
   activityLog: loadActivityLog(),
@@ -102,7 +105,7 @@ const state = {
 const elements = {};
 [
   "saveStatus", "globalSearchInput", "globalSearchResults", "homeTab", "membersTab", "landscapeTab", "squareTab", "appLayout", "memberSidebar",
-  "memberCsv", "paymentCsv", "exportButton", "dailyStatusEmailButton",
+  "memberCsv", "paymentCsv", "restoreBackupCsv", "exportButton", "dailyStatusEmailButton",
   "searchInput", "addMemberButton", "paidCount", "pendingCount", "watchCount", "lateCount",
   "memberList", "dashboardView", "landscapeView", "landscapeSummary", "landscapeHead", "landscapeBody", "landscapeReviewButton",
   "todayFollowupCount", "todayFollowupList", "reviewAllAttentionButton", "startTodayReview", "dailyBriefSummary",
@@ -115,9 +118,9 @@ const elements = {};
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "contractRenewalFlag", "latestPaid", "householdCard", "progressCard",
   "contractRenewalNotice", "contractRenewalTitle", "contractRenewalMessage", "contractRenewalOpenButton", "contractRenewalEmailButton",
-  "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
-  "editMemberDataButton", "updatePaymentButton", "quickProfilePanel", "quickProfileForm", "quickMemberName", "quickMemberDob", "quickMemberCellPhone", "quickMemberEmail", "quickMemberAddress", "quickMemberCity", "quickMemberState", "quickMemberZip", "quickResponsibleParty", "quickAgreementType", "quickMemberAmount", "quickMemberStart", "quickMemberAgreementEnd",
-  "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
+  "quickPayButton", "catchUpButton", "undoCatchUpButton", "paymentUpdatePanel", "monthStrip", "billingActionsPanel", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
+  "quickProfilePanel", "quickProfileForm", "quickMemberName", "quickMemberDob", "quickMemberCellPhone", "quickMemberEmail", "quickMemberAddress", "quickMemberCity", "quickMemberState", "quickMemberZip", "quickResponsibleParty", "quickAgreementType", "quickMemberAmount", "quickMemberStart", "quickMemberAgreementEnd",
+  "memberForm", "memberName",
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
   "memberEmail", "memberParent", "memberResponsibleParty", "memberHousehold", "memberRole", "memberParticipant",
   "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberLateFeeMinimum", "memberLateFeePercentage", "memberStart",
@@ -141,6 +144,8 @@ const elements = {};
   "collectionHomePhone", "collectionWorkPhone", "collectionCellPhone", "collectionAgreementSign", "collectionAgreementExpiration",
   "collectionAgreementType", "collectionChargeOffDate", "collectionServiceFees", "collectionDownPayment", "collectionEmailConsent",
   "collectionTextConsent", "collectionFinalized", "collectionDownloadButton", "collectionDownloadEmailButton",
+  "contractDatePickerDialog", "contractDatePickerTitle", "contractDatePickerClose", "contractDatePickerPreviousYear",
+  "contractDatePickerNextYear", "contractDatePickerYear", "contractDatePickerSelected", "contractDatePickerMonths",
   "contractRenewalDialog", "contractRenewalDialogIcon", "contractRenewalDialogTitle", "contractRenewalDialogMessage",
   "contractRenewalDialogOpenButton", "contractRenewalDialogEmailButton", "contractRenewalDialogClose"
 ].forEach((id) => {
@@ -195,6 +200,82 @@ function syncMemberAgreementEndDate() {
   elements.memberStart.dataset.previousValue = elements.memberStart.value;
 }
 
+function syncQuickAgreementEndDate() {
+  const previousStart = elements.quickMemberStart.dataset.previousValue || selectedMember()?.startDate || "";
+  const previousDefault = defaultAgreementEndDate(previousStart);
+  if (!elements.quickMemberAgreementEnd.value || elements.quickMemberAgreementEnd.value === previousDefault) {
+    elements.quickMemberAgreementEnd.value = defaultAgreementEndDate(elements.quickMemberStart.value);
+  }
+  elements.quickMemberStart.dataset.previousValue = elements.quickMemberStart.value;
+}
+
+const CONTRACT_DATE_LABELS = {
+  quickMemberStart: "Contract signing date",
+  quickMemberAgreementEnd: "Contract end date",
+  memberStart: "Contract signing date",
+  memberAgreementEnd: "Contract end date"
+};
+
+function formatDatePickerValue(value) {
+  if (!value) return "No date selected yet.";
+  const [year, month, day] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" })
+    .format(new Date(year, month - 1, day));
+}
+
+function calendarMonthMarkup(year, month, selectedValue) {
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthName = new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date(year, month, 1));
+  const blanks = Array.from({ length: firstWeekday }, () => '<span class="contract-calendar-day-empty" aria-hidden="true"></span>').join("");
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const value = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const selected = value === selectedValue ? " selected" : "";
+    return `<button class="contract-calendar-day${selected}" type="button" data-contract-date-value="${value}" aria-label="${monthName} ${day}, ${year}">${day}</button>`;
+  }).join("");
+  return `<section class="contract-calendar-month"><h3>${monthName}</h3><div class="contract-calendar-weekdays" aria-hidden="true"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div><div class="contract-calendar-days">${blanks}${days}</div></section>`;
+}
+
+function renderContractDatePicker() {
+  const picker = state.contractDatePicker;
+  if (!picker) return;
+  const input = document.querySelector(`#${picker.targetId}`);
+  if (!input) return;
+  const selectedValue = input.value;
+  elements.contractDatePickerTitle.textContent = `${CONTRACT_DATE_LABELS[picker.targetId] || "Contract date"} · Year Calendar`;
+  elements.contractDatePickerYear.textContent = String(picker.year);
+  elements.contractDatePickerSelected.textContent = `Selected: ${formatDatePickerValue(selectedValue)}`;
+  elements.contractDatePickerMonths.innerHTML = Array.from(
+    { length: 12 },
+    (_, month) => calendarMonthMarkup(picker.year, month, selectedValue)
+  ).join("");
+  elements.contractDatePickerMonths.querySelectorAll("[data-contract-date-value]").forEach((button) => {
+    button.addEventListener("click", () => selectContractDate(button.dataset.contractDateValue));
+  });
+}
+
+function openContractDatePicker(targetId) {
+  const input = document.querySelector(`#${targetId}`);
+  if (!input || input.disabled) return;
+  const selectedYear = Number(input.value?.slice(0, 4));
+  state.contractDatePicker = {
+    targetId,
+    year: Number.isInteger(selectedYear) && selectedYear > 0 ? selectedYear : new Date().getFullYear()
+  };
+  renderContractDatePicker();
+  elements.contractDatePickerDialog.showModal();
+}
+
+function selectContractDate(value) {
+  const picker = state.contractDatePicker;
+  const input = picker && document.querySelector(`#${picker.targetId}`);
+  if (!input) return;
+  input.value = value;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  elements.contractDatePickerDialog.close();
+}
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -205,6 +286,7 @@ elements.landscapeTab.addEventListener("click", showLandscape);
 elements.squareTab.addEventListener("click", showSquare);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
+elements.restoreBackupCsv.addEventListener("change", () => prepareCsvImport(elements.restoreBackupCsv.files[0], "backup"));
 elements.exportButton.addEventListener("click", exportBackup);
 elements.dailyStatusEmailButton.addEventListener("click", exportDailyPaymentStatusEmail);
 elements.searchInput.addEventListener("input", render);
@@ -245,11 +327,8 @@ document.querySelectorAll("[data-landscape-filter]").forEach((button) => {
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
 elements.collectionButton.addEventListener("click", openCollectionPlacement);
-elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.quickProfileForm.addEventListener("submit", saveQuickProfile);
-elements.editMemberDataButton.addEventListener("click", focusQuickProfile);
-elements.updatePaymentButton.addEventListener("click", focusPaymentUpdate);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
 elements.mappingForm.addEventListener("submit", finishMappingImport);
 elements.yearReportButton.addEventListener("click", openYearDialog);
@@ -282,11 +361,26 @@ elements.contractRenewalEmailButton.addEventListener("click", openRenewalEmail);
 elements.contractRenewalDialogOpenButton.addEventListener("click", openRenewalContract);
 elements.contractRenewalDialogEmailButton.addEventListener("click", openRenewalEmail);
 elements.contractRenewalDialogClose.addEventListener("click", () => elements.contractRenewalDialog.close());
+elements.contractDatePickerClose.addEventListener("click", () => elements.contractDatePickerDialog.close());
+elements.contractDatePickerPreviousYear.addEventListener("click", () => {
+  if (!state.contractDatePicker) return;
+  state.contractDatePicker.year -= 1;
+  renderContractDatePicker();
+});
+elements.contractDatePickerNextYear.addEventListener("click", () => {
+  if (!state.contractDatePicker) return;
+  state.contractDatePicker.year += 1;
+  renderContractDatePicker();
+});
+document.querySelectorAll("[data-contract-date-picker]").forEach((button) => {
+  button.addEventListener("click", () => openContractDatePicker(button.dataset.contractDatePicker));
+});
 
 populateCertificationControls();
 elements.memberBeltLevel.addEventListener("change", updateNextCertificationField);
 elements.memberMuayThaiLevel.addEventListener("change", updateNextCertificationField);
 elements.memberStart.addEventListener("change", syncMemberAgreementEndDate);
+elements.quickMemberStart.addEventListener("change", syncQuickAgreementEndDate);
 
 initAppUpdates();
 render();
@@ -947,11 +1041,6 @@ function renderDetail() {
     ? `<strong>First Credit Services 이관 완료 · Placed for collection</strong><span>${escapeHtml(collectionPlacement.chargeOffDate)}에 잔액 ${formatMoney(collectionPlacement.frozenBalance)} 고정. 이 회원에 대한 청구 및 직접 결제 수집은 중단되었습니다. · Balance frozen; billing and direct payment collection are stopped.</span>`
     : "";
 
-  elements.paymentMonth.value = status.currentMonth;
-  elements.paymentAmount.value = Number(member.monthlyAmount || 0).toFixed(2);
-  elements.paymentForm.querySelectorAll("input, button").forEach((control) => {
-    control.disabled = collectionPlaced;
-  });
   elements.memberName.value = member.name;
   elements.memberHomePhone.value = formatPhone(member.homePhone);
   elements.memberWorkPhone.value = formatPhone(member.workPhone);
@@ -1005,6 +1094,7 @@ function renderDetail() {
   elements.quickAgreementType.value = member.agreementType || "Contract";
   elements.quickMemberAmount.value = member.monthlyAmount || "";
   elements.quickMemberStart.value = member.startDate || "";
+  elements.quickMemberStart.dataset.previousValue = member.startDate || "";
   elements.quickMemberAgreementEnd.value = member.agreementEndDate || defaultAgreementEndDate(member.startDate);
   elements.quickProfileForm.querySelectorAll("input, select, button").forEach((control) => {
     control.disabled = collectionPlaced;
@@ -1187,6 +1277,12 @@ function showSquare() {
 }
 
 function selectMember(memberId) {
+  if (state.selectedId !== memberId) {
+    elements.quickProfilePanel.open = false;
+    elements.paymentUpdatePanel.open = false;
+    elements.billingActionsPanel.open = false;
+    elements.contractRenewalNotice.open = false;
+  }
   state.selectedId = memberId;
   state.page = "members";
   state.view = "member";
@@ -1218,7 +1314,6 @@ function renderContractRenewal(member, renewal) {
   elements.contractRenewalTitle.textContent = title;
   elements.contractRenewalMessage.textContent = message;
   setRenewalEmailButtonState(elements.contractRenewalEmailButton, member);
-  queueMicrotask(() => maybeShowContractRenewalDialog(member, renewal, title, message));
 }
 
 function maybeShowContractRenewalDialog(member, renewal, title, message) {
@@ -1236,13 +1331,11 @@ function maybeShowContractRenewalDialog(member, renewal, title, message) {
 }
 
 function setRenewalEmailButtonState(button, member) {
-  const enabled = Boolean(member.email && member.emailConsent === "Yes");
+  const enabled = Boolean(member.email);
   button.disabled = !enabled;
   button.title = enabled
     ? ""
-    : !member.email
-    ? "이메일 주소를 먼저 저장하세요. · Save an email address first."
-    : "서명된 이메일 연락 동의를 먼저 기록하세요. · Record signed email contact permission first.";
+    : "이메일 주소를 먼저 저장하세요. · Save an email address first.";
 }
 
 function openRenewalContract() {
@@ -1263,8 +1356,8 @@ function downloadRenewalContract() {
 
 function openRenewalEmail() {
   const member = selectedMember();
-  if (!member || !member.email || member.emailConsent !== "Yes") {
-    showToast("이메일 주소와 서명된 이메일 동의가 필요합니다. · An email address and signed email permission are required.");
+  if (!member || !member.email) {
+    showToast("이메일 주소를 먼저 저장하세요. · Save an email address first.");
     return;
   }
   const renewal = getAgreementExpirationStatus(member);
@@ -1568,6 +1661,11 @@ async function prepareCsvImport(file, kind) {
     return;
   }
 
+  if (kind === "backup" || isFullBackupCsv(parsed.headers)) {
+    restoreFullBackupCsv(parsed);
+    return;
+  }
+
   const aliases = kind === "members" ? MEMBER_FIELD_ALIASES : PAYMENT_FIELD_ALIASES;
   const guessed = guessColumnMap(parsed.headers, aliases);
   state.mapping = { kind, parsed, aliases, map: guessed };
@@ -1576,6 +1674,32 @@ async function prepareCsvImport(file, kind) {
   elements.mappingHelp.textContent = kind === "members" ? MSG.mapMembersHelp : MSG.mapPaymentsHelp;
   renderMappingFields();
   elements.mappingDialog.showModal();
+}
+
+function restoreFullBackupCsv(parsed) {
+  if (!isFullBackupCsv(parsed.headers)) {
+    showToast("WMAC 전체 백업 CSV를 선택하세요. · Choose a WMAC full backup CSV.");
+    return;
+  }
+  const confirmed = window.confirm(
+    "This will replace the members and payment history saved on this computer with the selected backup. Continue?"
+  );
+  if (!confirmed) return;
+  try {
+    const result = restoreStoreFromBackupRows(parsed.records);
+    state.store = result.store;
+    state.selectedId = result.store.members[0]?.id || "";
+    const message = `전체 백업 복원 완료 · Restored ${result.memberCount} members and ${result.paymentCount} payments`;
+    saveStore(message);
+    showToast(message);
+    render();
+  } catch (error) {
+    showToast(error.message || "백업을 복원하지 못했습니다. · Could not restore the backup.");
+  } finally {
+    elements.memberCsv.value = "";
+    elements.paymentCsv.value = "";
+    elements.restoreBackupCsv.value = "";
+  }
 }
 
 function renderMappingFields() {
@@ -1623,6 +1747,7 @@ function finishMappingImport(event) {
   elements.mappingDialog.close();
   elements.memberCsv.value = "";
   elements.paymentCsv.value = "";
+  elements.restoreBackupCsv.value = "";
   render();
 }
 
@@ -1632,7 +1757,8 @@ function exportBackup() {
     showToast(MSG.nothingToExport);
     return;
   }
-  downloadCsv(csv, `master-lee-payment-backup-${new Date().toISOString().slice(0, 10)}.csv`);
+  downloadCsv(csv, `wmac-full-backup-${new Date().toISOString().slice(0, 10)}.csv`);
+  showToast("전체 백업 CSV 저장됨 · Full backup CSV saved");
 }
 
 function exportDailyPaymentStatusEmail() {
@@ -2398,28 +2524,6 @@ function undoAttentionAction() {
   renderAttentionReview();
 }
 
-function savePayment(event) {
-  event.preventDefault();
-  const member = selectedMember();
-  if (!member || member.collectionPlacement?.status === "charged_off") {
-    return;
-  }
-  const beforePayments = state.store.payments;
-  const beforeIds = new Set(beforePayments.map((payment) => payment.id));
-  state.store = addPayment(state.store, {
-    memberId: member.id,
-    month: elements.paymentMonth.value,
-    amount: elements.paymentAmount.value
-  });
-  const afterIds = new Set(state.store.payments.map((payment) => payment.id));
-  const addedIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
-  const replacedPayments = beforePayments.filter((payment) => !afterIds.has(payment.id));
-  logAddedPayments(member, addedIds, [elements.paymentMonth.value], {}, {}, replacedPayments);
-  saveStore(MSG.paymentSaved);
-  showToast(MSG.paymentSavedFor(member.name, formatMonthBi(elements.paymentMonth.value)));
-  render();
-}
-
 function markMonthUnpaid(month) {
   const member = selectedMember();
   if (!member || !month || member.collectionPlacement?.status === "charged_off") {
@@ -2462,17 +2566,6 @@ function toggleMonthPaid(month) {
   } else {
     markMonthPaid(month);
   }
-}
-
-function focusQuickProfile() {
-  elements.quickProfilePanel.open = true;
-  elements.quickProfilePanel.scrollIntoView({ behavior: "smooth", block: "start" });
-  window.setTimeout(() => elements.quickMemberName.focus(), 250);
-}
-
-function focusPaymentUpdate() {
-  elements.paymentForm.scrollIntoView({ behavior: "smooth", block: "center" });
-  window.setTimeout(() => elements.paymentMonth.focus(), 250);
 }
 
 function parentNameForPayer(member, payerId, fallback = "") {

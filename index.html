@@ -78,8 +78,12 @@
           </label>
           <input id="paymentCsv" class="hidden" type="file" accept=".csv,text/csv">
           <button id="exportButton" class="button tool bi" type="button">
-            <span lang="ko">백업 파일 저장</span><small lang="en">Export Backup CSV</small>
+            <span lang="ko">전체 백업 파일 저장</span><small lang="en">Export Full Backup CSV</small>
           </button>
+          <label class="button tool bi" for="restoreBackupCsv">
+            <span lang="ko">전체 백업 복원</span><small lang="en">Restore Full Backup CSV</small>
+          </label>
+          <input id="restoreBackupCsv" class="hidden" type="file" accept=".csv,text/csv">
           <button id="dailyStatusEmailButton" class="button tool bi" type="button">
             <span lang="ko">일일 결제 현황 이메일</span><small lang="en">Daily Payment Status Email</small>
           </button>
@@ -309,17 +313,8 @@
               </div>
             </div>
 
-            <div class="member-profile-actions" aria-label="Member profile actions">
-              <button id="editMemberDataButton" class="button secondary bi" type="button">
-                <span lang="ko">회원 정보 수정</span><small lang="en">Update Member Data</small>
-              </button>
-              <button id="updatePaymentButton" class="button pay bi" type="button">
-                <span lang="ko">납부 변경</span><small lang="en">Update Payment</small>
-              </button>
-            </div>
-
-            <details id="quickProfilePanel" class="quick-profile-panel" open>
-              <summary>빠른 회원 정보 수정 <small lang="en">Quick Member Update</small></summary>
+            <details id="quickProfilePanel" class="quick-profile-panel">
+              <summary><span lang="ko">회원 정보 수정</span><small lang="en">Update Member Data</small></summary>
               <form id="quickProfileForm" class="quick-profile-form">
                 <div class="quick-profile-grid">
                   <div class="form-row"><label for="quickMemberName">이름 <small lang="en">Name</small></label><input id="quickMemberName" required></div>
@@ -332,8 +327,8 @@
                   <div class="form-row quick-profile-wide"><label for="quickResponsibleParty">청구 책임자 / 계약 서명자 <small lang="en">Responsible payer / contract signer</small></label><select id="quickResponsibleParty"></select></div>
                   <div class="form-row"><label for="quickAgreementType">계약 유형 <small lang="en">Agreement type</small></label><select id="quickAgreementType"><option value="Contract">기간 계약 · Contract</option><option value="Month-to-Month">월 단위 · Month-to-Month</option></select></div>
                   <div class="form-row"><label for="quickMemberAmount">월 회비 <small lang="en">Monthly amount</small></label><input id="quickMemberAmount" type="number" min="0" step="0.01"></div>
-                  <div class="form-row"><label for="quickMemberStart">계약 서명일 <small lang="en">Contract signing date</small></label><input id="quickMemberStart" type="date"></div>
-                  <div class="form-row"><label for="quickMemberAgreementEnd">계약 종료일 <small lang="en">Contract end date</small></label><input id="quickMemberAgreementEnd" type="date"></div>
+                  <div class="form-row"><label for="quickMemberStart">계약 서명일 <small lang="en">Contract signing date</small></label><div class="contract-date-control"><input id="quickMemberStart" type="date"><button class="contract-calendar-launch bi" type="button" data-contract-date-picker="quickMemberStart"><span lang="ko">달력</span><small lang="en">Calendar</small></button></div></div>
+                  <div class="form-row"><label for="quickMemberAgreementEnd">계약 종료일 <small lang="en">Contract end date</small></label><div class="contract-date-control"><input id="quickMemberAgreementEnd" type="date"><button class="contract-calendar-launch bi" type="button" data-contract-date-picker="quickMemberAgreementEnd"><span lang="ko">달력</span><small lang="en">Calendar</small></button></div></div>
                 </div>
                 <button class="button primary bi" type="submit"><span lang="ko">빠른 정보 저장</span><small lang="en">Save Quick Update</small></button>
               </form>
@@ -341,72 +336,69 @@
 
             <div id="latestPaid" class="latest-paid"></div>
 
-            <section id="contractRenewalNotice" class="contract-renewal-notice hidden" aria-live="polite">
-              <div>
+            <details id="contractRenewalNotice" class="contract-renewal-notice hidden" aria-live="polite">
+              <summary><span lang="ko">계약 갱신</span><small lang="en">Contract Renewal</small></summary>
+              <div class="contract-renewal-content">
+                <div>
                 <strong id="contractRenewalTitle"></strong>
                 <p id="contractRenewalMessage"></p>
                 <small>이메일을 열기 전에 계약서가 다운로드됩니다. 이메일에 직접 첨부하세요. · The contract downloads before the email opens; attach it to the message manually.</small>
+                </div>
+                <div class="contract-renewal-actions">
+                  <button id="contractRenewalOpenButton" class="button secondary bi" type="button">
+                    <span lang="ko">계약서 열기</span><small lang="en">Open Renewal Contract</small>
+                  </button>
+                  <button id="contractRenewalEmailButton" class="button primary bi" type="button">
+                    <span lang="ko">계약서 저장 + 이메일</span><small lang="en">Download Contract + Email</small>
+                  </button>
+                </div>
               </div>
-              <div class="contract-renewal-actions">
-                <button id="contractRenewalOpenButton" class="button secondary bi" type="button">
-                  <span lang="ko">계약서 열기</span><small lang="en">Open Renewal Contract</small>
-                </button>
-                <button id="contractRenewalEmailButton" class="button primary bi" type="button">
-                  <span lang="ko">계약서 저장 + 이메일</span><small lang="en">Download Contract + Email</small>
-                </button>
-              </div>
-            </section>
+            </details>
 
             <section id="householdCard" class="household-card"></section>
 
             <section id="progressCard" class="progress-card"></section>
 
-            <button id="quickPayButton" class="button pay bi" type="button"></button>
-
-            <button id="catchUpButton" class="button primary large bi" type="button">
-              <span lang="ko">모든 미납 월 완납 처리</span><small lang="en">Bring All Payments Up to Date</small>
-            </button>
-            <button id="undoCatchUpButton" class="button secondary full bi hidden" type="button">
-              <span lang="ko">방금 완납 처리 취소</span><small lang="en">Oops — Undo Catch-Up</small>
-            </button>
-
-            <h3>납부 기록 <small lang="en">Payment History</small></h3>
-            <div id="monthStrip" class="month-strip"></div>
-
-            <section class="invoice-panel">
-              <div>
-                <h3>청구서 · 알림 <small lang="en">Invoice &amp; Reminder</small></h3>
-                <p id="invoiceSummary"></p>
-              </div>
-              <div class="invoice-actions">
-                <button id="invoiceButton" class="button secondary bi" type="button">
-                  <span lang="ko">청구서 만들기</span><small lang="en">Generate Invoice</small>
+            <details id="paymentUpdatePanel" class="member-action-panel">
+              <summary><span lang="ko">납부 기록</span><small lang="en">Record Payments</small></summary>
+              <div class="member-action-panel-content">
+                <button id="quickPayButton" class="button pay bi" type="button"></button>
+                <button id="catchUpButton" class="button primary large bi" type="button">
+                  <span lang="ko">모든 미납 월 완납 처리</span><small lang="en">Bring All Payments Up to Date</small>
                 </button>
-                <button id="emailButton" class="button secondary bi" type="button">
-                  <span lang="ko">알림 이메일 쓰기</span><small lang="en">Email Reminder (Outlook)</small>
+                <button id="undoCatchUpButton" class="button secondary full bi hidden" type="button">
+                  <span lang="ko">방금 완납 처리 취소</span><small lang="en">Oops — Undo Catch-Up</small>
                 </button>
-                <button id="collectionButton" class="button collection bi" type="button">
-                  <span lang="ko">추심 기관 파일 만들기</span><small lang="en">First Credit Services Placement</small>
-                </button>
+                <h3>납부 기록 <small lang="en">Payment History</small></h3>
+                <p class="action-panel-help">월을 한 번 누르면 납부 완료로, 다시 누르면 미납으로 바뀝니다. · Click a month once to mark paid; click it again to mark unpaid.</p>
+                <div id="monthStrip" class="month-strip"></div>
               </div>
-            </section>
+            </details>
 
-            <section id="collectionNotice" class="collection-notice hidden" aria-live="polite"></section>
+            <details id="billingActionsPanel" class="member-action-panel">
+              <summary><span lang="ko">청구서 · 이메일 · 추심</span><small lang="en">Invoice, Email &amp; Collections</small></summary>
+              <div class="member-action-panel-content">
+                <section class="invoice-panel">
+                  <div>
+                    <h3>청구서 · 알림 <small lang="en">Invoice &amp; Reminder</small></h3>
+                    <p id="invoiceSummary"></p>
+                  </div>
+                  <div class="invoice-actions">
+                    <button id="invoiceButton" class="button secondary bi" type="button">
+                      <span lang="ko">청구서 만들기</span><small lang="en">Generate Invoice</small>
+                    </button>
+                    <button id="emailButton" class="button secondary bi" type="button">
+                      <span lang="ko">알림 이메일 쓰기</span><small lang="en">Email Reminder (Outlook)</small>
+                    </button>
+                    <button id="collectionButton" class="button collection bi" type="button">
+                      <span lang="ko">추심 기관 파일 만들기</span><small lang="en">First Credit Services Placement</small>
+                    </button>
+                  </div>
+                </section>
+                <section id="collectionNotice" class="collection-notice hidden" aria-live="polite"></section>
+              </div>
+            </details>
 
-            <form id="paymentForm" class="payment-form">
-              <h3>다른 달 회비 입력 <small lang="en">Record a Different Month</small></h3>
-              <div class="form-row">
-                <label for="paymentMonth">납부 월 <small lang="en">Payment month</small></label>
-                <input id="paymentMonth" type="month" required>
-              </div>
-              <div class="form-row">
-                <label for="paymentAmount">금액 <small lang="en">Amount</small></label>
-                <input id="paymentAmount" type="number" min="0" step="0.01" required>
-              </div>
-              <button class="button primary large bi" type="submit">
-                <span lang="ko">회비 저장</span><small lang="en">Save Payment</small>
-              </button>
-            </form>
           </section>
 
           <aside class="edit-panel">
@@ -422,6 +414,92 @@
                 <label for="memberName">이름 <small lang="en">Name</small></label>
                 <input id="memberName" required>
               </div>
+              <div class="form-row">
+                <label for="memberAmount">월 회비 <small lang="en">Monthly amount</small></label>
+                <input id="memberAmount" type="number" min="0" step="0.01">
+              </div>
+              <div class="form-row">
+                <label for="memberDownPayment">계약금 <small lang="en">Down payment</small></label>
+                <input id="memberDownPayment" type="number" min="0" step="0.01">
+              </div>
+              <div class="form-row">
+                <label for="memberResponsibleParty">청구 책임자 / 계약 서명자 <small lang="en">Responsible payer / contract signer</small></label>
+                <select id="memberResponsibleParty"></select>
+                <small class="field-help">추심 파일에는 이 사람의 이름과 연락처가 자동으로 들어갑니다. 자녀 계약은 청구 책임자와 연결하세요. · First Credit Services uses this person as the liable account holder.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberStart">이 회원의 계약 시작일 <small lang="en">This member's contract start</small></label>
+                <div class="contract-date-control">
+                  <input id="memberStart" type="date">
+                  <button class="contract-calendar-launch bi" type="button" data-contract-date-picker="memberStart"><span lang="ko">달력</span><small lang="en">Calendar</small></button>
+                </div>
+                <small class="field-help">가족 구성원마다 따로 설정할 수 있습니다. · Set this separately for each family member.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberAgreementEnd">계약 종료일 <small lang="en">Agreement end date</small></label>
+                <div class="contract-date-control">
+                  <input id="memberAgreementEnd" type="date">
+                  <button class="contract-calendar-launch bi" type="button" data-contract-date-picker="memberAgreementEnd"><span lang="ko">달력</span><small lang="en">Calendar</small></button>
+                </div>
+                <small class="field-help">시작일로부터 1년 뒤로 자동 설정됩니다. 특별 계약은 직접 변경할 수 있습니다. · Defaults to one year after signing; manually change it for a special contract.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberAgreementType">계약 유형 <small lang="en">Agreement type</small></label>
+                <select id="memberAgreementType">
+                  <option value="Contract">기간 계약 · Contract</option>
+                  <option value="Month-to-Month">월 단위 · Month-to-Month</option>
+                </select>
+              </div>
+              <div class="member-phone-grid">
+                <div class="form-row">
+                  <label for="memberCellPhone">휴대전화 <small lang="en">Cell phone</small></label>
+                  <input id="memberCellPhone" type="tel" autocomplete="mobile tel">
+                </div>
+                <div class="form-row">
+                  <label for="memberEmail">이메일 <small lang="en">Email</small></label>
+                  <input id="memberEmail" type="email">
+                </div>
+              </div>
+              <div class="member-consent-grid">
+                <label class="check-row"><input id="memberEmailConsent" type="checkbox"> 이메일 연락 동의 <small lang="en">Signed email contact permission</small></label>
+                <label class="check-row"><input id="memberTextConsent" type="checkbox"> 문자 연락 동의 <small lang="en">Signed text-message permission</small></label>
+                <label class="check-row"><input id="memberPhoneConsent" type="checkbox"> 전화 연락 동의 <small lang="en">Signed live phone-call permission</small></label>
+              </div>
+              <small class="field-help consent-help">회원이 새 연락 동의서에서 해당 수단에 “예”를 표시하고 서명한 경우에만 체크하세요. · Check a channel only when the member selected “Yes” for it and signed the contact-permission addendum.</small>
+              <div class="form-row">
+                <label for="memberLateFeeMinimum">최소 연체료 <small lang="en">Minimum late fee</small></label>
+                <input id="memberLateFeeMinimum" type="number" min="0" step="0.01">
+                <small class="field-help">계약서에 따라 $5 또는 $10을 입력하세요. · Enter $5 or $10 from this member's contract.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberLateFeePercentage">연체료 비율 <small lang="en">Late-fee percentage</small></label>
+                <input id="memberLateFeePercentage" type="number" min="0" max="100" step="0.01">
+                <small class="field-help">비율과 최소 금액 중 더 큰 금액이 적용됩니다. · The app charges whichever is greater, this percentage or the minimum amount.</small>
+              </div>
+              <div class="form-row">
+                <label for="memberSquareCustomerId">Square 고객 ID <small lang="en">Square customer ID</small></label>
+                <input id="memberSquareCustomerId" autocomplete="off">
+              </div>
+              <div class="form-row">
+                <label for="memberParent">부모/보호자 <small lang="en">Parent or guardian</small></label>
+                <input id="memberParent">
+              </div>
+              <div class="form-row">
+                <label for="memberHousehold">가족/가구 이름 <small lang="en">Family or household</small></label>
+                <input id="memberHousehold" placeholder="예: Park Family · Park 가족">
+              </div>
+              <div class="form-row">
+                <label for="memberRole">가족 안에서의 역할 <small lang="en">Household role</small></label>
+                <select id="memberRole">
+                  <option value="adult">성인 · Adult</option>
+                  <option value="parent_guardian">부모/보호자 · Parent/guardian</option>
+                  <option value="child">자녀 · Child</option>
+                </select>
+              </div>
+              <label class="check-row participant-row">
+                <input id="memberParticipant" type="checkbox" checked>
+                수련 참가자 <small lang="en">Participates in classes</small>
+              </label>
               <div class="form-row">
                 <label for="memberAddress">주소 <small lang="en">Street address</small></label>
                 <input id="memberAddress" autocomplete="street-address">
@@ -453,40 +531,7 @@
                   <label for="memberWorkPhone">직장 전화 <small lang="en">Work phone</small></label>
                   <input id="memberWorkPhone" type="tel" autocomplete="work tel">
                 </div>
-                <div class="form-row">
-                  <label for="memberCellPhone">휴대전화 <small lang="en">Cell phone</small></label>
-                  <input id="memberCellPhone" type="tel" autocomplete="mobile tel">
-                </div>
               </div>
-              <div class="form-row">
-                <label for="memberEmail">이메일 <small lang="en">Email</small></label>
-                <input id="memberEmail" type="email">
-              </div>
-              <div class="form-row">
-                <label for="memberParent">부모/보호자 <small lang="en">Parent or guardian</small></label>
-                <input id="memberParent">
-              </div>
-              <div class="form-row">
-                <label for="memberResponsibleParty">청구 책임자 / 계약 서명자 <small lang="en">Responsible payer / contract signer</small></label>
-                <select id="memberResponsibleParty"></select>
-                <small class="field-help">추심 파일에는 이 사람의 이름과 연락처가 자동으로 들어갑니다. 자녀 계약은 청구 책임자와 연결하세요. · First Credit Services uses this person as the liable account holder.</small>
-              </div>
-              <div class="form-row">
-                <label for="memberHousehold">가족/가구 이름 <small lang="en">Family or household</small></label>
-                <input id="memberHousehold" placeholder="예: Park Family · Park 가족">
-              </div>
-              <div class="form-row">
-                <label for="memberRole">가족 안에서의 역할 <small lang="en">Household role</small></label>
-                <select id="memberRole">
-                  <option value="adult">성인 · Adult</option>
-                  <option value="parent_guardian">부모/보호자 · Parent/guardian</option>
-                  <option value="child">자녀 · Child</option>
-                </select>
-              </div>
-              <label class="check-row participant-row">
-                <input id="memberParticipant" type="checkbox" checked>
-                수련 참가자 <small lang="en">Participates in classes</small>
-              </label>
               <fieldset class="program-fieldset">
                 <legend>수련 프로그램 <small lang="en">Programs</small></legend>
                 <label class="check-row"><input id="memberTaeKwonDo" type="checkbox"> 태권도 <small lang="en">Tae Kwon Do</small></label>
@@ -513,51 +558,6 @@
                 <span lang="ko">흰띠 → 노란띠 → 초록띠 → 파란띠 → 빨간띠. 각 띠마다 팁 3개.</span>
                 <small lang="en">White → Yellow → Green → Blue → Red, with three tips per belt. Black-belt color cycles advance the Dan stripe.</small>
               </p>
-              <div class="form-row">
-                <label for="memberSquareCustomerId">Square 고객 ID <small lang="en">Square customer ID</small></label>
-                <input id="memberSquareCustomerId" autocomplete="off">
-              </div>
-              <div class="form-row">
-                <label for="memberAmount">월 회비 <small lang="en">Monthly amount</small></label>
-                <input id="memberAmount" type="number" min="0" step="0.01">
-              </div>
-              <div class="form-row">
-                <label for="memberLateFeeMinimum">최소 연체료 <small lang="en">Minimum late fee</small></label>
-                <input id="memberLateFeeMinimum" type="number" min="0" step="0.01">
-                <small class="field-help">계약서에 따라 $5 또는 $10을 입력하세요. · Enter $5 or $10 from this member's contract.</small>
-              </div>
-              <div class="form-row">
-                <label for="memberLateFeePercentage">연체료 비율 <small lang="en">Late-fee percentage</small></label>
-                <input id="memberLateFeePercentage" type="number" min="0" max="100" step="0.01">
-                <small class="field-help">비율과 최소 금액 중 더 큰 금액이 적용됩니다. · The app charges whichever is greater, this percentage or the minimum amount.</small>
-              </div>
-              <div class="form-row">
-                <label for="memberAgreementType">계약 유형 <small lang="en">Agreement type</small></label>
-                <select id="memberAgreementType">
-                  <option value="Contract">기간 계약 · Contract</option>
-                  <option value="Month-to-Month">월 단위 · Month-to-Month</option>
-                </select>
-              </div>
-              <div class="form-row">
-                <label for="memberStart">이 회원의 계약 시작일 <small lang="en">This member's contract start</small></label>
-                <input id="memberStart" type="date">
-                <small class="field-help">가족 구성원마다 따로 설정할 수 있습니다. · Set this separately for each family member.</small>
-              </div>
-              <div class="form-row">
-                <label for="memberAgreementEnd">계약 종료일 <small lang="en">Agreement end date</small></label>
-                <input id="memberAgreementEnd" type="date">
-                <small class="field-help">시작일로부터 1년 뒤로 자동 설정됩니다. 특별 계약은 직접 변경할 수 있습니다. · Defaults to one year after signing; manually change it for a special contract.</small>
-              </div>
-              <div class="form-row">
-                <label for="memberDownPayment">계약금 <small lang="en">Down payment</small></label>
-                <input id="memberDownPayment" type="number" min="0" step="0.01">
-              </div>
-              <div class="member-consent-grid">
-                <label class="check-row"><input id="memberEmailConsent" type="checkbox"> 이메일 연락 동의 <small lang="en">Signed email contact permission</small></label>
-                <label class="check-row"><input id="memberTextConsent" type="checkbox"> 문자 연락 동의 <small lang="en">Signed text-message permission</small></label>
-                <label class="check-row"><input id="memberPhoneConsent" type="checkbox"> 전화 연락 동의 <small lang="en">Signed live phone-call permission</small></label>
-              </div>
-              <small class="field-help consent-help">회원이 새 연락 동의서에서 해당 수단에 “예”를 표시하고 서명한 경우에만 체크하세요. · Check a channel only when the member selected “Yes” for it and signed the contact-permission addendum.</small>
               <label class="check-row">
                 <input id="memberInactive" type="checkbox">
                 쉬는 회원 <small lang="en">Inactive member</small>
@@ -570,6 +570,23 @@
         </div>
       </section>
     </main>
+
+    <dialog id="contractDatePickerDialog" class="contract-date-picker-dialog">
+      <div class="contract-date-picker-head">
+        <div>
+          <p class="section-kicker">계약 날짜 선택 · Contract Date</p>
+          <h2 id="contractDatePickerTitle">연간 달력 · Year Calendar</h2>
+        </div>
+        <button id="contractDatePickerClose" class="button tool bi" type="button"><span lang="ko">닫기</span><small lang="en">Close</small></button>
+      </div>
+      <div class="contract-date-picker-controls" aria-label="Calendar year controls">
+        <button id="contractDatePickerPreviousYear" class="button secondary" type="button">← <span lang="en">Previous year</span></button>
+        <strong id="contractDatePickerYear" aria-live="polite"></strong>
+        <button id="contractDatePickerNextYear" class="button secondary" type="button"><span lang="en">Next year</span> →</button>
+      </div>
+      <p id="contractDatePickerSelected" class="dialog-help" aria-live="polite"></p>
+      <div id="contractDatePickerMonths" class="contract-year-grid" aria-label="Calendar months"></div>
+    </dialog>
 
     <dialog id="contractRenewalDialog" class="contract-renewal-dialog">
       <div class="contract-renewal-dialog-head">
