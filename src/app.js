@@ -116,7 +116,7 @@ const elements = {};
   "syncSquareButton", "syncWorldBankcardButton", "squareSummary", "squarePayments",
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
-  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "contractRenewalFlag", "latestPaid", "householdCard", "progressCard",
+  "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "contractRenewalFlag", "latestPaid", "householdCard", "familyAccountPanel", "familyAccountForm", "familyAccountHouseholdName", "familyAccountTotal", "familyExistingMember", "addExistingFamilyMemberButton", "familyAccountMembers", "addFamilyParentButton", "addFamilyChildButton", "progressCard",
   "contractRenewalNotice", "contractRenewalTitle", "contractRenewalMessage", "contractRenewalOpenButton", "contractRenewalEmailButton",
   "quickPayButton", "catchUpButton", "undoCatchUpButton", "paymentUpdatePanel", "monthStrip", "billingActionsPanel", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
   "quickProfilePanel", "quickProfileForm", "quickMemberName", "quickMemberDob", "quickMemberCellPhone", "quickMemberEmail", "quickMemberAddress", "quickMemberCity", "quickMemberState", "quickMemberZip", "quickResponsibleParty", "quickAgreementType", "quickMemberAmount", "quickMemberStart", "quickMemberAgreementEnd",
@@ -207,6 +207,20 @@ function syncQuickAgreementEndDate() {
     elements.quickMemberAgreementEnd.value = defaultAgreementEndDate(elements.quickMemberStart.value);
   }
   elements.quickMemberStart.dataset.previousValue = elements.quickMemberStart.value;
+}
+
+function suggestedHouseholdName(payerId, member = selectedMember()) {
+  const payer = state.store.members.find((candidate) => candidate.id === payerId);
+  if (!payer?.name || !member || payer.id === member.id) {
+    return "";
+  }
+  return `${payer.name} Family`;
+}
+
+function syncHouseholdNameWithPayer() {
+  if (!elements.memberHousehold.value.trim()) {
+    elements.memberHousehold.value = suggestedHouseholdName(elements.memberResponsibleParty.value);
+  }
 }
 
 const CONTRACT_DATE_LABELS = {
@@ -329,6 +343,18 @@ elements.emailButton.addEventListener("click", () => openPaymentReview("email"))
 elements.collectionButton.addEventListener("click", openCollectionPlacement);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.quickProfileForm.addEventListener("submit", saveQuickProfile);
+elements.familyAccountForm.addEventListener("submit", saveFamilyAccount);
+elements.addFamilyParentButton.addEventListener("click", () => addFamilyAccountPerson("parent_guardian"));
+elements.addFamilyChildButton.addEventListener("click", () => addFamilyAccountPerson("child"));
+elements.addExistingFamilyMemberButton.addEventListener("click", addExistingMemberToFamily);
+elements.familyAccountMembers.addEventListener("input", updateFamilyAccountDraftTotal);
+elements.familyAccountMembers.addEventListener("change", updateFamilyAccountDraftTotal);
+elements.familyAccountMembers.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-family-member]");
+  if (removeButton) removeMemberFromFamily(removeButton.dataset.removeFamilyMember);
+  const deleteButton = event.target.closest("[data-delete-family-member]");
+  if (deleteButton) deleteMember(deleteButton.dataset.deleteFamilyMember);
+});
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
 elements.mappingForm.addEventListener("submit", finishMappingImport);
 elements.yearReportButton.addEventListener("click", openYearDialog);
@@ -381,6 +407,7 @@ elements.memberBeltLevel.addEventListener("change", updateNextCertificationField
 elements.memberMuayThaiLevel.addEventListener("change", updateNextCertificationField);
 elements.memberStart.addEventListener("change", syncMemberAgreementEndDate);
 elements.quickMemberStart.addEventListener("change", syncQuickAgreementEndDate);
+elements.memberResponsibleParty.addEventListener("change", syncHouseholdNameWithPayer);
 
 initAppUpdates();
 render();
@@ -994,6 +1021,7 @@ function renderDetail() {
   renderContractRenewal(member, renewal);
 
   renderHouseholdCard(member);
+  renderFamilyAccountPanel(member);
   renderProgressCard(member);
 
   renderQuickPay(member, status);
@@ -1126,7 +1154,10 @@ function populateResponsiblePartyChoices(member, select = elements.memberRespons
 function renderHouseholdCard(member) {
   const family = accountMembers(state.store.members, member);
   const payer = getResponsibleParty(member, state.store.members) || member;
-  const householdName = payer.name || member.householdName || (family.length > 1 ? `${member.name} household` : "");
+  const householdName = payer.householdName || member.householdName || (family.length > 1 ? `${payer.name} Family` : "");
+  const monthlyTotal = family
+    .filter((person) => person.participant !== false && !person.inactive)
+    .reduce((sum, person) => sum + Number(person.monthlyAmount || 0), 0);
   if (!householdName && family.length <= 1) {
     elements.householdCard.classList.add("hidden");
     elements.householdCard.innerHTML = "";
@@ -1142,24 +1173,62 @@ function renderHouseholdCard(member) {
   elements.householdCard.innerHTML = `
     <div class="section-kicker">청구 계정 · Payer account</div>
     <h3>${escapeHtml(householdName)}</h3>
+    <p class="household-total">가족 월 회비 합계 · Family monthly total <strong>${formatMoney(monthlyTotal)}</strong></p>
     <div class="household-people">
       ${family.map((person) => `
         <button type="button" class="household-person ${person.id === member.id ? "current" : ""}" data-household-member="${escapeHtml(person.id)}">
-          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-certification">자격: ${escapeHtml(primaryCertificationLabel(person) || "미설정")}<span lang="en">Certification: ${escapeHtml(primaryCertificationLabel(person) || "Not set")}</span></small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
+          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-monthly">월 회비: ${formatMoney(person.monthlyAmount)} · Monthly: ${formatMoney(person.monthlyAmount)}</small><small class="household-certification">자격: ${escapeHtml(primaryCertificationLabel(person) || "미설정")}<span lang="en">Certification: ${escapeHtml(primaryCertificationLabel(person) || "Not set")}</span></small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
           <span class="participation-chip ${person.id === payer.id ? "payer" : person.participant === false ? "contact" : "student"}">${person.id === payer.id ? "청구 책임자 · Payer" : person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
         </button>
       `).join("")}
-    </div>
-    <div class="household-actions">
-      <button type="button" class="button secondary bi" data-add-household-member>
-        <span lang="ko">가족 구성원 추가</span><small lang="en">Add Family Member</small>
-      </button>
     </div>
   `;
   elements.householdCard.querySelectorAll("[data-household-member]").forEach((button) => {
     button.addEventListener("click", () => selectMember(button.dataset.householdMember));
   });
-  elements.householdCard.querySelector("[data-add-household-member]")?.addEventListener("click", addFamilyMember);
+}
+
+function renderFamilyAccountPanel(member) {
+  const family = accountMembers(state.store.members, member);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  const hasFamily = family.length > 1 || family.some((person) => person.householdRole === "parent_guardian" || person.householdRole === "child");
+  const householdName = payer.householdName || member.householdName || (hasFamily ? `${payer.name} Family` : "");
+  const monthlyTotal = family
+    .filter((person) => person.participant !== false && !person.inactive)
+    .reduce((sum, person) => sum + Number(person.monthlyAmount || 0), 0);
+
+  elements.familyAccountHouseholdName.value = householdName;
+  elements.familyAccountTotal.innerHTML = `<strong>청구 책임자 · Payer: ${escapeHtml(payer.name)}</strong><span>참가 가족 월 회비 합계 · Participating family monthly total: <b>${formatMoney(monthlyTotal)}</b></span>`;
+  const familyIds = new Set(family.map((person) => person.id));
+  const existingMembers = state.store.members
+    .filter((person) => !familyIds.has(person.id))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  elements.familyExistingMember.innerHTML = `<option value="">기존 회원 선택 · Select existing member</option>${existingMembers.map((person) => `<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)} · ${person.householdRole || "adult"}</option>`).join("")}`;
+  elements.addExistingFamilyMemberButton.disabled = existingMembers.length === 0;
+  elements.familyAccountMembers.innerHTML = family.map((person) => `
+    <article class="family-account-member" data-family-account-member="${escapeHtml(person.id)}">
+      <div class="family-account-member-heading">
+        <label class="family-payer-choice"><input type="radio" name="familyPayer" value="${escapeHtml(person.id)}"${person.id === payer.id ? " checked" : ""}> <span>청구 책임자 <small lang="en">Payer</small></span></label>
+        <span class="family-account-member-tools"><label class="check-row"><input data-family-participant type="checkbox"${person.participant !== false ? " checked" : ""}> <span>수련 참가 <small lang="en">Participates</small></span></label><button class="family-remove-button" type="button" data-remove-family-member="${escapeHtml(person.id)}"><span lang="ko">가족에서 제거</span><small lang="en">Remove from Family</small></button><button class="family-delete-button" type="button" data-delete-family-member="${escapeHtml(person.id)}"><span lang="ko">영구 삭제</span><small lang="en">Delete Permanently</small></button></span>
+      </div>
+      <div class="family-account-member-grid">
+        <label>이름 <small lang="en">Name</small><input data-family-name value="${escapeHtml(person.name)}" required></label>
+        <label>역할 <small lang="en">Role</small><select data-family-role><option value="parent_guardian"${person.householdRole === "parent_guardian" ? " selected" : ""}>부모/보호자 · Parent/guardian</option><option value="child"${person.householdRole === "child" ? " selected" : ""}>자녀 · Child</option><option value="adult"${person.householdRole === "adult" ? " selected" : ""}>성인 · Adult</option></select></label>
+        <label>월 회비 <small lang="en">Individual monthly amount</small><input data-family-monthly type="number" min="0" step="0.01" value="${Number(person.monthlyAmount || 0)}"></label>
+      </div>
+    </article>
+  `).join("");
+}
+
+function updateFamilyAccountDraftTotal() {
+  const rows = Array.from(elements.familyAccountMembers.querySelectorAll("[data-family-account-member]"));
+  if (!rows.length) return;
+  const payerRow = elements.familyAccountMembers.querySelector("input[name='familyPayer']:checked")?.closest("[data-family-account-member]");
+  const payerName = payerRow?.querySelector("[data-family-name]")?.value.trim() || "Not selected";
+  const monthlyTotal = rows
+    .filter((row) => row.querySelector("[data-family-participant]")?.checked)
+    .reduce((sum, row) => sum + Number(row.querySelector("[data-family-monthly]")?.value || 0), 0);
+  elements.familyAccountTotal.innerHTML = `<strong>청구 책임자 · Payer: ${escapeHtml(payerName)}</strong><span>참가 가족 월 회비 합계 · Participating family monthly total: <b>${formatMoney(monthlyTotal)}</b></span>`;
 }
 
 function renderProgressCard(member) {
@@ -1282,6 +1351,7 @@ function selectMember(memberId) {
     elements.paymentUpdatePanel.open = false;
     elements.billingActionsPanel.open = false;
     elements.contractRenewalNotice.open = false;
+    elements.familyAccountPanel.open = false;
   }
   state.selectedId = memberId;
   state.page = "members";
@@ -2228,6 +2298,216 @@ function addFamilyMember() {
   elements.memberName.select();
 }
 
+function addFamilyAccountPerson(role) {
+  const selected = selectedMember();
+  if (!selected) return;
+  const family = accountMembers(state.store.members, selected);
+  const currentPayer = getResponsibleParty(selected, state.store.members) || selected;
+  const hasParent = family.some((person) => person.householdRole === "parent_guardian");
+  const becomesPayer = role === "parent_guardian" && !hasParent;
+  const startDate = selected.startDate || new Date().toISOString().slice(0, 10);
+  const person = {
+    id: makeId("mem"),
+    name: role === "parent_guardian" ? "New Parent / Guardian" : "New Child",
+    startDate,
+    agreementEndDate: defaultAgreementEndDate(startDate),
+    agreementType: selected.agreementType || "Contract",
+    monthlyAmount: 0,
+    lateFeeMinimum: selected.lateFeeMinimum ?? 5,
+    lateFeePercentage: selected.lateFeePercentage ?? 5,
+    email: "",
+    phone: "",
+    homePhone: "",
+    workPhone: "",
+    cellPhone: "",
+    address: selected.address || "",
+    city: selected.city || "",
+    state: selected.state || "",
+    zip: selected.zip || "",
+    dob: "",
+    emailConsent: "No",
+    textConsent: "No",
+    phoneConsent: "No",
+    downPayment: "",
+    parentName: becomesPayer ? "" : currentPayer.name,
+    responsiblePartyId: becomesPayer ? "" : currentPayer.id,
+    householdName: selected.householdName || currentPayer.householdName || `${becomesPayer ? "New Parent / Guardian" : currentPayer.name} Family`,
+    householdId: "",
+    householdRole: role,
+    participant: role !== "parent_guardian",
+    programs: [],
+    certifications: { tae_kwon_do: "", muay_thai: "", legacyLabel: "" },
+    beltLevel: "",
+    nextLevel: "",
+    squareCustomerId: "",
+    externalId: "",
+    inactive: false
+  };
+  state.store = upsertMember(state.store, person);
+
+  if (becomesPayer) {
+    const householdName = `${person.name} Family`;
+    state.store = migrateStore({
+      ...state.store,
+      members: state.store.members.map((candidate) =>
+        [...family.map((item) => item.id), person.id].includes(candidate.id)
+          ? {
+              ...candidate,
+              responsiblePartyId: person.id,
+              parentName: candidate.id === person.id ? "" : person.name,
+              householdName,
+              householdId: ""
+            }
+          : candidate
+      )
+    });
+  }
+
+  saveStore(MSG.newMemberAdded);
+  elements.familyAccountPanel.open = true;
+  render();
+  elements.familyAccountPanel.open = true;
+  const nameInput = elements.familyAccountMembers.querySelector(`[data-family-account-member="${person.id}"] [data-family-name]`);
+  nameInput?.focus();
+  nameInput?.select();
+}
+
+function addExistingMemberToFamily() {
+  const selected = selectedMember();
+  const memberId = elements.familyExistingMember.value;
+  const existing = state.store.members.find((person) => person.id === memberId);
+  if (!selected || !existing) {
+    showToast("추가할 기존 회원을 선택하세요. · Choose an existing member to add.");
+    return;
+  }
+  const payer = getResponsibleParty(selected, state.store.members) || selected;
+  const householdName = payer.householdName || selected.householdName || `${payer.name} Family`;
+  let nextStore = upsertMember(state.store, {
+    ...existing,
+    responsiblePartyId: payer.id,
+    parentName: existing.id === payer.id ? "" : payer.name,
+    householdName,
+    householdId: ""
+  });
+  if (!payer.householdName) {
+    const savedPayer = nextStore.members.find((person) => person.id === payer.id);
+    if (savedPayer) {
+      nextStore = upsertMember(nextStore, { ...savedPayer, householdName, householdId: "" });
+    }
+  }
+  state.store = nextStore;
+  saveStore("기존 회원을 가족에 추가함 · Existing member added to family");
+  showToast(`${existing.name} 님을 가족에 추가했습니다. · Added ${existing.name} to the family.`);
+  render();
+  elements.familyAccountPanel.open = true;
+}
+
+function removeMemberFromFamily(memberId) {
+  const member = state.store.members.find((person) => person.id === memberId);
+  if (!member) return;
+  const family = accountMembers(state.store.members, member);
+  if (family.length <= 1) {
+    showToast("이 회원은 이미 단독 계정입니다. · This member is already standalone.");
+    return;
+  }
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  const confirmed = window.confirm(
+    `Remove ${member.name} from this family account? Their member record and ${state.store.payments.filter((payment) => payment.memberId === member.id).length} payment record(s) will be kept.`
+  );
+  if (!confirmed) return;
+
+  const remainingFamily = family.filter((person) => person.id !== member.id);
+  const replacementPayer = member.id === payer.id
+    ? remainingFamily.find((person) => person.householdRole === "parent_guardian") || remainingFamily[0]
+    : payer;
+  const nextMembers = state.store.members.map((person) => {
+    if (person.id === member.id) {
+      return { ...person, responsiblePartyId: person.id, parentName: "", householdName: "", householdId: "" };
+    }
+    if (remainingFamily.some((relative) => relative.id === person.id)) {
+      return {
+        ...person,
+        responsiblePartyId: replacementPayer.id,
+        parentName: person.id === replacementPayer.id ? "" : replacementPayer.name,
+        householdName: replacementPayer.householdName || `${replacementPayer.name} Family`,
+        householdId: ""
+      };
+    }
+    return person;
+  });
+  state.store = migrateStore({ ...state.store, members: nextMembers });
+  saveStore("가족에서 회원 제거됨 · Member removed from family");
+  showToast(`${member.name} 님을 가족에서 제거했습니다. 기록과 납부 내역은 보존되었습니다. · Removed ${member.name} from the family; their record and payments were kept.`);
+  render();
+}
+
+function deleteMember(memberId) {
+  const member = state.store.members.find((person) => person.id === memberId);
+  if (!member) return;
+  const paymentCount = state.store.payments.filter((payment) => payment.memberId === member.id).length;
+  const confirmed = window.confirm(
+    `${member.name} will be permanently deleted, along with ${paymentCount} payment record${paymentCount === 1 ? "" : "s"}. You can then enter the person again. Continue?`
+  );
+  if (!confirmed) return;
+
+  const remainingMembers = state.store.members
+    .filter((person) => person.id !== member.id)
+    .map((person) => person.responsiblePartyId === member.id
+      ? { ...person, responsiblePartyId: "", parentName: "" }
+      : person);
+  state.store = migrateStore({
+    ...state.store,
+    members: remainingMembers,
+    payments: state.store.payments.filter((payment) => payment.memberId !== member.id)
+  });
+  if (state.selectedId === member.id) {
+    state.selectedId = remainingMembers[0]?.id || "";
+  }
+  saveStore("회원 삭제됨 · Member deleted");
+  showToast(`${member.name} 님과 해당 납부 기록을 삭제했습니다. · Deleted ${member.name} and their payment records.`);
+  render();
+}
+
+function saveFamilyAccount(event) {
+  event.preventDefault();
+  const selected = selectedMember();
+  if (!selected) return;
+  const family = accountMembers(state.store.members, selected);
+  const rows = Array.from(elements.familyAccountMembers.querySelectorAll("[data-family-account-member]"));
+  const payerId = elements.familyAccountMembers.querySelector("input[name='familyPayer']:checked")?.value || family[0]?.id;
+  const payerRow = rows.find((row) => row.dataset.familyAccountMember === payerId);
+  const payerName = payerRow?.querySelector("[data-family-name]")?.value.trim()
+    || family.find((person) => person.id === payerId)?.name
+    || selected.name;
+  const priorPayerName = family.find((person) => person.id === payerId)?.name || "";
+  const requestedHouseholdName = elements.familyAccountHouseholdName.value.trim();
+  const householdName = !requestedHouseholdName || requestedHouseholdName === `${priorPayerName} Family`
+    ? `${payerName} Family`
+    : requestedHouseholdName;
+
+  let nextStore = state.store;
+  rows.forEach((row) => {
+    const member = nextStore.members.find((person) => person.id === row.dataset.familyAccountMember);
+    if (!member) return;
+    nextStore = upsertMember(nextStore, {
+      ...member,
+      name: row.querySelector("[data-family-name]").value.trim() || member.name,
+      householdRole: row.querySelector("[data-family-role]").value,
+      participant: row.querySelector("[data-family-participant]").checked,
+      monthlyAmount: row.querySelector("[data-family-monthly]").value,
+      responsiblePartyId: payerId,
+      parentName: member.id === payerId ? "" : payerName,
+      householdName,
+      householdId: ""
+    });
+  });
+  state.store = nextStore;
+  saveStore("가족 청구 계정 저장됨 · Family account saved");
+  showToast("가족 청구 계정이 저장되었습니다. · Family account saved.");
+  render();
+  elements.familyAccountPanel.open = true;
+}
+
 function quickPayCurrentMonth() {
   const member = selectedMember();
   if (!member || member.collectionPlacement?.status === "charged_off") {
@@ -2613,6 +2893,8 @@ function saveMember(event) {
   if (!member) {
     return;
   }
+  const payerId = elements.memberResponsibleParty.value || member.id;
+  const householdName = elements.memberHousehold.value.trim() || suggestedHouseholdName(payerId, member);
   state.store = upsertMember(state.store, {
     ...member,
     name: elements.memberName.value,
@@ -2626,9 +2908,9 @@ function saveMember(event) {
     zip: elements.memberZip.value,
     dob: elements.memberDob.value,
     email: elements.memberEmail.value,
-    parentName: parentNameForPayer(member, elements.memberResponsibleParty.value, elements.memberParent.value),
-    responsiblePartyId: elements.memberResponsibleParty.value,
-    householdName: elements.memberHousehold.value,
+    parentName: parentNameForPayer(member, payerId, elements.memberParent.value),
+    responsiblePartyId: payerId,
+    householdName,
     householdId: "",
     householdRole: elements.memberRole.value,
     participant: elements.memberParticipant.checked,

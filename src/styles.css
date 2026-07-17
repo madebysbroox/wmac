@@ -80,6 +80,16 @@
   margin: 5px 0 12px;
 }
 
+.household-total {
+  margin: 0 0 12px;
+  color: #43556a;
+  font-weight: 750;
+}
+
+.household-total strong {
+  color: #183c5c;
+}
+
 .household-people {
   display: grid;
   gap: 8px;
@@ -120,6 +130,154 @@
 
 .household-actions {
   margin-top: 12px;
+}
+
+.family-account-form {
+  display: grid;
+  gap: 14px;
+}
+
+.family-account-form .form-row {
+  margin: 0;
+}
+
+.family-account-total {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #edf6fd;
+  color: #183c5c;
+}
+
+.family-account-total span {
+  color: #47647c;
+}
+
+.family-existing-member {
+  display: grid;
+  gap: 7px;
+  flex: 1 1 100%;
+  padding: 12px;
+  border: 1px dashed #9fb9d1;
+  border-radius: 10px;
+  background: #f8fcff;
+}
+
+.family-existing-member > span {
+  color: #43556a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.family-existing-member > span small {
+  color: #6b7787;
+  font-size: 11px;
+}
+
+.family-existing-member .button {
+  min-height: 44px;
+}
+
+.family-account-members {
+  display: grid;
+  gap: 10px;
+}
+
+.family-account-member {
+  padding: 14px;
+  border: 1px solid #d1dfeb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.family-account-member-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.family-account-member-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.family-remove-button,
+.family-delete-button {
+  display: inline-grid;
+  gap: 1px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.family-remove-button {
+  border: 1px solid #8daac5;
+  background: #edf6fd;
+  color: #164d76;
+}
+
+.family-delete-button {
+  border: 1px solid #d9746b;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.family-remove-button small,
+.family-delete-button small {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.family-payer-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #164d76;
+  font-weight: 850;
+}
+
+.family-payer-choice small,
+.family-account-member-heading small {
+  font-weight: 700;
+}
+
+.family-account-member-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(150px, .9fr) minmax(150px, .8fr);
+  gap: 10px;
+}
+
+.family-account-member-grid label {
+  display: grid;
+  gap: 6px;
+  color: #43556a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.family-account-member-grid label small {
+  color: #6b7787;
+  font-size: 11px;
+}
+
+.family-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.family-account-actions .button {
+  flex: 1 1 220px;
 }
 
 .participation-chip,
@@ -208,6 +366,14 @@
   .household-person {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .family-account-member-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .family-account-member-tools {
+    justify-content: flex-start;
   }
 }
 
