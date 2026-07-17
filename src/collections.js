@@ -1,4 +1,4 @@
-import { defaultAgreementEndDate, getMemberPaymentState, getLateFeeBalance } from "./data.js";
+import { defaultAgreementEndDate, getMemberPaymentState, getLateFeeBalance, getResponsibleParty } from "./data.js";
 
 export const FIRST_CREDIT_SERVICES_EMAIL = "placements@fcsbpo.com";
 export const FIRST_CREDIT_SERVICES_HEADERS = [
@@ -58,35 +58,43 @@ const REQUIRED_LABELS = {
   textConsent: "Text-message consent"
 };
 
-export function createCollectionDraft(member, payments = [], today = new Date()) {
+export function createCollectionDraft(member, payments = [], today = new Date(), members = []) {
   const saved = member?.collectionInfo || {};
-  const names = splitMemberName(member?.name);
+  const responsibleParty = getResponsibleParty(member, members);
+  const useExplicitResponsibleParty = Boolean(member?.responsiblePartyId);
+  const responsibleName = useExplicitResponsibleParty
+    ? responsibleParty?.name || member?.name
+    : member?.parentName || responsibleParty?.name || member?.name;
+  const names = splitMemberName(responsibleName);
+  const contactSource = responsibleParty || member || {};
   const chargeOffDate = isoDate(today);
   const lastPayment = latestTuitionPayment(member, payments, chargeOffDate);
   return {
     clubName: "World Martial Arts Center",
-    memberNumber: member?.externalId || member?.id || "",
-    firstName: saved.firstName || names.firstName,
-    lastName: saved.lastName || names.lastName,
-    address: member?.address || saved.address || "",
-    city: member?.city || saved.city || "",
-    state: member?.state || saved.state || "",
-    zip: member?.zip || saved.zip || "",
+    memberNumber: contactSource.externalId || member?.externalId || member?.id || "",
+    responsiblePartyId: contactSource.id || member?.id || "",
+    responsiblePartyName: responsibleName || "",
+    firstName: names.firstName || saved.firstName || "",
+    lastName: names.lastName || saved.lastName || "",
+    address: contactSource.address || saved.address || "",
+    city: contactSource.city || saved.city || "",
+    state: contactSource.state || saved.state || "",
+    zip: contactSource.zip || saved.zip || "",
     ssn: saved.ssn || "",
-    dob: member?.dob || saved.dob || "",
+    dob: contactSource.dob || saved.dob || "",
     gender: saved.gender || "",
-    homePhone: member?.homePhone || saved.homePhone || "",
-    workPhone: member?.workPhone || saved.workPhone || "",
-    cellPhone: member?.cellPhone || member?.phone || saved.cellPhone || "",
+    homePhone: contactSource.homePhone || saved.homePhone || "",
+    workPhone: contactSource.workPhone || saved.workPhone || "",
+    cellPhone: contactSource.cellPhone || contactSource.phone || saved.cellPhone || "",
     agreementSignDate: member?.startDate || saved.agreementSignDate || "",
     agreementExpirationDate: member?.agreementEndDate || saved.agreementExpirationDate || defaultAgreementEndDate(member?.startDate),
     agreementType: member?.agreementType || saved.agreementType || "Contract",
     chargeOffDate,
     downPayment: member?.downPayment ?? saved.downPayment ?? "",
-    emailConsent: member?.emailConsent || saved.emailConsent || "No",
-    textConsent: member?.textConsent || saved.textConsent || "No",
+    emailConsent: contactSource.emailConsent || saved.emailConsent || "No",
+    textConsent: contactSource.textConsent || saved.textConsent || "No",
     serviceFees: saved.serviceFees ?? 0,
-    email: member?.email || "",
+    email: contactSource.email || "",
     monthlyPayment: Number(member?.monthlyAmount || 0),
     lastPaymentDate: lastPayment?.paidAt || "N/A",
     lastPaymentAmount: Number(lastPayment?.amount || 0)
@@ -163,7 +171,7 @@ export function buildCollectionPlacement(member, payments, draft, generatedAt = 
     balance.lateFees,
     balance.serviceFees,
     balance.totalBalance,
-    member.email || draft.email || "",
+    draft.email || member.email || "",
     draft.emailConsent,
     draft.textConsent
   ];
@@ -187,6 +195,8 @@ export function buildCollectionPlacement(member, payments, draft, generatedAt = 
 
 export function collectionInfoFromDraft(draft) {
   return {
+    responsiblePartyId: draft.responsiblePartyId || "",
+    responsiblePartyName: draft.responsiblePartyName || "",
     firstName: draft.firstName,
     lastName: draft.lastName,
     address: draft.address,

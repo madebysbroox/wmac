@@ -5,6 +5,7 @@ import {
   bringMemberUpToDate,
   createEmptyStore,
   defaultAgreementEndDate,
+  exportDailyPaymentStatusRows,
   getAgreementExpirationStatus,
   getDashboardSummary,
   exportStoreRows,
@@ -12,6 +13,7 @@ import {
   getMemberBalance,
   getMemberPaymentState,
   getMemberStatus,
+  getResponsibleParty,
   getLandscapeRows,
   getAttentionRows,
   getYearRevenue,
@@ -39,6 +41,46 @@ test("parses CSV with quoted commas", () => {
   const parsed = parseCsv('Member Name,Monthly Amount\n"Lee, Sam","$120.00"\n');
   assert.deepEqual(parsed.headers, ["Member Name", "Monthly Amount"]);
   assert.equal(parsed.records[0]["Member Name"], "Lee, Sam");
+});
+
+test("daily status export records every account and every month in the report year", () => {
+  const payer = {
+    id: "payer-1",
+    name: "Morgan Lee",
+    householdId: "lee",
+    householdRole: "parent_guardian",
+    participant: false,
+    inactive: false
+  };
+  const student = {
+    id: "student-1",
+    name: "Jamie Lee",
+    responsiblePartyId: payer.id,
+    householdId: "lee",
+    startDate: "2026-01-15",
+    monthlyAmount: 120,
+    participant: true,
+    inactive: false
+  };
+  const rows = exportDailyPaymentStatusRows({
+    members: [student, payer],
+    payments: [{ id: "jan", memberId: student.id, month: "2026-01", amount: 120, paidAt: "2026-01-15" }]
+  }, new Date("2026-02-20T12:00:00"));
+  const studentRow = rows.find((row) => row["Member Name"] === "Jamie Lee");
+
+  assert.equal(rows.length, 2);
+  assert.equal(studentRow["Account Holder / Contract Signer"], "Morgan Lee");
+  assert.equal(studentRow["Jan 2026"], "Paid");
+  assert.equal(studentRow["Feb 2026"], "Due");
+  assert.equal(studentRow["Mar 2026"], "Future");
+  assert.equal(studentRow["Dec 2026"], "Future");
+});
+
+test("uses the saved responsible party before falling back to a matching parent name", () => {
+  const parent = { id: "parent-1", name: "Morgan Lee", householdId: "lee" };
+  const child = { id: "child-1", name: "Jamie Lee", parentName: "Morgan Lee", householdId: "lee" };
+  assert.equal(getResponsibleParty(child, [parent, child]).id, parent.id);
+  assert.equal(getResponsibleParty({ ...child, responsiblePartyId: child.id }, [parent, child]).id, child.id);
 });
 
 test("guesses member columns with friendly aliases", () => {

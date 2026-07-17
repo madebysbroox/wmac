@@ -90,6 +90,40 @@ test("prefills placement data from the permanent member record", () => {
   assert.equal(draft.agreementExpirationDate, "2027-01-01");
 });
 
+test("uses the selected contract signer as the liable First Credit Services account holder", () => {
+  const signer = {
+    id: "payer-1",
+    externalId: "WMAC-PAYER-1",
+    name: "Morgan Park",
+    address: "608 Blackwell Rd",
+    city: "Warrenton",
+    state: "VA",
+    zip: "20186",
+    dob: "1980-04-10",
+    homePhone: "5405550101",
+    workPhone: "5405550102",
+    cellPhone: "5405550103",
+    email: "morgan@example.com",
+    emailConsent: "Yes",
+    textConsent: "Yes"
+  };
+  const draft = createCollectionDraft({
+    ...member,
+    name: "Jamie Park",
+    responsiblePartyId: signer.id,
+    parentName: signer.name
+  }, payments, new Date("2026-04-15T12:00:00Z"), [signer]);
+
+  assert.equal(draft.responsiblePartyName, "Morgan Park");
+  assert.equal(draft.memberNumber, "WMAC-PAYER-1");
+  assert.equal(draft.firstName, "Morgan");
+  assert.equal(draft.lastName, "Park");
+  assert.equal(draft.dob, "1980-04-10");
+  assert.equal(draft.cellPhone, "5405550103");
+  assert.equal(draft.email, "morgan@example.com");
+  assert.equal(draft.emailConsent, "Yes");
+});
+
 test("freezes a charge-off snapshot using only amounts due by the charge-off date", () => {
   const placement = buildCollectionPlacement(member, payments, completeDraft(), new Date("2026-04-15T13:00:00Z"));
   assert.equal(placement.pastDueAmount, 240, "March and April tuition are due");

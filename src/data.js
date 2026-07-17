@@ -27,6 +27,7 @@ const MEMBER_FIELD_ALIASES = {
   phoneConsent: ["phone consent", "call consent", "contractual phone consent"],
   downPayment: ["down payment"],
   parentName: ["parent/guardian name", "parent name", "guardian", "guardian name", "parent"],
+  responsiblePartyId: ["responsible party id", "billing responsible party", "contract signer id", "payer id"],
   externalId: ["id", "member id", "student id", "customer id"],
   squareCustomerId: ["square customer id", "square customer", "square id"],
   householdName: ["household", "household name", "family", "family name"],
@@ -219,6 +220,7 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
       phoneConsent: normalizeConsent(record[columnMap.phoneConsent]) || existing?.phoneConsent || "No",
       downPayment: clean(record[columnMap.downPayment]) === "" ? (existing?.downPayment ?? "") : parseMoney(record[columnMap.downPayment]),
       parentName: clean(record[columnMap.parentName]) || existing?.parentName || "",
+      responsiblePartyId: clean(record[columnMap.responsiblePartyId]) || existing?.responsiblePartyId || "",
       externalId: externalId || existing?.externalId || "",
       squareCustomerId: clean(record[columnMap.squareCustomerId]) || existing?.squareCustomerId || "",
       householdName: clean(record[columnMap.householdName]) || existing?.householdName || "",
@@ -750,6 +752,7 @@ export function upsertMember(store, member) {
     textConsent: normalizeConsent(member.textConsent) || "No",
     phoneConsent: normalizeConsent(member.phoneConsent) || "No",
     downPayment: clean(member.downPayment) === "" ? "" : Number(member.downPayment) || 0,
+    responsiblePartyId: clean(member.responsiblePartyId),
     monthlyAmount: Number(member.monthlyAmount) || 0,
     lateFeeMinimum: getLateFeeMinimum(member),
     lateFeePercentage: getLateFeePercentage(member),
@@ -795,6 +798,7 @@ export function migrateStore(store) {
         textConsent: normalizeConsent(member.textConsent) || "No",
         phoneConsent: normalizeConsent(member.phoneConsent) || "No",
         downPayment: clean(member.downPayment) === "" ? "" : Number(member.downPayment) || 0,
+        responsiblePartyId: clean(member.responsiblePartyId),
         lateFeeMinimum: getLateFeeMinimum(member),
         lateFeePercentage: getLateFeePercentage(member),
         certifications,
@@ -1097,6 +1101,65 @@ export function exportStoreRows(store) {
   return rows;
 }
 
+// A dated organization snapshot: one row per account, with a status for every
+// month in the report year. This complements the detailed payment backup.
+export function exportDailyPaymentStatusRows(store, today = new Date()) {
+  const reportDate = normalizeDate(today.toISOString().slice(0, 10));
+  const year = today.getFullYear();
+  const reportMonth = monthKey(today);
+  const monthLabels = Array.from({ length: 12 }, (_, index) => ({
+    key: `${year}-${String(index + 1).padStart(2, "0")}`,
+    label: new Date(year, index, 1).toLocaleDateString("en-US", { month: "short" })
+  }));
+
+  return [...(store?.members || [])]
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+    .map((member) => {
+      const responsibleParty = getResponsibleParty(member, store?.members || []);
+      const accountHolder = member.responsiblePartyId
+        ? responsibleParty?.name || member.name || ""
+        : member.parentName || responsibleParty?.name || member.name || "";
+      const paymentState = getMemberPaymentState(member, store?.payments || [], today);
+      const statusByMonth = new Map(paymentState.months.map((month) => [month.month, month.state]));
+      const balance = getMemberBalance(member, store?.payments || [], today);
+      const row = {
+        "Report Date": reportDate,
+        "Account Holder / Contract Signer": accountHolder,
+        "Member Name": member.name || "",
+        "Member ID": member.externalId || member.id || "",
+        Household: member.householdName || "",
+        "Current Status": dailyAccountStatus(member, paymentState),
+        "Monthly Amount": moneyText(member.monthlyAmount),
+        "Amount Due Now": moneyText(balance.dueNow)
+      };
+
+      monthLabels.forEach(({ key, label }) => {
+        row[`${label} ${year}`] = dailyMonthStatus(member, key, reportMonth, statusByMonth);
+      });
+      return row;
+    });
+}
+
+// The saved ID is the authoritative link. For existing records, a matching
+// Parent/Guardian Name remains a useful automatic fallback until the operator
+// chooses the signer in the member form.
+export function getResponsibleParty(member, members = []) {
+  if (!member) return null;
+  const linked = (members || []).find((candidate) => candidate.id === member.responsiblePartyId);
+  if (linked) return linked;
+  const parentName = normalize(member.parentName);
+  if (parentName) {
+    const sameHousehold = (members || []).find((candidate) =>
+      candidate.id !== member.id
+      && normalize(candidate.name) === parentName
+      && (!member.householdId || candidate.householdId === member.householdId)
+    );
+    if (sameHousehold) return sameHousehold;
+    return (members || []).find((candidate) => candidate.id !== member.id && normalize(candidate.name) === parentName) || member;
+  }
+  return member;
+}
+
 // Totals are grouped by the month each payment was for (the "2026-06" key),
 // so back-entered history lands in the right year.
 export function getYearRevenue(store, year) {
@@ -1160,6 +1223,7 @@ export function exportRosterRows(store) {
       "Phone Consent": member.phoneConsent || "No",
       "Down Payment": member.downPayment === "" || member.downPayment == null ? "" : moneyText(member.downPayment),
       "Parent/Guardian Name": member.parentName || "",
+      "Responsible Party ID": member.responsiblePartyId || "",
       "Member ID": member.externalId || "",
       "Square Customer ID": member.squareCustomerId || "",
       "Household Name": member.householdName || "",
@@ -1500,6 +1564,31 @@ function householdRoleOrder(role) {
 function cryptoId(prefix) {
   const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${random}`;
+}
+
+function dailyAccountStatus(member, paymentState) {
+  if (member.collectionPlacement?.status === "charged_off") return "Placed for collection";
+  if (member.inactive) return "Inactive";
+  if (member.participant === false) return "Contact only";
+  if (paymentState.flags.setupNeeded) return "Needs setup";
+  return paymentState.label;
+}
+
+function dailyMonthStatus(member, month, reportMonth, statusByMonth) {
+  if (member.collectionPlacement?.status === "charged_off") return "Collection";
+  if (member.inactive) return "Inactive";
+  if (member.participant === false) return "Contact only";
+  if (!isIsoDate(member.startDate) || Number(member.monthlyAmount || 0) <= 0) return "Needs setup";
+  if (month < member.startDate.slice(0, 7)) return "Not started";
+  if (month > reportMonth) return "Future";
+  const state = statusByMonth.get(month);
+  return {
+    paid: "Paid",
+    pending: "Awaiting approval",
+    attention: "Due",
+    behind: "Behind",
+    upcoming: "Upcoming"
+  }[state] || "Not billed";
 }
 
 function moneyText(value) {

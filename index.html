@@ -80,6 +80,9 @@
           <button id="exportButton" class="button tool bi" type="button">
             <span lang="ko">백업 파일 저장</span><small lang="en">Export Backup CSV</small>
           </button>
+          <button id="dailyStatusEmailButton" class="button tool bi" type="button">
+            <span lang="ko">일일 결제 현황 이메일</span><small lang="en">Daily Payment Status Email</small>
+          </button>
           <button id="yearReportButton" class="button tool bi" type="button">
             <span lang="ko">연말 보고서 (세금)</span><small lang="en">Year-End Tax Report</small>
           </button>
@@ -426,6 +429,11 @@
               <div class="form-row">
                 <label for="memberParent">부모/보호자 <small lang="en">Parent or guardian</small></label>
                 <input id="memberParent">
+              </div>
+              <div class="form-row">
+                <label for="memberResponsibleParty">청구 책임자 / 계약 서명자 <small lang="en">Responsible payer / contract signer</small></label>
+                <select id="memberResponsibleParty"></select>
+                <small class="field-help">추심 파일에는 이 사람의 이름과 연락처가 자동으로 들어갑니다. 자녀 계약은 청구 책임자와 연결하세요. · First Credit Services uses this person as the liable account holder.</small>
               </div>
               <div class="form-row">
                 <label for="memberHousehold">가족/가구 이름 <small lang="en">Family or household</small></label>

@@ -43,6 +43,7 @@ export const FIELD_LABELS = {
   phoneConsent: { ko: "전화 연락 동의", en: "Phone-call consent" },
   downPayment: { ko: "계약금", en: "Down payment" },
   parentName: { ko: "부모/보호자", en: "Parent or guardian" },
+  responsiblePartyId: { ko: "청구 책임자", en: "Responsible payer / contract signer" },
   externalId: { ko: "회원 번호", en: "Member ID" },
   squareCustomerId: { ko: "Square 고객 ID", en: "Square customer ID" },
   householdName: { ko: "가족/가구 이름", en: "Family or household" },

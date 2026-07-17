@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { dirname, extname, join, relative } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createEmptyProviderPaymentStore,
@@ -86,7 +86,9 @@ server.on("error", (error) => {
 });
 
 let currentPort = preferredPort;
-listen(currentPort);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  listen(currentPort);
+}
 
 function listen(port) {
   currentPort = port;
@@ -271,10 +273,13 @@ async function syncSquarePayments(response) {
   json(response, 200, { checked, imported, payments: store.payments, configured: true });
 }
 
-async function syncSquareRelayPayments(response) {
-  const relayBaseUrl = process.env.SQUARE_RELAY_BASE_URL.replace(/\/$/, "");
-  const token = process.env.SQUARE_RELAY_SYNC_TOKEN;
-  const relayResponse = await fetch(`${relayBaseUrl}/payments`, {
+export async function syncSquareRelayPayments(response, dependencies = {}) {
+  const relayBaseUrl = String(dependencies.relayBaseUrl || process.env.SQUARE_RELAY_BASE_URL || "").replace(/\/$/, "");
+  const token = dependencies.token || process.env.SQUARE_RELAY_SYNC_TOKEN;
+  const fetchRelay = dependencies.fetchImpl || fetch;
+  const readStore = dependencies.readStore || (() => readProviderStore("square"));
+  const writeStore = dependencies.writeStore || ((store) => writeProviderStore("square", store));
+  const relayResponse = await fetchRelay(`${relayBaseUrl}/payments`, {
     headers: {
       Authorization: `Bearer ${token}`
     }
@@ -285,42 +290,84 @@ async function syncSquareRelayPayments(response) {
     return;
   }
 
-  let store = await readProviderStore("square");
-  const payments = body.payments || [];
-  for (const payment of payments) {
-    const providerStatus = String(payment.squareStatus || payment.providerStatus || payment.payment?.status || "").toUpperCase();
-    if (providerStatus && providerStatus !== "COMPLETED") {
-      continue;
+  let store = await readStore();
+  const importedPayments = [];
+  const newlyImportedPayments = [];
+  let currentBody = body;
+  let cursor = "";
+  let pages = 0;
+  const visitedCursors = new Set();
+  do {
+    const payments = currentBody.payments || [];
+    for (const payment of payments) {
+      if (!squareRelayPaymentIsCompleted(payment)) {
+        continue;
+      }
+      const normalized = normalizeSquarePayment({
+        ...payment,
+        sourceEventType: payment.eventType,
+        squarePaymentId: payment.squarePaymentId || payment.paymentId,
+        buyerEmail: payment.buyerEmail || payment.buyerEmailAddress,
+        createdAt: payment.createdAt || payment.squareCreatedAt || payment.receivedAt,
+        updatedAt: payment.updatedAt || payment.squareUpdatedAt || payment.receivedAt,
+        paidAt: payment.paidAt || payment.squareCreatedAt || payment.receivedAt,
+        squareStatus: payment.squareStatus || payment.status,
+        status: payment.localStatus || "pending"
+      });
+      const existing = (store.payments || []).find((item) =>
+        item.id === normalized.id
+        || (normalized.providerPaymentId && item.providerPaymentId === normalized.providerPaymentId)
+      );
+      store = upsertProviderPayment(store, normalized);
+      importedPayments.push(payment);
+      if (!existing || existing.providerEventId !== normalized.providerEventId) {
+        newlyImportedPayments.push(payment);
+      }
     }
-    store = upsertProviderPayment(store, normalizeSquarePayment({
-      ...payment,
-      sourceEventType: payment.eventType,
-      squarePaymentId: payment.squarePaymentId || payment.paymentId,
-      buyerEmail: payment.buyerEmail || payment.buyerEmailAddress,
-      createdAt: payment.createdAt || payment.squareCreatedAt || payment.receivedAt,
-      updatedAt: payment.updatedAt || payment.squareUpdatedAt || payment.receivedAt,
-      paidAt: payment.paidAt || payment.squareCreatedAt || payment.receivedAt,
-      squareStatus: payment.squareStatus || payment.status,
-      status: payment.localStatus || "pending"
-    }));
-  }
-  await writeProviderStore("square", store);
+    cursor = String(currentBody.nextCursor || "");
+    pages += 1;
+    if (!cursor || pages >= 100) {
+      break;
+    }
+    if (visitedCursors.has(cursor)) {
+      json(response, 502, { error: "Square relay returned a repeated page cursor." });
+      return;
+    }
+    visitedCursors.add(cursor);
+    const pageUrl = new URL(`${relayBaseUrl}/payments`);
+    pageUrl.searchParams.set("cursor", cursor);
+    const pageResponse = await fetchRelay(pageUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    currentBody = await pageResponse.json();
+    if (!pageResponse.ok) {
+      json(response, pageResponse.status, { error: "Square relay sync failed.", details: currentBody });
+      return;
+    }
+  } while (true);
+  await writeStore(store);
 
   const delivered = [];
-  for (const payment of payments) {
+  let deliveryConflicts = 0;
+  for (const payment of newlyImportedPayments) {
     const paymentId = payment.paymentId || payment.squarePaymentId || payment.id;
-    if (!paymentId) {
+    const eventId = relayPaymentEventId(payment);
+    if (!paymentId || !eventId) {
       continue;
     }
     try {
-      const deliveredResponse = await fetch(`${relayBaseUrl}/payments/${encodeURIComponent(paymentId)}/delivered`, {
+      const deliveredResponse = await fetchRelay(`${relayBaseUrl}/payments/${encodeURIComponent(paymentId)}/delivered`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ eventId })
       });
       if (deliveredResponse.ok) {
         delivered.push(paymentId);
+      } else if (deliveredResponse.status === 409) {
+        deliveryConflicts += 1;
       }
     } catch {
       // The local copy is saved. A later sync can mark the relay item delivered.
@@ -328,12 +375,29 @@ async function syncSquareRelayPayments(response) {
   }
 
   json(response, 200, {
-    imported: payments.length,
+    imported: importedPayments.length,
+    pages,
     delivered: delivered.length,
+    deliveryConflicts,
     payments: store.payments,
     configured: true,
     source: "relay"
   });
+}
+
+export function squareRelayPaymentIsCompleted(payment) {
+  const providerStatus = String(
+    payment?.squareStatus ||
+    payment?.providerStatus ||
+    payment?.status ||
+    payment?.payment?.status ||
+    ""
+  ).toUpperCase();
+  return !providerStatus || providerStatus === "COMPLETED";
+}
+
+function relayPaymentEventId(payment) {
+  return String(payment?.eventId || payment?.event_id || "").trim();
 }
 
 async function syncWorldBankcardPayments(response) {

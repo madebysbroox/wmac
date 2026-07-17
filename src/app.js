@@ -4,6 +4,7 @@ import {
   addPayment,
   createEmptyStore,
   defaultAgreementEndDate,
+  exportDailyPaymentStatusRows,
   exportRosterRows,
   exportStoreRows,
   getAgreementExpirationStatus,
@@ -12,6 +13,7 @@ import {
   getLandscapeRows,
   getMemberStatus,
   getMemberPaymentState,
+  getResponsibleParty,
   getYearRevenue,
   guessColumnMap,
   householdMembers,
@@ -99,7 +101,7 @@ const state = {
 const elements = {};
 [
   "saveStatus", "globalSearchInput", "globalSearchResults", "homeTab", "membersTab", "landscapeTab", "squareTab", "appLayout", "memberSidebar",
-  "memberCsv", "paymentCsv", "exportButton",
+  "memberCsv", "paymentCsv", "exportButton", "dailyStatusEmailButton",
   "searchInput", "addMemberButton", "paidCount", "pendingCount", "watchCount", "lateCount",
   "memberList", "dashboardView", "landscapeView", "landscapeSummary", "landscapeHead", "landscapeBody", "landscapeReviewButton",
   "todayFollowupCount", "todayFollowupList", "reviewAllAttentionButton", "startTodayReview", "dailyBriefSummary",
@@ -115,7 +117,7 @@ const elements = {};
   "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
-  "memberEmail", "memberParent", "memberHousehold", "memberRole", "memberParticipant",
+  "memberEmail", "memberParent", "memberResponsibleParty", "memberHousehold", "memberRole", "memberParticipant",
   "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberLateFeeMinimum", "memberLateFeePercentage", "memberStart",
   "memberAgreementType", "memberAgreementEnd", "memberDownPayment", "memberEmailConsent", "memberTextConsent", "memberPhoneConsent",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
@@ -202,6 +204,7 @@ elements.squareTab.addEventListener("click", showSquare);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
 elements.exportButton.addEventListener("click", exportBackup);
+elements.dailyStatusEmailButton.addEventListener("click", exportDailyPaymentStatusEmail);
 elements.searchInput.addEventListener("input", render);
 elements.globalSearchInput.addEventListener("input", renderGlobalSearch);
 elements.globalSearchInput.addEventListener("keydown", handleGlobalSearchKeydown);
@@ -933,6 +936,7 @@ function renderDetail() {
   elements.memberDob.value = member.dob || "";
   elements.memberEmail.value = member.email || "";
   elements.memberParent.value = member.parentName || "";
+  populateResponsiblePartyChoices(member);
   elements.memberHousehold.value = member.householdName || "";
   elements.memberRole.value = member.householdRole || "adult";
   elements.memberParticipant.checked = member.participant !== false;
@@ -960,6 +964,29 @@ function renderDetail() {
   elements.memberLateFeePercentage.disabled = collectionPlaced;
   elements.memberStart.disabled = collectionPlaced;
   elements.memberInactive.disabled = collectionPlaced;
+  elements.memberResponsibleParty.disabled = collectionPlaced;
+}
+
+function populateResponsiblePartyChoices(member) {
+  const resolved = getResponsibleParty(member, state.store.members);
+  const selectedId = member.responsiblePartyId || resolved?.id || member.id;
+  const candidates = [...state.store.members]
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+  elements.memberResponsibleParty.replaceChildren();
+  candidates.forEach((candidate) => {
+    const option = document.createElement("option");
+    option.value = candidate.id;
+    const relationship = candidate.id === member.id ? "Self" : candidate.householdRole === "parent_guardian" ? "Parent/guardian" : candidate.householdName || "Member";
+    option.textContent = `${candidate.name || "Unnamed member"} · ${relationship}`;
+    elements.memberResponsibleParty.append(option);
+  });
+  if (!candidates.some((candidate) => candidate.id === selectedId)) {
+    const fallback = document.createElement("option");
+    fallback.value = member.id;
+    fallback.textContent = `${member.name || "Unnamed member"} · Self`;
+    elements.memberResponsibleParty.append(fallback);
+  }
+  elements.memberResponsibleParty.value = selectedId;
 }
 
 function renderHouseholdCard(member) {
@@ -1563,6 +1590,31 @@ function exportBackup() {
   downloadCsv(csv, `master-lee-payment-backup-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
+function exportDailyPaymentStatusEmail() {
+  const today = new Date();
+  const rows = exportDailyPaymentStatusRows(state.store, today);
+  if (rows.length === 0) {
+    showToast(MSG.nothingToExport);
+    return;
+  }
+  const date = today.toISOString().slice(0, 10);
+  const filename = `wmac-daily-payment-status-${date}.csv`;
+  downloadCsv(toCsv(rows), filename);
+  const subject = `WMAC daily payment status - ${date}`;
+  const body = [
+    "Hello,",
+    "",
+    "Attached is the daily World Martial Arts Center account and monthly payment-status snapshot.",
+    "",
+    `File to attach: ${filename}`,
+    "",
+    "Thank you,",
+    "World Martial Arts Center"
+  ].join("\r\n");
+  showToast("일일 CSV를 이메일에 첨부하세요 · Attach the downloaded daily CSV to the email");
+  window.location.href = `mailto:world_martial_art_ct@msn.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 function exportNextYearRoster() {
   const rows = exportRosterRows(state.store);
   if (rows.length === 0) {
@@ -1935,6 +1987,7 @@ function addNewMember() {
     phoneConsent: "No",
     downPayment: "",
     parentName: "",
+    responsiblePartyId: "",
     householdName: "",
     householdRole: "adult",
     participant: true,
@@ -1983,7 +2036,8 @@ function addFamilyMember() {
     textConsent: "No",
     phoneConsent: "No",
     downPayment: "",
-    parentName: "",
+    parentName: familyMember.parentName || (familyMember.householdRole === "parent_guardian" ? familyMember.name : ""),
+    responsiblePartyId: familyMember.responsiblePartyId || familyMember.id,
     householdName: familyMember.householdName,
     householdId: familyMember.householdId || "",
     householdRole: "child",
@@ -2308,6 +2362,7 @@ function saveMember(event) {
     dob: elements.memberDob.value,
     email: elements.memberEmail.value,
     parentName: elements.memberParent.value,
+    responsiblePartyId: elements.memberResponsibleParty.value,
     householdName: elements.memberHousehold.value,
     householdId: "",
     householdRole: elements.memberRole.value,
@@ -2356,7 +2411,7 @@ function openCollectionPlacement() {
     return;
   }
 
-  const draft = createCollectionDraft(member, state.store.payments);
+  const draft = createCollectionDraft(member, state.store.payments, new Date(), state.store.members);
   const values = {
     collectionFirstName: draft.firstName,
     collectionLastName: draft.lastName,
@@ -2390,7 +2445,7 @@ function openCollectionPlacement() {
 function readCollectionDraft() {
   const member = selectedMember();
   return {
-    ...createCollectionDraft(member, state.store.payments),
+    ...createCollectionDraft(member, state.store.payments, new Date(), state.store.members),
     firstName: elements.collectionFirstName.value.trim(),
     lastName: elements.collectionLastName.value.trim(),
     address: elements.collectionAddress.value.trim(),
@@ -2430,6 +2485,7 @@ function updateCollectionPlacementPreview() {
   elements.collectionMissing.classList.toggle("ready", missing.length === 0);
 
   let summary = `
+    <div><span>청구 책임자 · Liable payer</span><strong>${escapeHtml(draft.responsiblePartyName || member.name)}</strong></div>
     <div><span>월 회비 · Monthly</span><strong>${formatMoney(member.monthlyAmount)}</strong></div>
     <div><span>연체료 조건 · Late-fee term</span><strong>${member.lateFeePercentage ?? 5}% or ${formatMoney(member.lateFeeMinimum ?? 5)}</strong></div>`;
   if (missing.length === 0) {

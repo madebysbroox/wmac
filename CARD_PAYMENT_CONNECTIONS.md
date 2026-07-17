@@ -65,9 +65,9 @@ Then open the app and click **스퀘어에서 가져오기 (Sync Square)** in **
 The relay must expose:
 
 - `GET /payments`, returning JSON with a `payments` array.
-- `POST /payments/:paymentId/delivered`, so the app can tell the relay that a payment was copied locally.
+- `POST /payments/:paymentId/delivered`, so the app can tell the relay that a payment was copied locally. The app sends `{"eventId":"SQUARE_EVENT_ID"}` as JSON; the relay returns `409 Conflict` instead of clearing the record if a newer Square event arrived after the fetch.
 
-Each relay payment can include fields such as `paymentId`, `squarePaymentId`, `amount`, `buyerName`, `buyerEmailAddress`, `receiptUrl`, `squareCreatedAt`, `receivedAt`, and `localStatus`. The app normalizes these fields before showing the payment in the review queue.
+Each relay payment must include its Square `eventId` and can include fields such as `paymentId`, `squarePaymentId`, `amount`, `buyerName`, `buyerEmailAddress`, `receiptUrl`, `squareCreatedAt`, `receivedAt`, and `localStatus`. The app normalizes these fields before showing the payment in the review queue.
 
 ### Optional: Direct Square Sync
 
