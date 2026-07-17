@@ -489,10 +489,7 @@ function renderGlobalSearch() {
     elements.globalSearchResults.classList.add("hidden");
     return;
   }
-  const members = state.store.members
-    .filter((member) => member.name.toLocaleLowerCase().includes(query))
-    .sort((left, right) => Number(left.inactive) - Number(right.inactive) || left.name.localeCompare(right.name))
-    .slice(0, 8);
+  const members = searchMembers(state.store.members, query).slice(0, 8);
   elements.globalSearchResults.innerHTML = members.length
     ? members.map((member, index) => {
       const status = member.participant === false ? null : displayedMemberStatus(member);
@@ -501,7 +498,11 @@ function renderGlobalSearch() {
         : member.participant === false
           ? "가족 연락처 · Family contact"
           : `${STATUS_LABELS[status.level].ko} · ${STATUS_LABELS[status.level].en}`;
-      return `<button type="button" data-global-member="${escapeHtml(member.id)}" ${index === 0 ? "data-first-result" : ""}><span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.householdName || "개인 회원 · Individual")}</small></span><em>${escapeHtml(context)}</em></button>`;
+      const payer = getResponsibleParty(member, state.store.members) || member;
+      const accountLabel = payer.id === member.id
+        ? member.householdName || "개인 계정 · Individual account"
+        : `${payer.name} · Payer account`;
+      return `<button type="button" data-global-member="${escapeHtml(member.id)}" ${index === 0 ? "data-first-result" : ""}><span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(accountLabel)}</small></span><em>${escapeHtml(context)}</em></button>`;
     }).join("")
     : `<div class="global-find-empty">찾는 회원이 없습니다.<small lang="en">No matching members.</small></div>`;
   elements.globalSearchResults.classList.remove("hidden");
@@ -2167,7 +2168,8 @@ function openAttentionReview(startMemberId = "") {
     changed: 0,
     kept: 0,
     lastBatch: null,
-    message: ""
+    message: "",
+    visibleMonths: {}
   };
   renderAttentionReview();
   elements.attentionReviewDialog.showModal();
@@ -2215,13 +2217,22 @@ function renderAttentionReview() {
     <div><small>납부일 · Due day</small><strong>매월 ${Number(member.startDate?.split("-")[2]) || 1}일</strong></div>
     <div><small>현재 미납액 · Balance</small><strong>${formatMoney(balance.dueNow)}</strong></div>
   `;
-  elements.attentionReviewMonths.innerHTML = paymentState.dueUnpaidMonths.map((month) => `
-    <div class="attention-month ${month.state}">
+  const visibleMonths = review.visibleMonths[member.id] || paymentState.dueUnpaidMonths.map((month) => month.month);
+  review.visibleMonths[member.id] = visibleMonths;
+  const statesByMonth = new Map(paymentState.months.map((month) => [month.month, month]));
+  elements.attentionReviewMonths.innerHTML = visibleMonths.map((monthKey) => {
+    const month = statesByMonth.get(monthKey) || { month: monthKey, paid: false, pending: false, state: "attention" };
+    return `
+    <button type="button" class="attention-month ${month.paid ? "paid" : month.state}" data-attention-pay-month="${escapeHtml(month.month)}"${month.pending ? " disabled" : ""}>
       <strong>${formatMonthKo(month.month)}</strong>
       <small lang="en">${formatMonthEn(month.month)}</small>
-      <span>${month.daysLate === 0 ? "오늘 납부일 · Due today" : `${month.daysLate}일 지남 · ${month.daysLate} days late`}</span>
-    </div>
-  `).join("");
+      <span>${month.pending ? "카드 결제 검토 중 · Card review pending" : month.paid ? "납부함 — 클릭하여 미납으로 변경 · Paid — click to mark unpaid" : "클릭하여 납부 완료 · Click to mark paid"}</span>
+    </button>
+  `;
+  }).join("");
+  elements.attentionReviewMonths.querySelectorAll("[data-attention-pay-month]").forEach((button) => {
+    button.addEventListener("click", () => toggleAttentionMonthPaid(button.dataset.attentionPayMonth));
+  });
   elements.attentionExceptionMonths.innerHTML = paymentState.dueUnpaidMonths.map((month, index) => `
     <label class="attention-exception-choice">
       <input type="checkbox" value="${escapeHtml(month.month)}" checked${month.pending ? " disabled" : ""}>
@@ -2258,6 +2269,53 @@ function markAttentionMemberPaid() {
   advanceAttentionReview(pendingMonths.length
     ? `${member.name}: 확인 가능한 월은 납부 완료, 카드 검토 ${pendingMonths.length}개월 유지 · Actionable months paid; ${pendingMonths.length} card-pending month${pendingMonths.length === 1 ? "" : "s"} unchanged`
     : `${member.name}: 모두 납부 완료 · All due months marked paid`);
+}
+
+function toggleAttentionMonthPaid(month) {
+  const member = currentAttentionMember();
+  if (!member || !month || Number(member.monthlyAmount || 0) <= 0) {
+    return;
+  }
+  const pending = pendingStagedPaymentsForMember(state.stagedPayments, member);
+  const paymentState = getMemberPaymentState(member, state.store.payments, new Date(), pending);
+  if (paymentState.paidMonths.has(month)) {
+    const removed = state.store.payments.filter((payment) =>
+      payment.memberId === member.id && payment.month === month && payment.category !== "one-off"
+    );
+    state.store = removePayment(state.store, member.id, month);
+    const activityId = logRemovedPayments(member, removed, {
+      ko: "검토에서 한 달 미납으로 변경",
+      en: "Review marked one month unpaid"
+    });
+    state.attentionReview.lastBatch = { memberId: member.id, months: [month], paymentIds: [], activityId };
+    state.attentionReview.changed += 1;
+    state.attentionReview.message = `${member.name}: ${formatMonthBi(month)} 미납으로 변경 · Marked unpaid`;
+    saveStore(MSG.paymentRemoved);
+    showToast(MSG.paymentRemovedFor(member.name, formatMonthBi(month)));
+    render();
+    renderAttentionReview();
+    return;
+  }
+  const beforeIds = new Set(state.store.payments.map((payment) => payment.id));
+  state.store = addPayment(state.store, {
+    memberId: member.id,
+    month,
+    amount: member.monthlyAmount,
+    source: "attention-review"
+  });
+  const paymentIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
+  if (!paymentIds.length) return;
+  const activityId = logAddedPayments(member, paymentIds, [month], {
+    ko: "검토에서 한 달 납부 완료",
+    en: "Review marked one month paid"
+  });
+  state.attentionReview.lastBatch = { memberId: member.id, months: [month], paymentIds, activityId };
+  state.attentionReview.changed += 1;
+  state.attentionReview.message = `${member.name}: ${formatMonthBi(month)} 납부 완료 · Payment recorded`;
+  saveStore(MSG.paymentSaved);
+  showToast(MSG.paymentSavedFor(member.name, formatMonthBi(month)));
+  render();
+  renderAttentionReview();
 }
 
 function keepAttentionMemberAsIs() {

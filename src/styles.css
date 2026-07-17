@@ -1074,6 +1074,26 @@ textarea {
   gap: 8px;
 }
 
+.member-save-bar {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+  margin: 0 0 16px;
+  padding: 10px;
+  border: 1px solid #b8d7c3;
+  border-radius: 12px;
+  background: rgba(248, 255, 250, .97);
+  box-shadow: 0 4px 14px rgba(31, 73, 48, .1);
+}
+
+.member-save-bar small {
+  display: block;
+  margin-top: 6px;
+  color: #52705c;
+  font-size: 12px;
+  text-align: center;
+}
+
 .latest-paid {
   margin: 22px 0;
   padding: 18px;
@@ -2688,6 +2708,7 @@ body {
   padding: 11px 4px;
   border: 0;
   border-bottom: 1px solid var(--line);
+  border: 0;
   background: transparent;
   color: var(--ink);
   text-align: left;
@@ -3003,10 +3024,37 @@ body {
   border: 1px solid var(--line);
   border-left: 5px solid var(--amber);
   border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.attention-month:not(:disabled):hover,
+.attention-month:not(:disabled):focus-visible {
+  border-color: var(--green);
+  border-left-color: var(--green);
+  background: var(--green-soft);
+}
+
+.attention-month:disabled {
+  cursor: not-allowed;
+  opacity: .65;
 }
 
 .attention-month.behind {
   border-left-color: var(--red);
+}
+
+.attention-month.paid {
+  border-color: #9ecbad;
+  border-left-color: var(--green);
+  background: var(--green-soft);
+}
+
+.attention-month.paid span {
+  color: var(--green);
+  font-weight: 700;
 }
 
 .attention-month small,
