@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   addPayment,
+  accountMembers,
   bringMemberUpToDate,
   createEmptyStore,
   defaultAgreementEndDate,
@@ -165,6 +166,25 @@ test("imports members and supports partial name search", () => {
   const result = importMembersFromRecords(parsed.records, guessColumnMap(parsed.headers), createEmptyStore());
   assert.equal(result.imported.length, 2);
   assert.deepEqual(searchMembers(result.store.members, "Sa").map((member) => member.name), ["Sam Park", "Sarah Kim"]);
+});
+
+test("groups parent and child records under the payer for searching and spreadsheet exports", () => {
+  const result = importMembersFromRecords([
+    { Name: "Zara Park", Family: "Park", Role: "Parent", Participant: "no" },
+    { Name: "Amy Park", Family: "Park", Role: "Child", Participant: "yes", Amount: "120", Start: "2026-06-01" }
+  ], {
+    name: "Name", householdName: "Family", householdRole: "Role", participant: "Participant",
+    monthlyAmount: "Amount", startDate: "Start"
+  }, createEmptyStore());
+  const parent = result.store.members.find((member) => member.name === "Zara Park");
+  const child = result.store.members.find((member) => member.name === "Amy Park");
+
+  assert.equal(child.responsiblePartyId, parent.id);
+  assert.deepEqual(accountMembers(result.store.members, child).map((member) => member.name), ["Zara Park", "Amy Park"]);
+  assert.deepEqual(searchMembers(result.store.members, "Amy").map((member) => member.name), ["Zara Park", "Amy Park"]);
+  assert.deepEqual(searchMembers(result.store.members, "Zara").map((member) => member.name), ["Zara Park", "Amy Park"]);
+  assert.deepEqual(exportRosterRows(result.store).map((row) => row["Member Name"]), ["Zara Park", "Amy Park"]);
+  assert.equal(exportRosterRows(result.store)[1]["Account Holder / Payer"], "Zara Park");
 });
 
 test("calculates paid, watch, and late status", () => {
@@ -668,8 +688,8 @@ test("store migration keeps household members' certifications independent and is
   const legacy = {
     version: 1,
     members: [
-      { id: "a", name: "Sam", householdName: "Park", beltLevel: "Yellow Belt" },
-      { id: "b", name: "Mina", householdName: "Park", beltLevel: "Green Belt" }
+      { id: "a", name: "Sam", householdName: "Park", householdRole: "Parent", beltLevel: "Yellow Belt" },
+      { id: "b", name: "Mina", householdName: "Park", householdRole: "Child", beltLevel: "Green Belt" }
     ],
     payments: []
   };
@@ -678,5 +698,7 @@ test("store migration keeps household members' certifications independent and is
 
   assert.equal(migrated.members[0].certifications.tae_kwon_do, "Yellow Belt");
   assert.equal(migrated.members[1].certifications.tae_kwon_do, "Green Belt");
+  assert.equal(migrated.members[0].responsiblePartyId, "a");
+  assert.equal(migrated.members[1].responsiblePartyId, "a");
   assert.deepEqual(twice, migrated);
 });

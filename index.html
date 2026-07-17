@@ -309,6 +309,36 @@
               </div>
             </div>
 
+            <div class="member-profile-actions" aria-label="Member profile actions">
+              <button id="editMemberDataButton" class="button secondary bi" type="button">
+                <span lang="ko">회원 정보 수정</span><small lang="en">Update Member Data</small>
+              </button>
+              <button id="updatePaymentButton" class="button pay bi" type="button">
+                <span lang="ko">납부 변경</span><small lang="en">Update Payment</small>
+              </button>
+            </div>
+
+            <details id="quickProfilePanel" class="quick-profile-panel" open>
+              <summary>빠른 회원 정보 수정 <small lang="en">Quick Member Update</small></summary>
+              <form id="quickProfileForm" class="quick-profile-form">
+                <div class="quick-profile-grid">
+                  <div class="form-row"><label for="quickMemberName">이름 <small lang="en">Name</small></label><input id="quickMemberName" required></div>
+                  <div class="form-row"><label for="quickMemberDob">생년월일 <small lang="en">Date of birth</small></label><input id="quickMemberDob" type="date"></div>
+                  <div class="form-row"><label for="quickMemberCellPhone">휴대전화 <small lang="en">Cell phone</small></label><input id="quickMemberCellPhone" type="tel"></div>
+                  <div class="form-row"><label for="quickMemberEmail">이메일 <small lang="en">Email</small></label><input id="quickMemberEmail" type="email"></div>
+                  <div class="form-row quick-profile-wide"><label for="quickMemberAddress">주소 <small lang="en">Street address</small></label><input id="quickMemberAddress" autocomplete="street-address"></div>
+                  <div class="form-row"><label for="quickMemberCity">도시 <small lang="en">City</small></label><input id="quickMemberCity"></div>
+                  <div class="form-row"><label for="quickMemberState">주 / 우편번호 <small lang="en">State / ZIP</small></label><span class="quick-inline-fields"><input id="quickMemberState" maxlength="2"><input id="quickMemberZip" inputmode="numeric"></span></div>
+                  <div class="form-row quick-profile-wide"><label for="quickResponsibleParty">청구 책임자 / 계약 서명자 <small lang="en">Responsible payer / contract signer</small></label><select id="quickResponsibleParty"></select></div>
+                  <div class="form-row"><label for="quickAgreementType">계약 유형 <small lang="en">Agreement type</small></label><select id="quickAgreementType"><option value="Contract">기간 계약 · Contract</option><option value="Month-to-Month">월 단위 · Month-to-Month</option></select></div>
+                  <div class="form-row"><label for="quickMemberAmount">월 회비 <small lang="en">Monthly amount</small></label><input id="quickMemberAmount" type="number" min="0" step="0.01"></div>
+                  <div class="form-row"><label for="quickMemberStart">계약 서명일 <small lang="en">Contract signing date</small></label><input id="quickMemberStart" type="date"></div>
+                  <div class="form-row"><label for="quickMemberAgreementEnd">계약 종료일 <small lang="en">Contract end date</small></label><input id="quickMemberAgreementEnd" type="date"></div>
+                </div>
+                <button class="button primary bi" type="submit"><span lang="ko">빠른 정보 저장</span><small lang="en">Save Quick Update</small></button>
+              </form>
+            </details>
+
             <div id="latestPaid" class="latest-paid"></div>
 
             <section id="contractRenewalNotice" class="contract-renewal-notice hidden" aria-live="polite">

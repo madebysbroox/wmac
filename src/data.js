@@ -258,7 +258,7 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
   return {
     store: {
       ...existingStore,
-      members: members.sort((a, b) => a.name.localeCompare(b.name)),
+      members: sortMembersByAccount(linkResponsibleParties(members)),
       updatedAt: new Date().toISOString()
     },
     imported,
@@ -618,12 +618,17 @@ export function searchMembers(members, query) {
   const needle = normalize(query);
   const activeMembers = members.filter((member) => !member.inactive);
   if (!needle) {
-    return activeMembers.slice(0, 25);
+    return sortMembersByAccount(activeMembers).slice(0, 25);
   }
-  return activeMembers
-    .filter((member) => normalize(member.name).includes(needle))
-    .sort((a, b) => normalize(a.name).indexOf(needle) - normalize(b.name).indexOf(needle))
-    .slice(0, 25);
+  const directMatches = activeMembers.filter((member) => {
+    const payer = getResponsibleParty(member, members);
+    return [member.name, member.parentName, payer?.name]
+      .some((value) => normalize(value).includes(needle));
+  });
+  const accountIds = new Set(directMatches.map((member) => getResponsibleParty(member, members)?.id || member.id));
+  return sortMembersByAccount(activeMembers.filter((member) =>
+    accountIds.has(getResponsibleParty(member, members)?.id || member.id)
+  )).slice(0, 25);
 }
 
 export function addPayment(store, payment) {
@@ -769,7 +774,7 @@ export function upsertMember(store, member) {
   nextMember.identityKey = buildIdentityKey(nextMember);
   const members = store.members.filter((item) => item.id !== nextMember.id);
   members.push(nextMember);
-  return { ...store, members: members.sort((a, b) => a.name.localeCompare(b.name)), updatedAt: new Date().toISOString() };
+  return { ...store, members: sortMembersByAccount(linkResponsibleParties(members)), updatedAt: new Date().toISOString() };
 }
 
 export function migrateStore(store) {
@@ -779,7 +784,7 @@ export function migrateStore(store) {
   return {
     ...store,
     version: 2,
-    members: store.members.map((member) => {
+    members: linkResponsibleParties(store.members.map((member) => {
       const certifications = normalizeMemberCertifications(member);
       return {
         ...member,
@@ -799,13 +804,16 @@ export function migrateStore(store) {
         phoneConsent: normalizeConsent(member.phoneConsent) || "No",
         downPayment: clean(member.downPayment) === "" ? "" : Number(member.downPayment) || 0,
         responsiblePartyId: clean(member.responsiblePartyId),
+        householdName: clean(member.householdName),
+        householdId: member.householdId || householdIdFor(member.householdName),
+        householdRole: normalizeHouseholdRole(member.householdRole) || (clean(member.parentName) ? "child" : "adult"),
         lateFeeMinimum: getLateFeeMinimum(member),
         lateFeePercentage: getLateFeePercentage(member),
         certifications,
         beltLevel: primaryCertificationLabel({ ...member, certifications }),
         nextLevel: nextMemberCertification({ ...member, certifications }) || member.nextLevel || ""
       };
-    })
+    }))
   };
 }
 
@@ -1090,13 +1098,14 @@ export function getLateFeeBalance(member, payments, today = new Date()) {
 
 export function exportStoreRows(store) {
   const rows = [];
-  store.members.forEach((member) => {
+  sortMembersByAccount(store.members).forEach((member) => {
+    const accountHolder = getResponsibleParty(member, store.members);
     const memberPayments = store.payments.filter((payment) => payment.memberId === member.id);
     if (memberPayments.length === 0) {
-      rows.push(memberRow(member, null));
+      rows.push(memberRow(member, null, accountHolder));
       return;
     }
-    memberPayments.forEach((payment) => rows.push(memberRow(member, payment)));
+    memberPayments.forEach((payment) => rows.push(memberRow(member, payment, accountHolder)));
   });
   return rows;
 }
@@ -1112,8 +1121,7 @@ export function exportDailyPaymentStatusRows(store, today = new Date()) {
     label: new Date(year, index, 1).toLocaleDateString("en-US", { month: "short" })
   }));
 
-  return [...(store?.members || [])]
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+  return sortMembersByAccount(store?.members || [])
     .map((member) => {
       const responsibleParty = getResponsibleParty(member, store?.members || []);
       const accountHolder = member.responsiblePartyId
@@ -1125,6 +1133,7 @@ export function exportDailyPaymentStatusRows(store, today = new Date()) {
       const row = {
         "Report Date": reportDate,
         "Account Holder / Contract Signer": accountHolder,
+        "Account Holder / Payer ID": responsibleParty?.id || member.responsiblePartyId || member.id || "",
         "Member Name": member.name || "",
         "Member ID": member.externalId || member.id || "",
         Household: member.householdName || "",
@@ -1198,10 +1207,13 @@ export function getYearRevenue(store, year) {
 // A clean roster of active members, with headers the member import recognizes,
 // ready to start a new year.
 export function exportRosterRows(store) {
-  return store.members
+  return sortMembersByAccount(store.members)
     .filter((member) => !member.inactive)
-    .map((member) => ({
+    .map((member) => {
+      const accountHolder = getResponsibleParty(member, store.members);
+      return {
       "Member Name": member.name,
+      "Account Holder / Payer": accountHolder?.name || member.name,
       "Contract Start Date": member.startDate || "",
       "Monthly Amount": moneyText(member.monthlyAmount),
       "Late Fee Minimum": moneyText(getLateFeeMinimum(member)),
@@ -1234,14 +1246,16 @@ export function exportRosterRows(store) {
       "Next Belt/Level": member.nextLevel || "",
       "Tae Kwon Do Certification": member.certifications?.tae_kwon_do || "",
       "Muay Thai Certification": member.certifications?.muay_thai || ""
-    }));
+      };
+    });
 }
 
 export { MEMBER_FIELD_ALIASES, PAYMENT_FIELD_ALIASES };
 
-function memberRow(member, payment) {
+function memberRow(member, payment, accountHolder = member) {
   return {
     "Member Name": member.name,
+    "Account Holder / Payer": accountHolder?.name || member.name,
     "Contract Start Date": member.startDate || "",
     "Monthly Amount": moneyText(member.monthlyAmount),
     "Late Fee Minimum": moneyText(getLateFeeMinimum(member)),
@@ -1263,6 +1277,7 @@ function memberRow(member, payment) {
     "Phone Consent": member.phoneConsent || "No",
     "Down Payment": member.downPayment === "" || member.downPayment == null ? "" : moneyText(member.downPayment),
     "Parent/Guardian": member.parentName || "",
+    "Responsible Party ID": member.responsiblePartyId || accountHolder?.id || member.id,
     "Member ID": member.externalId || "",
     "Square Customer ID": member.squareCustomerId || "",
     "Household Name": member.householdName || "",
@@ -1326,6 +1341,51 @@ export function householdMembers(members, member) {
   return members
     .filter((candidate) => (candidate.householdId || householdIdFor(candidate.householdName)) === householdId)
     .sort((a, b) => householdRoleOrder(a.householdRole) - householdRoleOrder(b.householdRole) || a.name.localeCompare(b.name));
+}
+
+// An account is led by the financially responsible party. This lets a search
+// for either a parent or a child show the same account, with the payer first.
+export function accountMembers(members, member) {
+  if (!member) return [];
+  const payerId = getResponsibleParty(member, members)?.id || member.id;
+  return sortMembersByAccount((members || []).filter((candidate) =>
+    (getResponsibleParty(candidate, members)?.id || candidate.id) === payerId
+  ));
+}
+
+function linkResponsibleParties(members) {
+  const knownIds = new Set((members || []).map((member) => member.id));
+  return (members || []).map((member) => {
+    const savedId = clean(member.responsiblePartyId);
+    if (savedId && knownIds.has(savedId)) return member;
+    const parentName = normalize(member.parentName);
+    const householdId = member.householdId || householdIdFor(member.householdName);
+    const candidates = (members || []).filter((candidate) => candidate.id !== member.id);
+    const namedParent = parentName && candidates.find((candidate) =>
+      normalize(candidate.name) === parentName
+      && (!householdId || (candidate.householdId || householdIdFor(candidate.householdName)) === householdId)
+    );
+    const householdPayer = householdId && candidates.find((candidate) =>
+      (candidate.householdId || householdIdFor(candidate.householdName)) === householdId
+      && candidate.householdRole === "parent_guardian"
+    );
+    const payer = namedParent || (member.householdRole === "child" ? householdPayer : null) || member;
+    return {
+      ...member,
+      responsiblePartyId: payer.id,
+      parentName: member.parentName || (payer.id !== member.id ? payer.name : "")
+    };
+  });
+}
+
+function sortMembersByAccount(members) {
+  return [...(members || [])].sort((left, right) => {
+    const leftPayer = getResponsibleParty(left, members)?.name || left.name || "";
+    const rightPayer = getResponsibleParty(right, members)?.name || right.name || "";
+    return leftPayer.localeCompare(rightPayer)
+      || Number(left.responsiblePartyId !== left.id) - Number(right.responsiblePartyId !== right.id)
+      || String(left.name || "").localeCompare(String(right.name || ""));
+  });
 }
 
 function escapeCsvCell(value) {

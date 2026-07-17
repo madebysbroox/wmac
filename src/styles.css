@@ -143,6 +143,11 @@
   background: #edf0f4;
 }
 
+.participation-chip.payer {
+  color: #22577a;
+  background: #e1edf3;
+}
+
 .dot.contact {
   background: #8a94a3;
 }
@@ -607,6 +612,27 @@ textarea {
   font-size: 16px;
 }
 
+.account-list-heading {
+  margin: 13px 8px 5px;
+  color: #526a84;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.member-item.account-dependent {
+  margin-left: 10px;
+  width: calc(100% - 10px);
+}
+
+.account-owner-label {
+  margin-left: 4px;
+  color: #2f7d4f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .dot {
   display: inline-block;
   width: 14px;
@@ -999,6 +1025,55 @@ textarea {
   align-items: flex-start;
 }
 
+.member-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.quick-profile-panel {
+  margin: 18px 0;
+  border: 1px solid #c8d8e8;
+  border-radius: 14px;
+  background: #f7fbff;
+}
+
+.quick-profile-panel > summary {
+  padding: 14px 16px;
+  cursor: pointer;
+  color: #183c5c;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.quick-profile-panel > summary small {
+  margin-left: 6px;
+  color: #5e7186;
+  font-size: 13px;
+}
+
+.quick-profile-form {
+  padding: 0 16px 16px;
+}
+
+.quick-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.quick-profile-wide {
+  grid-column: 1 / -1;
+}
+
+.quick-inline-fields {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+}
+
 .latest-paid {
   margin: 22px 0;
   padding: 18px;
@@ -1029,6 +1104,14 @@ textarea {
   padding: 12px;
   border: 2px solid var(--line);
   border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.month-box:disabled {
+  cursor: not-allowed;
+  opacity: .7;
 }
 
 .month-box.paid {
@@ -1056,6 +1139,14 @@ textarea {
   margin-top: 8px;
   font-size: 16px;
   font-weight: 700;
+}
+
+.month-box em {
+  display: block;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
 }
 
 .month-box.paid span {
@@ -1364,6 +1455,14 @@ menu {
   .layout,
   .topbar {
     padding: 14px;
+  }
+
+  .quick-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-profile-wide {
+    grid-column: auto;
   }
 
   .page-tabs {

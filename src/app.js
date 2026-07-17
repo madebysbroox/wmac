@@ -2,6 +2,7 @@ import {
   MEMBER_FIELD_ALIASES,
   PAYMENT_FIELD_ALIASES,
   addPayment,
+  accountMembers,
   createEmptyStore,
   defaultAgreementEndDate,
   exportDailyPaymentStatusRows,
@@ -115,6 +116,7 @@ const elements = {};
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "contractRenewalFlag", "latestPaid", "householdCard", "progressCard",
   "contractRenewalNotice", "contractRenewalTitle", "contractRenewalMessage", "contractRenewalOpenButton", "contractRenewalEmailButton",
   "quickPayButton", "catchUpButton", "undoCatchUpButton", "monthStrip", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
+  "editMemberDataButton", "updatePaymentButton", "quickProfilePanel", "quickProfileForm", "quickMemberName", "quickMemberDob", "quickMemberCellPhone", "quickMemberEmail", "quickMemberAddress", "quickMemberCity", "quickMemberState", "quickMemberZip", "quickResponsibleParty", "quickAgreementType", "quickMemberAmount", "quickMemberStart", "quickMemberAgreementEnd",
   "paymentForm", "paymentMonth", "paymentAmount", "memberForm", "memberName",
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
   "memberEmail", "memberParent", "memberResponsibleParty", "memberHousehold", "memberRole", "memberParticipant",
@@ -245,6 +247,9 @@ elements.emailButton.addEventListener("click", () => openPaymentReview("email"))
 elements.collectionButton.addEventListener("click", openCollectionPlacement);
 elements.paymentForm.addEventListener("submit", savePayment);
 elements.memberForm.addEventListener("submit", saveMember);
+elements.quickProfileForm.addEventListener("submit", saveQuickProfile);
+elements.editMemberDataButton.addEventListener("click", focusQuickProfile);
+elements.updatePaymentButton.addEventListener("click", focusPaymentUpdate);
 elements.cancelMapping.addEventListener("click", () => elements.mappingDialog.close("cancel"));
 elements.mappingForm.addEventListener("submit", finishMappingImport);
 elements.yearReportButton.addEventListener("click", openYearDialog);
@@ -818,20 +823,29 @@ function renderMemberList() {
     return;
   }
 
+  let accountId = "";
   members.forEach((member) => {
+    const payer = getResponsibleParty(member, state.store.members) || member;
+    if (payer.id !== accountId) {
+      accountId = payer.id;
+      const heading = document.createElement("div");
+      heading.className = "account-list-heading";
+      heading.textContent = `계정 · Account: ${payer.name || "Unnamed member"}`;
+      elements.memberList.append(heading);
+    }
     const status = displayedMemberStatus(member);
     const renewal = getAgreementExpirationStatus(member);
     const contactOnly = member.participant === false;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `member-item ${member.id === state.selectedId ? "active" : ""} ${renewal.level === "expiring" || renewal.level === "expired" ? `contract-${renewal.level}` : ""}`;
+    button.className = `member-item ${member.id === state.selectedId ? "active" : ""} ${member.id !== payer.id ? "account-dependent" : "account-payer"} ${renewal.level === "expiring" || renewal.level === "expired" ? `contract-${renewal.level}` : ""}`;
     const renewalLabel = renewal.level === "expired"
       ? " · 계약 만료 · Contract expired"
       : renewal.level === "expiring"
       ? ` · 계약 ${renewal.daysUntil}일 남음 · Contract ${renewal.daysUntil}d`
       : "";
     button.innerHTML = `
-      <strong><span class="dot ${contactOnly ? "contact" : status.level}"></span>${escapeHtml(member.name)}</strong>
+      <strong><span class="dot ${contactOnly ? "contact" : status.level}"></span>${escapeHtml(member.name)}${member.id === payer.id ? " <small class=\"account-owner-label\">Payer</small>" : ""}</strong>
       <span>${contactOnly ? "비참가 연락처 · Contact only" : `${STATUS_LABELS[status.level].ko}${status.lastPaidMonth ? ` · ${formatMonthKo(status.lastPaidMonth)}` : ""}${renewalLabel}`}</span>
     `;
     button.addEventListener("click", () => selectMember(member.id));
@@ -888,18 +902,23 @@ function renderDetail() {
   elements.monthStrip.innerHTML = "";
   status.billableMonths.forEach((monthKey) => {
     const month = { month: monthKey, paid: status.paidMonths.has(monthKey) };
-    const item = document.createElement("div");
+    const item = document.createElement("button");
+    item.type = "button";
+    item.disabled = collectionPlaced || Number(member.monthlyAmount || 0) <= 0;
     item.className = `month-box ${month.paid ? "paid" : "unpaid"}`;
+    item.dataset.monthToggle = month.month;
+    item.title = month.paid ? "Mark this month unpaid" : "Mark this month paid";
+    item.setAttribute("aria-label", `${formatMonthEn(month.month)}: ${month.paid ? "mark unpaid" : "mark paid"}`);
     item.innerHTML = `
       <strong>${formatMonthKo(month.month)}</strong>
       <small lang="en">${formatMonthEn(month.month)}</small>
       <span>${month.paid ? "납부함 · Paid" : "미납 · Not paid"}</span>
-      ${month.paid && !collectionPlaced ? `<button class="text-button mark-unpaid-button" type="button" data-month="${month.month}">미납으로 변경 · Mark unpaid</button>` : ""}
+      <em>${month.paid ? "클릭하여 미납으로 변경 · Click to mark unpaid" : "클릭하여 납부 완료 · Click to mark paid"}</em>
     `;
     elements.monthStrip.append(item);
   });
-  elements.monthStrip.querySelectorAll("[data-month]").forEach((button) => {
-    button.addEventListener("click", () => markMonthUnpaid(button.dataset.month));
+  elements.monthStrip.querySelectorAll("[data-month-toggle]").forEach((button) => {
+    button.addEventListener("click", () => toggleMonthPaid(button.dataset.monthToggle));
   });
 
   elements.invoiceSummary.textContent = balance.unpaidMonths.length
@@ -965,33 +984,51 @@ function renderDetail() {
   elements.memberStart.disabled = collectionPlaced;
   elements.memberInactive.disabled = collectionPlaced;
   elements.memberResponsibleParty.disabled = collectionPlaced;
+
+  elements.quickMemberName.value = member.name;
+  elements.quickMemberDob.value = member.dob || "";
+  elements.quickMemberCellPhone.value = formatPhone(member.cellPhone || member.phone);
+  elements.quickMemberEmail.value = member.email || "";
+  elements.quickMemberAddress.value = member.address || "";
+  elements.quickMemberCity.value = member.city || "";
+  elements.quickMemberState.value = member.state || "";
+  elements.quickMemberZip.value = member.zip || "";
+  populateResponsiblePartyChoices(member, elements.quickResponsibleParty);
+  elements.quickAgreementType.value = member.agreementType || "Contract";
+  elements.quickMemberAmount.value = member.monthlyAmount || "";
+  elements.quickMemberStart.value = member.startDate || "";
+  elements.quickMemberAgreementEnd.value = member.agreementEndDate || defaultAgreementEndDate(member.startDate);
+  elements.quickProfileForm.querySelectorAll("input, select, button").forEach((control) => {
+    control.disabled = collectionPlaced;
+  });
 }
 
-function populateResponsiblePartyChoices(member) {
+function populateResponsiblePartyChoices(member, select = elements.memberResponsibleParty) {
   const resolved = getResponsibleParty(member, state.store.members);
   const selectedId = member.responsiblePartyId || resolved?.id || member.id;
   const candidates = [...state.store.members]
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
-  elements.memberResponsibleParty.replaceChildren();
+  select.replaceChildren();
   candidates.forEach((candidate) => {
     const option = document.createElement("option");
     option.value = candidate.id;
     const relationship = candidate.id === member.id ? "Self" : candidate.householdRole === "parent_guardian" ? "Parent/guardian" : candidate.householdName || "Member";
     option.textContent = `${candidate.name || "Unnamed member"} · ${relationship}`;
-    elements.memberResponsibleParty.append(option);
+    select.append(option);
   });
   if (!candidates.some((candidate) => candidate.id === selectedId)) {
     const fallback = document.createElement("option");
     fallback.value = member.id;
     fallback.textContent = `${member.name || "Unnamed member"} · Self`;
-    elements.memberResponsibleParty.append(fallback);
+    select.append(fallback);
   }
-  elements.memberResponsibleParty.value = selectedId;
+  select.value = selectedId;
 }
 
 function renderHouseholdCard(member) {
-  const family = householdMembers(state.store.members, member);
-  const householdName = member.householdName || (family.length > 1 ? `${member.name} household` : "");
+  const family = accountMembers(state.store.members, member);
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  const householdName = payer.name || member.householdName || (family.length > 1 ? `${member.name} household` : "");
   if (!householdName && family.length <= 1) {
     elements.householdCard.classList.add("hidden");
     elements.householdCard.innerHTML = "";
@@ -1005,13 +1042,13 @@ function renderHouseholdCard(member) {
   };
   elements.householdCard.classList.remove("hidden");
   elements.householdCard.innerHTML = `
-    <div class="section-kicker">가족 계정 · Household</div>
+    <div class="section-kicker">청구 계정 · Payer account</div>
     <h3>${escapeHtml(householdName)}</h3>
     <div class="household-people">
       ${family.map((person) => `
         <button type="button" class="household-person ${person.id === member.id ? "current" : ""}" data-household-member="${escapeHtml(person.id)}">
           <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-certification">자격: ${escapeHtml(primaryCertificationLabel(person) || "미설정")}<span lang="en">Certification: ${escapeHtml(primaryCertificationLabel(person) || "Not set")}</span></small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
-          <span class="participation-chip ${person.participant === false ? "contact" : "student"}">${person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
+          <span class="participation-chip ${person.id === payer.id ? "payer" : person.participant === false ? "contact" : "student"}">${person.id === payer.id ? "청구 책임자 · Payer" : person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
         </button>
       `).join("")}
     </div>
@@ -2071,17 +2108,7 @@ function quickPayCurrentMonth() {
   if (amount <= 0) {
     return;
   }
-  const beforeIds = new Set(state.store.payments.map((payment) => payment.id));
-  state.store = addPayment(state.store, {
-    memberId: member.id,
-    month: status.currentMonth,
-    amount
-  });
-  const addedIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
-  logAddedPayments(member, addedIds, [status.currentMonth]);
-  saveStore(MSG.paymentSaved);
-  showToast(MSG.paymentSavedFor(member.name, formatMonthBi(status.currentMonth)));
-  render();
+  markMonthPaid(status.currentMonth);
 }
 
 function catchUpMemberPayments() {
@@ -2342,6 +2369,86 @@ function markMonthUnpaid(month) {
   render();
 }
 
+function markMonthPaid(month) {
+  const member = selectedMember();
+  if (!member || !month || member.collectionPlacement?.status === "charged_off") {
+    return;
+  }
+  const amount = Number(member.monthlyAmount || 0);
+  if (amount <= 0) {
+    showToast("월 회비를 먼저 입력하세요. · Enter the monthly amount first.");
+    return;
+  }
+  const beforeIds = new Set(state.store.payments.map((payment) => payment.id));
+  state.store = addPayment(state.store, { memberId: member.id, month, amount });
+  const addedIds = state.store.payments.filter((payment) => !beforeIds.has(payment.id)).map((payment) => payment.id);
+  logAddedPayments(member, addedIds, [month]);
+  saveStore(MSG.paymentSaved);
+  showToast(MSG.paymentSavedFor(member.name, formatMonthBi(month)));
+  render();
+}
+
+function toggleMonthPaid(month) {
+  const member = selectedMember();
+  if (!member) return;
+  const status = getMemberStatus(member, state.store.payments);
+  if (status.paidMonths.has(month)) {
+    markMonthUnpaid(month);
+  } else {
+    markMonthPaid(month);
+  }
+}
+
+function focusQuickProfile() {
+  elements.quickProfilePanel.open = true;
+  elements.quickProfilePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.setTimeout(() => elements.quickMemberName.focus(), 250);
+}
+
+function focusPaymentUpdate() {
+  elements.paymentForm.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.setTimeout(() => elements.paymentMonth.focus(), 250);
+}
+
+function parentNameForPayer(member, payerId, fallback = "") {
+  const payer = state.store.members.find((candidate) => candidate.id === payerId);
+  return payer && payer.id !== member.id ? payer.name : fallback;
+}
+
+function saveQuickProfile(event) {
+  event.preventDefault();
+  const member = selectedMember();
+  if (!member) return;
+  const startDate = elements.quickMemberStart.value;
+  const priorDefaultEnd = defaultAgreementEndDate(member.startDate);
+  const requestedEnd = elements.quickMemberAgreementEnd.value;
+  const agreementEndDate = !requestedEnd || requestedEnd === priorDefaultEnd
+    ? defaultAgreementEndDate(startDate)
+    : requestedEnd;
+  const payerId = elements.quickResponsibleParty.value || member.id;
+  state.store = upsertMember(state.store, {
+    ...member,
+    name: elements.quickMemberName.value,
+    dob: elements.quickMemberDob.value,
+    phone: elements.quickMemberCellPhone.value,
+    cellPhone: elements.quickMemberCellPhone.value,
+    email: elements.quickMemberEmail.value,
+    address: elements.quickMemberAddress.value,
+    city: elements.quickMemberCity.value,
+    state: elements.quickMemberState.value,
+    zip: elements.quickMemberZip.value,
+    responsiblePartyId: payerId,
+    parentName: parentNameForPayer(member, payerId, member.parentName),
+    agreementType: elements.quickAgreementType.value,
+    monthlyAmount: elements.quickMemberAmount.value,
+    startDate,
+    agreementEndDate
+  });
+  saveStore(MSG.memberSaved);
+  showToast(MSG.memberSavedToast);
+  render();
+}
+
 function saveMember(event) {
   event.preventDefault();
   const member = selectedMember();
@@ -2361,7 +2468,7 @@ function saveMember(event) {
     zip: elements.memberZip.value,
     dob: elements.memberDob.value,
     email: elements.memberEmail.value,
-    parentName: elements.memberParent.value,
+    parentName: parentNameForPayer(member, elements.memberResponsibleParty.value, elements.memberParent.value),
     responsiblePartyId: elements.memberResponsibleParty.value,
     householdName: elements.memberHousehold.value,
     householdId: "",
