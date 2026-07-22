@@ -67,6 +67,7 @@ const state = {
   historyExpanded: false,
   calendarOpen: false,
   memberOrigin: "home",
+  snapshotMonth: "",
   collectionMemberId: "",
   collectionDraft: null,
   squarePayments: [],
@@ -79,7 +80,8 @@ const state = {
 
 const ids = [
   "homeLink", "homeNav", "membersNav", "snapshotNav", "squareNav", "squareNavBadge", "searchInput", "addMemberButton", "settingsButton", "saveStatus",
-  "snapshotView", "snapshotMonthLabel", "snapshotReceived", "snapshotExpected", "snapshotChart", "snapshotLegend", "snapshotFootnote",
+  "snapshotView", "snapshotEyebrow", "snapshotMonthLabel", "snapshotMonthName", "snapshotPrevButton", "snapshotNextButton",
+  "snapshotReceived", "snapshotExpected", "snapshotChart", "snapshotLegend", "snapshotFootnote",
   "homeView", "attentionList", "seeAllMembersButton", "paidStat", "dueStat", "familyStat", "membersStat",
   "paidCount", "dueCount", "familyCount", "memberCount", "recentMembers",
   "rosterView", "rosterTitle", "rosterSummary", "rosterList", "memberListToggle", "memberLandscapeToggle",
@@ -114,6 +116,8 @@ el.homeLink.addEventListener("click", (event) => { event.preventDefault(); showH
 el.homeNav.addEventListener("click", showHome);
 el.membersNav.addEventListener("click", () => showRoster("all"));
 el.snapshotNav.addEventListener("click", showSnapshot);
+el.snapshotPrevButton.addEventListener("click", () => shiftSnapshotMonth(-1));
+el.snapshotNextButton.addEventListener("click", () => shiftSnapshotMonth(1));
 el.squareNav.addEventListener("click", showSquare);
 el.addMemberButton.addEventListener("click", addMember);
 el.settingsButton.addEventListener("click", () => el.toolsDialog.showModal());
@@ -299,6 +303,7 @@ function showAdvanced() {
 function showSnapshot() {
   state.view = "snapshot";
   state.selectedId = "";
+  state.snapshotMonth = currentMonthKey();
   el.searchInput.value = "";
   render();
 }
@@ -704,7 +709,7 @@ const SNAPSHOT_SLICES = [
   { key: "upcoming", label: "Upcoming due", color: "#6fbf92" }
 ];
 
-function snapshotData() {
+function snapshotData(monthKey) {
   const totals = {
     paid: { amount: 0, count: 0 },
     overdue: { amount: 0, count: 0 },
@@ -712,22 +717,32 @@ function snapshotData() {
   };
   let earlierAmount = 0;
   let earlierMonths = 0;
+  let earliestMonth = "";
   billingPayers().forEach((member) => {
     const status = accountPaymentState(member);
     const amount = accountBalance(member).monthlyAmount;
     if (amount <= 0) return;
-    const current = status.months.find((month) => month.month === status.currentMonth);
-    if (current) {
-      const bucket = current.paid ? "paid" : current.pending || current.daysLate < 0 ? "upcoming" : "overdue";
+    const firstMonth = status.months[0]?.month || "";
+    if (firstMonth && (!earliestMonth || firstMonth < earliestMonth)) earliestMonth = firstMonth;
+    const viewed = status.months.find((month) => month.month === monthKey);
+    if (viewed) {
+      const bucket = viewed.paid ? "paid" : viewed.pending || viewed.daysLate < 0 ? "upcoming" : "overdue";
       totals[bucket].amount += amount;
       totals[bucket].count += 1;
     }
-    const earlier = status.dueUnpaidMonths.filter((month) => month.month !== status.currentMonth);
+    const earlier = status.dueUnpaidMonths.filter((month) => month.month < monthKey);
     earlierMonths += earlier.length;
     earlierAmount += earlier.length * amount;
   });
   const expected = totals.paid.amount + totals.overdue.amount + totals.upcoming.amount;
-  return { totals, expected, earlierAmount, earlierMonths };
+  return { totals, expected, earlierAmount, earlierMonths, earliestMonth };
+}
+
+function shiftSnapshotMonth(delta) {
+  const [year, month] = (state.snapshotMonth || currentMonthKey()).split("-").map(Number);
+  const shifted = new Date(year, month - 1 + delta, 1);
+  state.snapshotMonth = `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}`;
+  render();
 }
 
 function donutSlicePath(cx, cy, innerRadius, outerRadius, startAngle, endAngle) {
@@ -742,14 +757,28 @@ function donutSlicePath(cx, cy, innerRadius, outerRadius, startAngle, endAngle) 
 }
 
 function renderSnapshot() {
-  const now = new Date();
-  el.snapshotMonthLabel.textContent = `${now.toLocaleDateString("en-US", { month: "long", year: "numeric" })} tuition across all active accounts.`;
-  const { totals, expected, earlierAmount, earlierMonths } = snapshotData();
+  const currentKey = currentMonthKey();
+  if (!state.snapshotMonth) state.snapshotMonth = currentKey;
+  if (state.snapshotMonth > currentKey) state.snapshotMonth = currentKey;
+  let { totals, expected, earlierAmount, earlierMonths, earliestMonth } = snapshotData(state.snapshotMonth);
+  const earliest = earliestMonth || currentKey;
+  if (state.snapshotMonth < earliest) {
+    state.snapshotMonth = earliest;
+    ({ totals, expected, earlierAmount, earlierMonths } = snapshotData(state.snapshotMonth));
+  }
+  const monthKey = state.snapshotMonth;
+  const monthName = formatMonthEn(monthKey);
+  const isCurrent = monthKey === currentKey;
+  el.snapshotPrevButton.disabled = monthKey <= earliest;
+  el.snapshotNextButton.disabled = isCurrent;
+  el.snapshotMonthName.textContent = monthName;
+  el.snapshotEyebrow.textContent = isCurrent ? "This month · 이번 달" : "Earlier month · 지난 달";
+  el.snapshotMonthLabel.textContent = `${monthName} tuition across all active accounts.`;
   el.snapshotReceived.textContent = money(totals.paid.amount);
   el.snapshotExpected.textContent = money(expected);
   if (expected <= 0) {
     el.snapshotChart.innerHTML = "";
-    el.snapshotLegend.innerHTML = `<div class="empty-message">No billable accounts this month. Add members with a monthly amount to see the snapshot.</div>`;
+    el.snapshotLegend.innerHTML = `<div class="empty-message">No accounts were billable in ${escapeHtml(monthName)}.</div>`;
     el.snapshotFootnote.textContent = "";
     return;
   }
@@ -765,7 +794,7 @@ function renderSnapshot() {
   }).join("");
   const summary = SNAPSHOT_SLICES.map((slice) => `${slice.label} ${money(totals[slice.key].amount)}`).join(", ");
   el.snapshotChart.innerHTML = `
-    <svg viewBox="0 0 200 200" role="img" aria-label="${escapeAttr(`Tuition coverage this month: ${summary}.`)}">
+    <svg viewBox="0 0 200 200" role="img" aria-label="${escapeAttr(`Tuition coverage for ${monthName}: ${summary}.`)}">
       ${paths}
       <text x="100" y="97" class="snapshot-center-value">${percentPaid}%</text>
       <text x="100" y="116" class="snapshot-center-label">received</text>
@@ -781,8 +810,8 @@ function renderSnapshot() {
       </div>`;
   }).join("");
   el.snapshotFootnote.textContent = earlierMonths
-    ? `Not counted above: ${money(earlierAmount)} from ${earlierMonths} unpaid month${earlierMonths === 1 ? "" : "s"} before ${now.toLocaleDateString("en-US", { month: "long" })} is still outstanding.`
-    : "No earlier months are outstanding.";
+    ? `Not counted above: ${money(earlierAmount)} from ${earlierMonths} unpaid month${earlierMonths === 1 ? "" : "s"} before ${monthName} is still outstanding.`
+    : `No months before ${monthName} are outstanding.`;
 }
 
 function renderAdvanced() {

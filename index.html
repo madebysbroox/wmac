@@ -319,11 +319,16 @@
       </section>
 
       <section id="snapshotView" class="snapshot-view hidden">
-        <div class="page-heading">
+        <div class="page-heading snapshot-page-heading">
           <div>
-            <p class="eyebrow">This month · 이번 달</p>
+            <p id="snapshotEyebrow" class="eyebrow">This month · 이번 달</p>
             <h1>Payment snapshot</h1>
             <p id="snapshotMonthLabel"></p>
+          </div>
+          <div class="snapshot-month-nav" aria-label="Snapshot month">
+            <button id="snapshotPrevButton" class="icon-button" type="button" aria-label="Previous month">←</button>
+            <strong id="snapshotMonthName" aria-live="polite"></strong>
+            <button id="snapshotNextButton" class="icon-button" type="button" aria-label="Next month">→</button>
           </div>
         </div>
         <section class="info-card snapshot-card">

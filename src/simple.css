@@ -310,6 +310,11 @@ dialog { color: var(--ink); }
 .link-button { padding: 0; border: 0; background: transparent; color: var(--green); font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; }
 
 .snapshot-view { display: grid; gap: 8px; }
+.snapshot-page-heading { justify-content: space-between; }
+.snapshot-month-nav { display: flex; align-items: center; gap: 10px; }
+.snapshot-month-nav strong { min-width: 118px; text-align: center; font-size: 15px; letter-spacing: -.01em; }
+.snapshot-month-nav .icon-button:disabled { opacity: .4; cursor: default; }
+.snapshot-month-nav .icon-button:disabled:hover { background: #fff; }
 .snapshot-card { max-width: 780px; padding: 28px; }
 .snapshot-totals { display: flex; gap: 46px; margin-bottom: 26px; padding-bottom: 20px; border-bottom: 1px solid #edf1ed; }
 .snapshot-totals span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
@@ -433,7 +438,7 @@ dialog { color: var(--ink); }
   .payment-row span { display: none; }
   .roster-row { grid-template-columns: 1fr auto; padding: 12px; }
   .roster-row > span { display: none; }
-  .members-page-heading, .square-page-heading { align-items: flex-start; flex-direction: column; }
+  .members-page-heading, .square-page-heading, .snapshot-page-heading { align-items: flex-start; flex-direction: column; }
   .view-toggle { width: 100%; }
   .view-toggle button { flex: 1; }
   .square-page-heading .button { width: 100%; justify-content: center; }
