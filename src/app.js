@@ -97,8 +97,7 @@ const state = {
   stagedPayments: [],
   selectedStagedId: "",
   paymentProviders: {
-    square: { configured: false, error: "" },
-    worldbankcard: { configured: false, error: "" }
+    square: { configured: false, error: "" }
   }
 };
 
@@ -113,12 +112,12 @@ const elements = {};
   "briefSetupCard", "briefSetupCount", "briefSetupDetail", "briefWeekCard", "briefWeekCount", "briefWeekAmount",
   "dashboardMonthLabel", "flowCollected", "flowCovered", "flowExpected", "flowDue", "flowProgress", "flowProgressText", "flowProgressLabel", "sixMonthFlow", "recentActivityList",
   "squareView", "squareStatusLine",
-  "syncSquareButton", "syncWorldBankcardButton", "squareSummary", "squarePayments",
+  "syncSquareButton", "squareSummary", "squarePayments",
   "squareDetail", "squareQueueHelp", "squareRelayUrl", "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus", "rosterView",
   "backToDashboard", "rosterTitle", "rosterHelp", "rosterMembers", "emptyState",
   "memberDetail", "detailInitials", "detailName", "detailContact", "detailDueDay", "statusBadge", "contractRenewalFlag", "latestPaid", "householdCard", "familyAccountPanel", "familyAccountForm", "familyAccountHouseholdName", "familyAccountTotal", "familyExistingMember", "addExistingFamilyMemberButton", "familyAccountMembers", "addFamilyParentButton", "addFamilyChildButton", "progressCard",
   "contractRenewalNotice", "contractRenewalTitle", "contractRenewalMessage", "contractRenewalOpenButton", "contractRenewalEmailButton",
-  "quickPayButton", "catchUpButton", "undoCatchUpButton", "paymentUpdatePanel", "monthStrip", "billingActionsPanel", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice",
+  "quickPayButton", "catchUpButton", "undoCatchUpButton", "paymentUpdatePanel", "monthStrip", "billingActionsPanel", "invoiceSummary", "invoiceButton", "emailButton", "collectionButton", "collectionNotice", "squareRecurringButton", "squareRecurringStatus",
   "quickProfilePanel", "quickProfileForm", "quickMemberName", "quickMemberDob", "quickMemberCellPhone", "quickMemberEmail", "quickMemberAddress", "quickMemberCity", "quickMemberState", "quickMemberZip", "quickResponsibleParty", "quickAgreementType", "quickMemberAmount", "quickMemberStart", "quickMemberAgreementEnd",
   "memberForm", "memberName",
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
@@ -296,7 +295,7 @@ function selectContractDate(value) {
 
 elements.homeTab.addEventListener("click", showDashboard);
 elements.membersTab.addEventListener("click", showMembers);
-elements.landscapeTab.addEventListener("click", showLandscape);
+elements.landscapeTab?.addEventListener("click", showLandscape);
 elements.squareTab.addEventListener("click", showSquare);
 elements.memberCsv.addEventListener("change", () => prepareCsvImport(elements.memberCsv.files[0], "members"));
 elements.paymentCsv.addEventListener("change", () => prepareCsvImport(elements.paymentCsv.files[0], "payments"));
@@ -319,7 +318,6 @@ elements.briefSetupCard.addEventListener("click", () => showRoster("setup"));
 elements.briefWeekCard.addEventListener("click", showUpcomingLandscape);
 elements.backToDashboard.addEventListener("click", showDashboard);
 elements.syncSquareButton.addEventListener("click", syncSquarePayments);
-elements.syncWorldBankcardButton.addEventListener("click", syncWorldBankcardPayments);
 elements.saveSquareSettingsButton.addEventListener("click", saveSquareConnectionSettings);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.catchUpButton.addEventListener("click", catchUpMemberPayments);
@@ -341,6 +339,7 @@ document.querySelectorAll("[data-landscape-filter]").forEach((button) => {
 elements.invoiceButton.addEventListener("click", () => openPaymentReview("invoice"));
 elements.emailButton.addEventListener("click", () => openPaymentReview("email"));
 elements.collectionButton.addEventListener("click", openCollectionPlacement);
+elements.squareRecurringButton.addEventListener("click", setUpSquareMonthlyInvoice);
 elements.memberForm.addEventListener("submit", saveMember);
 elements.quickProfileForm.addEventListener("submit", saveQuickProfile);
 elements.familyAccountForm.addEventListener("submit", saveFamilyAccount);
@@ -492,7 +491,7 @@ function logProviderStatus(payment, labels = {}) {
     memberId: payment.memberId || payment.suggestedMemberId || "",
     memberName: state.store.members.find((member) => member.id === (payment.memberId || payment.suggestedMemberId))?.name || payment.buyerName || "",
     stagedPaymentId: payment.id,
-    provider: payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square"),
+    provider: "square",
     previousStatus: payment.status || "pending",
     labelKo: labels.ko || "카드 검토 상태 변경",
     labelEn: labels.en || "Card review status changed"
@@ -589,11 +588,11 @@ function renderPageShell() {
   elements.memberSidebar.classList.toggle("hidden", state.page !== "members");
   elements.homeTab.classList.toggle("active", isHome);
   elements.membersTab.classList.toggle("active", state.page === "members");
-  elements.landscapeTab.classList.toggle("active", isLandscape);
+  elements.landscapeTab?.classList.toggle("active", isLandscape);
   elements.squareTab.classList.toggle("active", isSquare);
   elements.homeTab.setAttribute("aria-current", isHome ? "page" : "false");
   elements.membersTab.setAttribute("aria-current", state.page === "members" ? "page" : "false");
-  elements.landscapeTab.setAttribute("aria-current", isLandscape ? "page" : "false");
+  elements.landscapeTab?.setAttribute("aria-current", isLandscape ? "page" : "false");
   elements.squareTab.setAttribute("aria-current", isSquare ? "page" : "false");
 }
 
@@ -890,10 +889,7 @@ function renderSquare() {
   const pending = state.stagedPayments.filter((payment) => payment.status === "pending" || payment.status === "needs_match");
   const approved = state.stagedPayments.filter((payment) => payment.status === "approved");
   const ignored = state.stagedPayments.filter((payment) => payment.status === "ignored");
-  const providerStatus = [
-    providerStatusText("square"),
-    providerStatusText("worldbankcard")
-  ].join(" · ");
+  const providerStatus = providerStatusText();
   const errors = Object.values(state.paymentProviders).map((provider) => provider.error).filter(Boolean);
   elements.squareStatusLine.textContent = errors[0] || `${providerStatus} · ${pending.length} pending`;
   elements.squareSummary.innerHTML = `
@@ -910,7 +906,7 @@ function renderSquare() {
     elements.squarePayments.innerHTML = `
       <div class="empty-state compact square-empty">
         <h3>아직 카드 결제가 없습니다 <small lang="en">No card payments yet</small></h3>
-        <p>Square 또는 World Bankcard 거래를 동기화하면 승인 전 검토 목록에 표시됩니다.</p>
+        <p>Square 거래를 동기화하면 승인 전 확인 목록에 표시됩니다. · Sync Square to review incoming payments.</p>
       </div>
     `;
     elements.squareDetail.innerHTML = emptyPaymentDetailMarkup();
@@ -1050,19 +1046,19 @@ function renderDetail() {
 
   elements.monthStrip.innerHTML = "";
   status.billableMonths.forEach((monthKey) => {
-    const month = { month: monthKey, paid: status.paidMonths.has(monthKey) };
+    const month = { month: monthKey, paid: status.paidMonths.has(monthKey), prepaid: status.prepaidMonths?.has(monthKey) };
     const item = document.createElement("button");
     item.type = "button";
-    item.disabled = !isPayer || collectionPlaced || balance.monthlyAmount <= 0;
+    item.disabled = !isPayer || collectionPlaced || balance.monthlyAmount <= 0 || month.prepaid;
     item.className = `month-box ${month.paid ? "paid" : "unpaid"}`;
     item.dataset.monthToggle = month.month;
-    item.title = month.paid ? "Mark this month unpaid" : "Mark this month paid";
-    item.setAttribute("aria-label", `${formatMonthEn(month.month)}: ${month.paid ? "mark unpaid" : "mark paid"}`);
+    item.title = month.prepaid ? "Covered by the contract down payment" : month.paid ? "Mark this month unpaid" : "Mark this month paid";
+    item.setAttribute("aria-label", `${formatMonthEn(month.month)}: ${month.prepaid ? "covered by down payment" : month.paid ? "mark unpaid" : "mark paid"}`);
     item.innerHTML = `
       <strong>${formatMonthKo(month.month)}</strong>
       <small lang="en">${formatMonthEn(month.month)}</small>
-      <span>${month.paid ? "납부함 · Paid" : "미납 · Not paid"}</span>
-      <em>${month.paid ? "클릭하여 미납으로 변경 · Click to mark unpaid" : "클릭하여 납부 완료 · Click to mark paid"}</em>
+      <span>${month.prepaid ? "계약금 납부 · Down payment" : month.paid ? "납부함 · Paid" : "미납 · Not paid"}</span>
+      <em>${month.prepaid ? "계약금으로 첫 달/마지막 달 납부됨 · Covered by contract down payment" : month.paid ? "클릭하여 미납으로 변경 · Click to mark unpaid" : "클릭하여 납부 완료 · Click to mark paid"}</em>
     `;
     elements.monthStrip.append(item);
   });
@@ -1083,6 +1079,7 @@ function renderDetail() {
   elements.collectionButton.innerHTML = collectionPlaced
     ? `<span lang="ko">추심 파일 다시 저장</span><small lang="en">Download Placement Again</small>`
     : `<span lang="ko">추심 기관 파일 만들기</span><small lang="en">First Credit Services Placement</small>`;
+  renderSquareMonthlyInvoice(member, payer, isPayer, balance, collectionPlaced);
   elements.collectionNotice.classList.toggle("hidden", !collectionPlaced);
   elements.collectionNotice.innerHTML = collectionPlaced
     ? `<strong>First Credit Services 이관 완료 · Placed for collection</strong><span>${escapeHtml(collectionPlacement.chargeOffDate)}에 잔액 ${formatMoney(collectionPlacement.frozenBalance)} 고정. 이 회원에 대한 청구 및 직접 결제 수집은 중단되었습니다. · Balance frozen; billing and direct payment collection are stopped.</span>`
@@ -1146,6 +1143,8 @@ function renderDetail() {
   elements.memberStart.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
   elements.memberAgreementEnd.disabled = collectionPlaced || !isPayer;
   elements.memberAgreementEnd.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
+  elements.memberDownPayment.disabled = collectionPlaced || !isPayer;
+  elements.memberDownPayment.title = !isPayer ? `Set the down payment on ${payer.name}'s payer account.` : "";
   elements.memberInactive.disabled = collectionPlaced;
   elements.memberResponsibleParty.disabled = collectionPlaced;
 
@@ -1159,7 +1158,7 @@ function renderDetail() {
   elements.quickMemberZip.value = member.zip || "";
   populateResponsiblePartyChoices(member, elements.quickResponsibleParty);
   elements.quickAgreementType.value = member.agreementType || "Contract";
-  elements.quickMemberAmount.value = member.monthlyAmount || "";
+  elements.quickMemberAmount.value = automaticPayerAmount ? "" : (member.monthlyAmount || "");
   elements.quickMemberStart.value = member.startDate || "";
   elements.quickMemberStart.dataset.previousValue = member.startDate || "";
   elements.quickMemberAgreementEnd.value = member.agreementEndDate || defaultAgreementEndDate(member.startDate);
@@ -1330,12 +1329,78 @@ function renderEmailButton(member, balance) {
   return ready;
 }
 
+function renderSquareMonthlyInvoice(member, payer, isPayer, balance, collectionPlaced) {
+  const setup = payer.squareMonthlyInvoice || null;
+  const active = ["ACTIVE", "PENDING"].includes(String(setup?.status || "").toUpperCase());
+  const startDate = squareInvoiceStartDate(payer, new Date(), balance.monthlyAmount);
+  const missing = [];
+  if (!payer.email) missing.push("payer email");
+  if (!payer.startDate) missing.push("payer contract date");
+  if (balance.monthlyAmount <= 0) missing.push("monthly amount");
+  const eligible = isPayer && !collectionPlaced && missing.length === 0 && Boolean(startDate);
+  elements.squareRecurringButton.disabled = !eligible || active;
+  elements.squareRecurringStatus.textContent = active
+    ? `Square monthly invoice ${String(setup.status || "active").toLowerCase()} · Starts ${setup.startDate}${setup.cancelDate ? ` · ends ${setup.cancelDate}` : ""}`
+    : !isPayer
+      ? `Set this up on ${payer.name}'s payer account.`
+      : missing.length
+        ? `Before setup, save: ${missing.join(", ")}.`
+        : `Square will email ${payer.email} a payment link every month starting ${startDate}. No card is stored or automatically charged.`;
+}
+
+function squareInvoiceStartDate(member, today = new Date(), monthlyAmount = Number(member?.monthlyAmount || 0)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(member?.startDate || ""))) return "";
+  const [year, month, day] = member.startDate.split("-").map(Number);
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const signingDate = new Date(year, month - 1, day);
+  let candidate = signingDate > todayDate
+    ? signingDate
+    : dateWithDueDay(today.getFullYear(), today.getMonth() + 1, day);
+  if (candidate < todayDate) candidate = dateWithDueDay(today.getFullYear(), today.getMonth() + 2, day);
+  if (contractEndpointsPrepaid(member, monthlyAmount) && monthKeyFromDate(candidate) === member.startDate.slice(0, 7)) {
+    candidate = dateWithDueDay(candidate.getFullYear(), candidate.getMonth() + 2, day);
+  }
+  const result = isoLocalDate(candidate);
+  if (member.agreementType === "Contract" && member.agreementEndDate && result >= member.agreementEndDate) return "";
+  return result;
+}
+
+function squareInvoiceCancelDate(member, startDate, monthlyAmount = Number(member?.monthlyAmount || 0)) {
+  if (member.agreementType !== "Contract" || !/^\d{4}-\d{2}-\d{2}$/.test(String(member.agreementEndDate || ""))) return "";
+  const dueDay = Number(member.startDate?.slice(8, 10)) || 1;
+  const end = member.agreementEndDate;
+  const cancelDate = contractEndpointsPrepaid(member, monthlyAmount)
+    ? isoLocalDate(dateWithDueDay(Number(end.slice(0, 4)), Number(end.slice(5, 7)) - 1, dueDay))
+    : end;
+  return cancelDate > startDate ? cancelDate : "";
+}
+
+function contractEndpointsPrepaid(member, monthlyAmount) {
+  return member?.agreementType === "Contract" &&
+    Number(monthlyAmount || 0) > 0 &&
+    Number(member.downPayment || 0) + 0.005 >= Number(monthlyAmount) * 2;
+}
+
+function dateWithDueDay(year, month, dueDay) {
+  const lastDay = new Date(year, month, 0).getDate();
+  return new Date(year, month - 1, Math.min(dueDay, lastDay));
+}
+
+function isoLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthKeyFromDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function renderQuickPay(member, status) {
   const button = elements.quickPayButton;
   const payer = getResponsibleParty(member, state.store.members) || member;
   const isPayer = payer.id === member.id;
   const amount = getMemberBalance(member, state.store.payments, new Date(), state.store.members).monthlyAmount;
   const paidThisMonth = status.paidMonths.has(status.currentMonth);
+  const prepaidThisMonth = status.prepaidMonths?.has(status.currentMonth);
 
   button.classList.toggle("done", paidThisMonth);
   button.classList.toggle("undo", paidThisMonth);
@@ -1345,6 +1410,9 @@ function renderQuickPay(member, status) {
   } else if (member.participant === false && amount <= 0) {
     button.disabled = true;
     button.innerHTML = `<span lang="ko">비참가 연락처</span><small lang="en">Contact only - no tuition due</small>`;
+  } else if (prepaidThisMonth) {
+    button.disabled = true;
+    button.innerHTML = `<span lang="ko">이번 달 계약금 납부 완료</span><small lang="en">This month is covered by the contract down payment</small>`;
   } else if (paidThisMonth) {
     button.disabled = false;
     button.innerHTML = `<span lang="ko">이번 달 미납으로 변경</span><small lang="en">Mark this month unpaid</small>`;
@@ -1419,7 +1487,9 @@ function showSquare() {
 function selectMember(memberId) {
   if (state.selectedId !== memberId) {
     elements.quickProfilePanel.open = false;
-    elements.paymentUpdatePanel.open = false;
+    // Payments are the primary action on a member record, so keep this
+    // top-most section ready to use whenever a different member is opened.
+    elements.paymentUpdatePanel.open = true;
     elements.billingActionsPanel.open = false;
     elements.contractRenewalNotice.open = false;
     elements.familyAccountPanel.open = false;
@@ -1603,8 +1673,8 @@ function stagedPaymentView(payment) {
   const statusClass = payment.status === "approved" ? "status-paid" : payment.status === "ignored" ? "neutral" : "status-pending";
   const selectedMember = state.store.members.find((member) => member.id === selectedMemberId);
   const canApprove = (payment.status === "pending" || payment.status === "needs_match") && selectedMemberId && month && selectedMember?.collectionPlacement?.status !== "charged_off";
-  const provider = payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square");
-  const providerLabel = provider === "worldbankcard" ? "World Bankcard" : "Square";
+  const provider = "square";
+  const providerLabel = "Square";
   const options = [
     `<option value="">회원 선택 · Choose member</option>`,
     ...state.store.members
@@ -1784,11 +1854,10 @@ function stagedStatusLabel(status) {
   return "대기 · Pending";
 }
 
-function providerStatusText(provider) {
-  const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
-  return state.paymentProviders[provider]?.configured
-    ? `${label} ready`
-    : `${label} not configured`;
+function providerStatusText() {
+  return state.paymentProviders.square?.configured
+    ? "Square ready"
+    : "Square not configured";
 }
 
 // ---------------------------------------------------------------------------
@@ -1956,7 +2025,7 @@ function downloadBlob(blob, filename) {
 }
 
 // ---------------------------------------------------------------------------
-// Card payment staging (Square + World Bankcard)
+// Square payment staging
 // ---------------------------------------------------------------------------
 
 async function loadSquarePayments() {
@@ -1964,75 +2033,116 @@ async function loadSquarePayments() {
 }
 
 async function loadStagedPayments() {
-  const providers = ["square", "worldbankcard"];
-  const results = await Promise.all(providers.map((provider) => loadProviderPayments(provider)));
-  state.stagedPayments = results
-    .flatMap((result) => result.payments)
+  const result = await loadProviderPayments();
+  state.stagedPayments = result.payments
     .sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt)));
   render();
 }
 
-async function loadProviderPayments(provider) {
+async function loadProviderPayments() {
   try {
     const data = window.paymentTrackerProviders
-      ? await window.paymentTrackerProviders.list(provider)
-      : await fetchProviderJson(`/api/${provider}/payments`);
+      ? await window.paymentTrackerProviders.list("square")
+      : await fetchProviderJson("/api/square/payments");
     const payments = (data.payments || []).map((payment) => ({
       ...payment,
-      provider: payment.provider || provider,
+      provider: "square",
       suggestedMemberId: payment.suggestedMemberId || suggestedPaymentMember(payment, state.store.members)?.id || ""
     }));
-    state.paymentProviders[provider] = { configured: Boolean(data.configured), error: "" };
-    return { provider, payments };
+    state.paymentProviders.square = { configured: Boolean(data.configured), error: "" };
+    return { payments };
   } catch (error) {
-    state.paymentProviders[provider] = {
+    state.paymentProviders.square = {
       configured: false,
-      error: provider === "square"
-        ? "스퀘어 대기 결제 저장소에 연결할 수 없습니다 · Square staging store is not available"
-        : "World Bankcard 대기 결제 저장소에 연결할 수 없습니다 · World Bankcard staging store is not available"
+      error: "스퀘어 대기 결제 저장소에 연결할 수 없습니다 · Square staging store is not available"
     };
-    return { provider, payments: [], error };
+    return { payments: [], error };
   }
 }
 
 async function syncSquarePayments() {
-  await syncProviderPayments("square");
+  await syncProviderPayments();
 }
 
-async function syncWorldBankcardPayments() {
-  await syncProviderPayments("worldbankcard");
-}
-
-async function syncProviderPayments(provider) {
-  const button = provider === "worldbankcard" ? elements.syncWorldBankcardButton : elements.syncSquareButton;
-  const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
-  const ko = provider === "worldbankcard" ? "World Bankcard" : "스퀘어";
+async function syncProviderPayments() {
+  const button = elements.syncSquareButton;
   elements.syncSquareButton.disabled = true;
-  if (button) {
-    button.disabled = true;
-  }
   try {
     const data = window.paymentTrackerProviders
-      ? await window.paymentTrackerProviders.sync(provider)
-      : await fetchProviderJson(`/api/${provider}/sync`, { method: "POST" });
-    const syncedPayments = (data.payments || []).map((payment) => ({ ...payment, provider: payment.provider || provider }));
-    state.stagedPayments = [
-      ...state.stagedPayments.filter((payment) => (payment.provider || "square") !== provider),
-      ...syncedPayments
-    ].sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt)));
-    state.paymentProviders[provider] = { configured: Boolean(data.configured), error: "" };
-    showToast(`${ko} 결제 ${data.imported || 0}건 확인 · Checked ${data.imported || 0} ${label} payments`);
+      ? await window.paymentTrackerProviders.sync("square")
+      : await fetchProviderJson("/api/square/sync", { method: "POST" });
+    state.stagedPayments = (data.payments || [])
+      .map((payment) => ({ ...payment, provider: "square" }))
+      .sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt)));
+    state.paymentProviders.square = { configured: Boolean(data.configured), error: "" };
+    showToast(`스퀘어 결제 ${data.imported || 0}건 확인 · Checked ${data.imported || 0} Square payments`);
   } catch (error) {
-    state.paymentProviders[provider] = {
+    state.paymentProviders.square = {
       configured: false,
       error: `${error.message} · Authentication can be added when ready.`
     };
-    showToast(state.paymentProviders[provider].error);
+    showToast(state.paymentProviders.square.error);
   } finally {
     elements.syncSquareButton.disabled = false;
-    if (button) {
-      button.disabled = false;
-    }
+    button.disabled = false;
+    render();
+  }
+}
+
+async function setUpSquareMonthlyInvoice() {
+  const member = selectedMember();
+  if (!member) return;
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`Set up Square monthly invoices on ${payer.name}'s payer account.`);
+    return;
+  }
+  const balance = getMemberBalance(payer, state.store.payments, new Date(), state.store.members);
+  const startDate = squareInvoiceStartDate(payer, new Date(), balance.monthlyAmount);
+  if (!payer.email || !startDate || balance.monthlyAmount <= 0) {
+    showToast("Save the payer email, contract date, and monthly amount before Square setup.");
+    return;
+  }
+  if (["ACTIVE", "PENDING"].includes(String(payer.squareMonthlyInvoice?.status || "").toUpperCase())) {
+    showToast("A Square monthly invoice is already set up for this payer.");
+    return;
+  }
+  elements.squareRecurringButton.disabled = true;
+  try {
+    const payload = {
+      memberId: payer.id,
+      name: payer.name,
+      email: payer.email,
+      phone: payer.cellPhone || payer.phone || "",
+      squareCustomerId: payer.squareCustomerId || "",
+      amount: balance.monthlyAmount,
+      startDate,
+      cancelDate: squareInvoiceCancelDate(payer, startDate, balance.monthlyAmount)
+    };
+    const result = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.createSquareMonthlyInvoice(payload)
+      : await fetchProviderJson("/api/square/subscriptions/monthly-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    state.store = upsertMember(state.store, {
+      ...payer,
+      squareCustomerId: result.customerId || payer.squareCustomerId,
+      squareMonthlyInvoice: {
+        subscriptionId: result.subscription?.id || "",
+        status: result.subscription?.status || "PENDING",
+        startDate: result.subscription?.start_date || startDate,
+        cancelDate: result.subscription?.canceled_date || payload.cancelDate || "",
+        monthlyAmount: balance.monthlyAmount,
+        createdAt: result.subscription?.created_at || new Date().toISOString()
+      }
+    });
+    saveStore("Square monthly invoice set up.");
+    showToast(`Square will email ${payer.email} a monthly payment link starting ${startDate}.`);
+    render();
+  } catch (error) {
+    showToast(error.message || "Square monthly invoice setup failed.");
     render();
   }
 }
@@ -2115,8 +2225,8 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     return;
   }
 
-  const provider = payment.provider || (payment.worldBankcardPaymentId ? "worldbankcard" : "square");
-  const label = provider === "worldbankcard" ? "World Bankcard" : "Square";
+  const provider = "square";
+  const label = "Square";
   const amount = Number(payment.amountCents || 0) / 100;
   const beforePayments = state.store.payments;
   const beforeIds = new Set(state.store.payments.map((item) => item.id));
@@ -2128,9 +2238,8 @@ async function approveStagedPayment(paymentId, category = "tuition") {
     source: provider,
     category,
     note: payment.reviewNote || (category === "one-off" ? `${label} one-off payment` : ""),
-    squarePaymentId: provider === "square" ? (payment.squarePaymentId || payment.id) : "",
-    worldBankcardPaymentId: provider === "worldbankcard" ? (payment.worldBankcardPaymentId || payment.id) : "",
-    providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.worldBankcardPaymentId || payment.id,
+    squarePaymentId: payment.squarePaymentId || payment.id,
+    providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.id,
     paymentProvider: provider
   });
   const statusSaved = await saveStagedStatus(payment.id, {
@@ -2184,15 +2293,14 @@ async function ignoreStagedPayment(paymentId) {
 
 async function saveStagedStatus(paymentId, patch) {
   const current = state.stagedPayments.find((payment) => payment.id === paymentId);
-  const provider = current?.provider || (current?.worldBankcardPaymentId ? "worldbankcard" : "square");
   state.stagedPayments = state.stagedPayments.map((payment) =>
     payment.id === paymentId ? { ...payment, ...patch } : payment
   );
 
   try {
     const data = window.paymentTrackerProviders
-      ? await window.paymentTrackerProviders.updateStatus(provider, paymentId, patch)
-      : await fetchProviderJson(`/api/${provider}/payments/status`, {
+      ? await window.paymentTrackerProviders.updateStatus("square", paymentId, patch)
+      : await fetchProviderJson("/api/square/payments/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: paymentId, ...patch })
@@ -2597,6 +2705,10 @@ function quickPayCurrentMonth() {
   }
   const status = getMemberStatus(member, state.store.payments, new Date(), state.store.members);
   const amount = getMemberBalance(member, state.store.payments, new Date(), state.store.members).monthlyAmount;
+  if (status.prepaidMonths?.has(status.currentMonth)) {
+    showToast("This month is covered by the contract down payment.");
+    return;
+  }
   if (status.paidMonths.has(status.currentMonth)) {
     markMonthUnpaid(status.currentMonth);
     return;
@@ -2941,6 +3053,10 @@ function toggleMonthPaid(month) {
   const member = selectedMember();
   if (!member) return;
   const status = getMemberStatus(member, state.store.payments, new Date(), state.store.members);
+  if (status.prepaidMonths?.has(month)) {
+    showToast("This month is covered by the contract down payment.");
+    return;
+  }
   if (status.paidMonths.has(month)) {
     markMonthUnpaid(month);
   } else {

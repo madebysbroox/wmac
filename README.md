@@ -40,9 +40,9 @@ Each person can be assigned to a family/household and labeled as an adult, paren
 
 Participants can be enrolled in Tae Kwon Do, Muay Thai, or both. Current belt/level and next goal fields create a polished training-journey card that is friendly enough to show the family. Use the same household name on every related record to group them together.
 
-## Card Payment Review · 카드 결제 확인
+## Square Confirmations · Square 결제 확인
 
-The **카드 결제 (Card Payments)** tab is a manual staging area for payments reported by Square or World Bankcard POS. Provider-reported payments stay separate from member payment history until someone reviews and approves them.
+The **Square Confirmations** page is a manual staging area for completed Square payments. Square payments stay separate from member payment history until someone confirms them.
 
 - Pending card payments show the amount, date, receipt/terminal details, suggested member match, payment month, and a review note field.
 - If the suggested match is wrong or missing, choose the correct member before approving.
@@ -51,9 +51,9 @@ The **카드 결제 (Card Payments)** tab is a manual staging area for payments 
 - **회비 승인 (Tuition)** records that payment as the member's monthly tuition and marks the provider item approved, so it is not applied twice.
 - **기타 매출 (Other Sale)** records that payment as one-off member revenue for the month. It is included in monthly and year-end revenue totals, but it does not mark that month's tuition paid.
 - **무시 (Ignore)** keeps the provider item out of member records.
-- Members with a staged Square/World Bankcard payment show a short **대기 (Pending)** status until the payment is approved or ignored.
+- Members with a staged Square payment show a short **대기 (Pending)** status until the payment is confirmed or ignored.
 
-For the full setup walkthrough, see [Connecting Square and World Bankcard](CARD_PAYMENT_CONNECTIONS.md).
+For the full setup walkthrough, see [Connecting Square](CARD_PAYMENT_CONNECTIONS.md).
 
 Square authentication is intentionally separate from the daily workflow. For the recommended AWS relay, start the local server with:
 
@@ -81,33 +81,6 @@ SQUARE_WEBHOOK_NOTIFICATION_URL=https://your-public-url.example.com/api/square/w
 ```
 
 Square requires a public HTTPS webhook URL. The recommended setup is the separate `wmac-square-webhook-relay` AWS project, which receives Square webhooks and lets this local app securely pull staged payments. The local app stores staged payment data in `data/square-payments.json`, which is ignored by Git so the review copy stays local.
-
-World Bankcard can be configured once World Bankcard provides the approved endpoint and credentials. The public website advertises API/integration capability, but the app intentionally waits for real endpoint/auth details instead of guessing. If a relay/export endpoint is available:
-
-```bash
-WORLDBANKCARD_RELAY_BASE_URL=https://YOUR_WORLDBANKCARD_RELAY.example.com \
-WORLDBANKCARD_RELAY_SYNC_TOKEN=your-long-local-sync-token \
-npm start
-```
-
-Or point the app at a JSON transaction export endpoint:
-
-```bash
-WORLDBANKCARD_TRANSACTIONS_URL=https://YOUR_WORLDBANKCARD_EXPORT_ENDPOINT \
-WORLDBANKCARD_ACCESS_TOKEN=... \
-npm start
-```
-
-API-key style credentials are also supported:
-
-```bash
-WORLDBANKCARD_TRANSACTIONS_URL=https://YOUR_WORLDBANKCARD_EXPORT_ENDPOINT \
-WORLDBANKCARD_API_KEY=... \
-WORLDBANKCARD_API_KEY_HEADER=x-api-key \
-npm start
-```
-
-The World Bankcard sync accepts common JSON shapes such as `payments`, `transactions`, `items`, `data`, or `results`, normalizes them into the same manual review queue, and stores the local review copy in `data/worldbankcard-payments.json`.
 
 ## Files & Backup · 파일 · 백업
 

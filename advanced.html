@@ -32,11 +32,8 @@
       <button id="membersTab" class="page-tab" type="button">
         <span lang="ko">회원</span><small lang="en">Members</small>
       </button>
-      <button id="landscapeTab" class="page-tab" type="button">
-        <span lang="ko">납부 현황</span><small lang="en">Payment Landscape</small>
-      </button>
       <button id="squareTab" class="page-tab" type="button">
-        <span lang="ko">카드 결제</span><small lang="en">Card Payments</small>
+        <span lang="ko">Square 확인</span><small lang="en">Square Confirmations</small>
       </button>
       <div id="updatePanel" class="update-panel nav-update-panel hidden">
         <h3>앱 업데이트 <small lang="en">App Updates</small></h3>
@@ -228,8 +225,8 @@
         <div id="squareView" class="square-view hidden">
           <div class="dashboard-header square-header">
             <div>
-              <h2>카드 결제 확인 <small lang="en">Card Payment Review</small></h2>
-              <p id="squareStatusLine">Square / World Bankcard 연결 상태 확인 중 · Checking card payment connections</p>
+              <h2>Square 결제 확인 <small lang="en">Square Confirmations</small></h2>
+              <p id="squareStatusLine">Square 연결 상태 확인 중 · Checking Square connection</p>
             </div>
             <img src="src/assets/wmac-logo.jpeg" alt="World Martial Arts Center logo">
           </div>
@@ -237,14 +234,11 @@
           <div class="square-toolbar">
             <div>
               <h3>승인 대기 결제 <small lang="en">Payments Waiting for Approval</small></h3>
-              <p>Square 또는 World Bankcard에서 들어온 결제를 확인하고 회원/월/메모를 선택한 뒤 회원 기록에 넣으세요. · Review card payments before they update member records.</p>
+              <p>Square에서 들어온 결제를 확인하고 회원/월/메모를 선택한 뒤 회원 기록에 넣으세요. · Confirm Square payments before they update member records.</p>
             </div>
             <div class="square-toolbar-actions">
               <button id="syncSquareButton" class="button primary bi" type="button">
                 <span lang="ko">스퀘어에서 가져오기</span><small lang="en">Sync Square</small>
-              </button>
-              <button id="syncWorldBankcardButton" class="button primary bi" type="button">
-                <span lang="ko">World Bankcard에서 가져오기</span><small lang="en">Sync World Bankcard</small>
               </button>
             </div>
           </div>

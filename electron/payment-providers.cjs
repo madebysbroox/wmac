@@ -1,6 +1,7 @@
 const { readFile, writeFile, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { randomUUID } = require("node:crypto");
 
 function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch }) {
   const dataDir = path.join(userDataPath, "provider-data");
@@ -53,11 +54,8 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
       squareAccessToken: process.env.SQUARE_ACCESS_TOKEN || "",
       squareEnvironment: process.env.SQUARE_ENVIRONMENT || "production",
       squareLocationId: process.env.SQUARE_LOCATION_ID || "",
-      squareApiVersion: process.env.SQUARE_API_VERSION || "2026-05-20",
-      worldBankcardRelayBaseUrl: process.env.WORLDBANKCARD_RELAY_BASE_URL || "",
-      worldBankcardRelaySyncToken: process.env.WORLDBANKCARD_RELAY_SYNC_TOKEN || "",
-      worldBankcardTransactionsUrl: process.env.WORLDBANKCARD_TRANSACTIONS_URL || "",
-      worldBankcardAccessToken: process.env.WORLDBANKCARD_ACCESS_TOKEN || ""
+      squarePlanVariationId: process.env.SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID || "",
+      squareApiVersion: process.env.SQUARE_API_VERSION || "2026-07-15"
     };
   }
 
@@ -66,7 +64,8 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
     return {
       squareRelayBaseUrl: config.squareRelayBaseUrl,
       squareRelayConfigured: Boolean(config.squareRelayBaseUrl && config.squareRelaySyncToken),
-      squareDirectConfigured: Boolean(config.squareAccessToken)
+      squareDirectConfigured: Boolean(config.squareAccessToken),
+      squareMonthlyInvoiceConfigured: Boolean(config.squareAccessToken && config.squareLocationId && config.squarePlanVariationId)
     };
   }
 
@@ -111,29 +110,21 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
   }
 
   async function providerConfigured(provider) {
+    validateProvider(provider);
     const config = await effectiveSettings();
-    if (provider === "square") {
-      return Boolean((config.squareRelayBaseUrl && config.squareRelaySyncToken) || config.squareAccessToken);
-    }
-    return Boolean((config.worldBankcardRelayBaseUrl && config.worldBankcardRelaySyncToken) || config.worldBankcardTransactionsUrl);
+    return Boolean((config.squareRelayBaseUrl && config.squareRelaySyncToken) || config.squareAccessToken);
   }
 
   async function sync(provider) {
     validateProvider(provider);
     const config = await effectiveSettings();
-    if (provider === "square") {
-      if (config.squareRelayBaseUrl && config.squareRelaySyncToken) {
-        return syncSquareRelay(config);
-      }
-      if (config.squareAccessToken) {
-        return syncSquareDirect(config);
-      }
-      throw new Error("Save the Square relay address and sync token first.");
+    if (config.squareRelayBaseUrl && config.squareRelaySyncToken) {
+      return syncSquareRelay(config);
     }
-    if (config.worldBankcardRelayBaseUrl && config.worldBankcardRelaySyncToken) {
-      return syncGenericRelay("worldbankcard", config.worldBankcardRelayBaseUrl, config.worldBankcardRelaySyncToken);
+    if (config.squareAccessToken) {
+      return syncSquareDirect(config);
     }
-    throw new Error("World Bankcard is not configured in the installed app.");
+    throw new Error("Save the Square relay address and sync token first.");
   }
 
   async function syncSquareDirect(config) {
@@ -183,7 +174,7 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
   }
 
   async function syncSquareRelay(config) {
-    const result = await syncGenericRelay("square", config.squareRelayBaseUrl, config.squareRelaySyncToken);
+    const result = await syncRelay(config.squareRelayBaseUrl, config.squareRelaySyncToken);
     const delivered = [];
     let deliveryConflicts = 0;
     for (const payment of result.newlyReceivedPayments) {
@@ -210,9 +201,9 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
     return { ...result, delivered: delivered.length, deliveryConflicts };
   }
 
-  async function syncGenericRelay(provider, baseUrl, token) {
+  async function syncRelay(baseUrl, token) {
     const { normalizeProviderPayment, upsertProviderPayment } = await dataModule();
-    let store = await readStore(provider);
+    let store = await readStore("square");
     const receivedPayments = [];
     const newlyReceivedPayments = [];
     let imported = 0;
@@ -227,12 +218,12 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
       });
       const body = await response.json();
       if (!response.ok) {
-        throw new Error(body.error || `${provider} relay sync failed.`);
+        throw new Error(body.error || "Square relay sync failed.");
       }
       const pagePayments = Array.isArray(body) ? body : body.payments || [];
       for (const payment of pagePayments) {
-        if (provider === "square" && !squarePaymentIsCompleted(payment)) continue;
-        const normalized = normalizeProviderPayment(payment, [], provider);
+        if (!squarePaymentIsCompleted(payment)) continue;
+        const normalized = normalizeProviderPayment(payment);
         const existing = (store.payments || []).find((item) =>
           item.id === normalized.id
           || (normalized.providerPaymentId && item.providerPaymentId === normalized.providerPaymentId)
@@ -247,12 +238,12 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
       cursor = Array.isArray(body) ? "" : String(body.nextCursor || "");
       pages += 1;
       if (cursor && visitedCursors.has(cursor)) {
-        throw new Error(`${provider} relay returned a repeated page cursor.`);
+        throw new Error("Square relay returned a repeated page cursor.");
       }
       visitedCursors.add(cursor);
     } while (cursor && pages < 100);
     store.lastSyncAt = new Date().toISOString();
-    await writeStore(provider, store);
+    await writeStore("square", store);
     return { configured: true, source: "relay", imported, pages, payments: store.payments || [], receivedPayments, newlyReceivedPayments };
   }
 
@@ -272,11 +263,84 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
     if (!result.found) throw new Error(`${provider} payment not found.`);
     await writeStore(provider, result.store);
     return {
-      payment: result.store.payments.find((payment) => [payment.id, payment.providerPaymentId, payment.squarePaymentId, payment.worldBankcardPaymentId].includes(paymentId))
+      payment: result.store.payments.find((payment) => [payment.id, payment.providerPaymentId, payment.squarePaymentId].includes(paymentId))
     };
   }
 
-  return { list, sync, updateStatus, getPublicSettings, saveSquareRelay };
+  async function createSquareMonthlyInvoice(input = {}) {
+    const config = await effectiveSettings();
+    if (config.squareRelayBaseUrl && config.squareRelaySyncToken) {
+      const response = await fetchImpl(`${config.squareRelayBaseUrl}/subscriptions/monthly-invoice`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.squareRelaySyncToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || body.detail || "Square relay could not create the monthly invoice.");
+      return body;
+    }
+    if (!config.squareAccessToken || !config.squareLocationId || !config.squarePlanVariationId) {
+      throw new Error("Square monthly invoices need SQUARE_ACCESS_TOKEN, SQUARE_LOCATION_ID, and SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID.");
+    }
+    return createSquareMonthlyInvoiceDirect(config, input, fetchImpl);
+  }
+
+  return { list, sync, updateStatus, createSquareMonthlyInvoice, getPublicSettings, saveSquareRelay };
+}
+
+async function createSquareMonthlyInvoiceDirect(config, input, fetchImpl = fetch) {
+  const email = String(input.email || "").trim().toLowerCase();
+  const amountCents = Math.round(Number(input.amount || 0) * 100);
+  if (!email || !input.name || !input.memberId || !/^\d{4}-\d{2}-\d{2}$/.test(String(input.startDate || "")) || amountCents < 100) {
+    throw new Error("A payer name, email, billing date, and monthly amount of at least $1 are required.");
+  }
+  const baseUrl = config.squareEnvironment === "sandbox" ? "https://connect.squareupsandbox.com" : "https://connect.squareup.com";
+  let customerId = String(input.squareCustomerId || "").trim();
+  if (!customerId) {
+    const [givenName, ...familyName] = String(input.name).trim().split(/\s+/);
+    const customer = await squareRequest(baseUrl, config, "/v2/customers", {
+      idempotency_key: randomUUID(),
+      given_name: givenName || input.name,
+      family_name: familyName.join(" "),
+      email_address: email,
+      phone_number: String(input.phone || "").trim(),
+      reference_id: String(input.memberId)
+    }, fetchImpl);
+    customerId = customer.customer?.id || "";
+    if (!customerId) throw new Error("Square did not return a customer ID.");
+  }
+  const subscription = await squareRequest(baseUrl, config, "/v2/subscriptions", {
+    idempotency_key: randomUUID(),
+    customer_id: customerId,
+    location_id: config.squareLocationId,
+    plan_variation_id: config.squarePlanVariationId,
+    price_override_money: { amount: amountCents, currency: "USD" },
+    start_date: input.startDate,
+    monthly_billing_anchor_date: Number(input.startDate.slice(8, 10)),
+    ...(input.cancelDate ? { canceled_date: input.cancelDate } : {}),
+    timezone: "America/New_York",
+    source: { name: "WMAC Payment Tracker" }
+  }, fetchImpl);
+  if (!subscription.subscription?.id) throw new Error("Square did not return a subscription ID.");
+  return { customerId, subscription: subscription.subscription };
+}
+
+async function squareRequest(baseUrl, config, pathName, body, fetchImpl = fetch) {
+  const response = await fetchImpl(`${baseUrl}${pathName}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.squareAccessToken}`,
+      "Square-Version": config.squareApiVersion,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.errors?.[0]?.detail || payload.errors?.[0]?.code || "Square request failed.");
+  return payload;
 }
 
 async function retrieveSquareCustomer(baseUrl, customerId, config, cache) {
@@ -314,7 +378,7 @@ function relayPaymentEventId(payment) {
 }
 
 function validateProvider(provider) {
-  if (!["square", "worldbankcard"].includes(provider)) {
+  if (provider !== "square") {
     throw new Error("Unsupported payment provider.");
   }
 }

@@ -40,6 +40,8 @@ const MEMBER_FIELD_ALIASES = {
   muayThaiCertification: ["muay thai certification", "muay thai level"]
 };
 
+const CONTRACT_DOWN_PAYMENT_SOURCE = "contract-down-payment";
+
 const PAYMENT_FIELD_ALIASES = {
   name: ["name", "member name", "student name", "customer name"],
   email: ["email", "email address", "customer email"],
@@ -256,11 +258,11 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
   });
 
   return {
-    store: {
+    store: synchronizeContractDownPayments({
       ...existingStore,
       members: sortMembersByAccount(linkResponsibleParties(members)),
       updatedAt: new Date().toISOString()
-    },
+    }),
     imported,
     added,
     updated,
@@ -370,10 +372,7 @@ export function pendingSquarePaymentsForMember(squarePayments, member) {
   return pendingStagedPaymentsForMember(squarePayments, member);
 }
 
-export function normalizeProviderPayment(input, members = [], provider = "square") {
-  if (provider === "worldbankcard") {
-    return normalizeWorldBankcardPayment(input, members);
-  }
+export function normalizeProviderPayment(input, members = []) {
   return normalizeSquarePayment(input, members);
 }
 
@@ -445,119 +444,10 @@ export function normalizeSquarePayment(input, members = []) {
   return candidate;
 }
 
-export function normalizeWorldBankcardPayment(input, members = []) {
-  const payment = input?.transaction || input?.payment || input?.sale || input?.item || input || {};
-  const id = clean(
-    payment.id ||
-    payment.transactionId ||
-    payment.transaction_id ||
-    payment.paymentId ||
-    payment.payment_id ||
-    payment.worldBankcardPaymentId ||
-    payment.worldbankcardPaymentId ||
-    payment.world_bankcard_payment_id ||
-    payment.worldBankcardTransactionId ||
-    payment.worldbankcardTransactionId ||
-    payment.world_bankcard_transaction_id ||
-    payment.transactionReference ||
-    payment.transaction_reference ||
-    payment.referenceNumber ||
-    payment.reference_number ||
-    input?.transactionId ||
-    input?.paymentId ||
-    input?.worldBankcardPaymentId ||
-    input?.worldbankcardPaymentId ||
-    input?.id
-  );
-  const amountCents = amountToCents(
-    payment.amountCents ??
-    payment.amount_cents ??
-    payment.amount?.value ??
-    payment.amount?.amount ??
-    payment.authorizedAmount ??
-    payment.saleAmount ??
-    payment.totalAmount ??
-    payment.total ??
-    payment.amount ??
-    input?.amountCents ??
-    input?.amount
-  );
-  const createdSource = payment.transactionDate || payment.transaction_date || payment.createdAt || payment.created_at || payment.date || input?.paidAt || input?.createdAt || input?.receivedAt;
-  const paidAt = normalizeDate(createdSource) || new Date().toISOString().slice(0, 10);
-  const createdAt = clean(payment.createdAt || payment.created_at || createdSource || input?.createdAt || input?.receivedAt) || new Date().toISOString();
-  const buyerName = clean(payment.buyerName || payment.customerName || payment.customer?.name || payment.cardholderName || payment.cardHolderName || input?.buyerName);
-  const buyerEmail = clean(payment.buyerEmail || payment.customerEmail || payment.customer?.email || input?.buyerEmail || input?.buyerEmailAddress).toLowerCase();
-  const buyerPhone = cleanPhone(payment.buyerPhone || payment.customerPhone || payment.customer?.phone || input?.buyerPhone);
-  const notePieces = [
-    payment.note || input?.note,
-    payment.terminalId || payment.terminal_id ? `Terminal ${payment.terminalId || payment.terminal_id}` : "",
-    payment.batchId || payment.batch_id ? `Batch ${payment.batchId || payment.batch_id}` : "",
-    payment.cardBrand || payment.card?.brand ? `${payment.cardBrand || payment.card?.brand}${payment.last4 || payment.card?.last4 ? ` ••••${payment.last4 || payment.card?.last4}` : ""}` : ""
-  ].filter(Boolean);
-  const candidate = {
-    provider: "worldbankcard",
-    providerLabel: "World Bankcard",
-    id: id || cryptoId("wbcpay"),
-    worldBankcardPaymentId: id,
-    providerPaymentId: id,
-    providerEventId: clean(payment.eventId || payment.event_id || input?.eventId),
-    sourceEventType: clean(input?.type || input?.sourceEventType || input?.eventType || payment.type),
-    status: clean(input?.localStatus || input?.local_status || input?.reviewStatus || input?.review_status) || "pending",
-    worldBankcardStatus: clean(input?.worldBankcardStatus || payment.status || payment.transactionStatus || payment.state),
-    providerStatus: clean(input?.worldBankcardStatus || payment.status || payment.transactionStatus || payment.state),
-    amountCents,
-    currency: clean(payment.currency || payment.amount?.currency || payment.currencyCode || input?.currency) || "USD",
-    paidAt,
-    createdAt,
-    updatedAt: clean(payment.updatedAt || payment.updated_at || input?.updatedAt || input?.receivedAt) || createdAt,
-    buyerName,
-    buyerEmail,
-    buyerPhone,
-    customerId: clean(payment.customerId || payment.customer_id || payment.customer?.id || input?.customerId),
-    externalCustomerId: clean(payment.customerReference || payment.customer_reference || payment.customer?.reference || input?.externalCustomerId),
-    receiptUrl: clean(payment.receiptUrl || payment.receipt_url || input?.receiptUrl),
-    receiptNumber: clean(payment.receiptNumber || payment.receipt_number || payment.reference || payment.referenceNumber || payment.reference_number || payment.merchantReference || payment.transactionReference || input?.receiptNumber),
-    locationId: clean(payment.locationId || payment.location_id || payment.storeId || payment.store_id || input?.locationId),
-    terminalId: clean(payment.terminalId || payment.terminal_id || input?.terminalId),
-    batchId: clean(payment.batchId || payment.batch_id || input?.batchId),
-    orderId: clean(payment.orderId || payment.order_id || payment.merchantOrderId || input?.orderId),
-    note: clean(notePieces.join(" · ")),
-    reviewNote: clean(input?.reviewNote),
-    paymentCategory: clean(input?.paymentCategory),
-    paymentMonth: normalizeMonth(input?.paymentMonth) || monthFromDate(createdSource),
-    memberId: clean(input?.memberId),
-    suggestedMemberId: clean(input?.suggestedMemberId),
-    approvedAt: clean(input?.approvedAt),
-    approvedBy: clean(input?.approvedBy),
-    ignoredAt: clean(input?.ignoredAt),
-    ignoredReason: clean(input?.ignoredReason),
-    raw: input?.raw || input
-  };
-
-  if (!candidate.worldBankcardPaymentId) {
-    candidate.worldBankcardPaymentId = candidate.id;
-    candidate.providerPaymentId = candidate.id;
-  }
-
-  const suggested = candidate.memberId
-    ? members.find((member) => member.id === candidate.memberId)
-    : suggestedPaymentMember(candidate, members);
-  candidate.suggestedMemberId = candidate.suggestedMemberId || suggested?.id || "";
-  if (!candidate.memberId && candidate.suggestedMemberId) {
-    candidate.memberId = candidate.suggestedMemberId;
-  }
-  if (candidate.status === "pending" && !candidate.suggestedMemberId) {
-    candidate.status = "needs_match";
-  }
-
-  return candidate;
-}
-
 export function upsertProviderPayment(providerStore, providerPayment) {
   const existing = (providerStore.payments || []).find((payment) =>
     payment.id === providerPayment.id ||
     (providerPayment.squarePaymentId && payment.squarePaymentId === providerPayment.squarePaymentId) ||
-    (providerPayment.worldBankcardPaymentId && payment.worldBankcardPaymentId === providerPayment.worldBankcardPaymentId) ||
     (providerPayment.providerPaymentId && payment.providerPaymentId === providerPayment.providerPaymentId)
   );
   const nextPayment = {
@@ -574,7 +464,6 @@ export function upsertProviderPayment(providerStore, providerPayment) {
   const payments = (providerStore.payments || []).filter((payment) =>
     payment.id !== nextPayment.id &&
     (!nextPayment.squarePaymentId || payment.squarePaymentId !== nextPayment.squarePaymentId) &&
-    (!nextPayment.worldBankcardPaymentId || payment.worldBankcardPaymentId !== nextPayment.worldBankcardPaymentId) &&
     (!nextPayment.providerPaymentId || payment.providerPaymentId !== nextPayment.providerPaymentId)
   );
   payments.push(nextPayment);
@@ -592,7 +481,7 @@ export function upsertSquarePayment(squareStore, squarePayment) {
 export function updateProviderPaymentStatus(providerStore, paymentId, patch) {
   let found = false;
   const payments = (providerStore.payments || []).map((payment) => {
-    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId && payment.worldBankcardPaymentId !== paymentId && payment.providerPaymentId !== paymentId) {
+    if (payment.id !== paymentId && payment.squarePaymentId !== paymentId && payment.providerPaymentId !== paymentId) {
       return payment;
     }
     found = true;
@@ -646,15 +535,11 @@ export function addPayment(store, payment) {
     note: clean(payment.note),
     batchId: clean(payment.batchId),
     squarePaymentId: clean(payment.squarePaymentId),
-    worldBankcardPaymentId: clean(payment.worldBankcardPaymentId),
-    providerPaymentId: clean(payment.providerPaymentId || payment.squarePaymentId || payment.worldBankcardPaymentId),
+    providerPaymentId: clean(payment.providerPaymentId || payment.squarePaymentId),
     paymentProvider: clean(payment.paymentProvider || payment.source)
   };
   const existingPayments = store.payments.filter((item) => {
     if (nextPayment.squarePaymentId && item.squarePaymentId === nextPayment.squarePaymentId) {
-      return false;
-    }
-    if (nextPayment.worldBankcardPaymentId && item.worldBankcardPaymentId === nextPayment.worldBankcardPaymentId) {
       return false;
     }
     if (nextPayment.providerPaymentId && item.providerPaymentId === nextPayment.providerPaymentId) {
@@ -776,14 +661,18 @@ export function upsertMember(store, member) {
   nextMember.identityKey = buildIdentityKey(nextMember);
   const members = store.members.filter((item) => item.id !== nextMember.id);
   members.push(nextMember);
-  return { ...store, members: sortMembersByAccount(linkResponsibleParties(members)), updatedAt: new Date().toISOString() };
+  return synchronizeContractDownPayments({
+    ...store,
+    members: sortMembersByAccount(linkResponsibleParties(members)),
+    updatedAt: new Date().toISOString()
+  });
 }
 
 export function migrateStore(store) {
   if (!store?.members || !store?.payments) {
     return createEmptyStore();
   }
-  return {
+  return synchronizeContractDownPayments({
     ...store,
     version: 2,
     members: linkResponsibleParties(store.members.map((member) => {
@@ -816,6 +705,48 @@ export function migrateStore(store) {
         nextLevel: nextMemberCertification({ ...member, certifications }) || member.nextLevel || ""
       };
     }))
+  });
+}
+
+// A down payment is real cash received, distinct from the two service months
+// it can prepay. Keep one auditable payer-level transaction dated to the
+// contract signing date so backup and year-end reports include the receipt.
+function synchronizeContractDownPayments(store) {
+  const members = Array.isArray(store?.members) ? store.members : [];
+  const expected = new Map();
+  members.forEach((member) => {
+    const payer = getResponsibleParty(member, members) || member;
+    const amount = Number(member.downPayment || 0);
+    const contractDate = normalizeDate(member.startDate);
+    if (payer.id !== member.id || amount <= 0 || !contractDate) return;
+    expected.set(member.id, {
+      memberId: member.id,
+      amount,
+      month: contractDate.slice(0, 7),
+      paidAt: contractDate,
+      source: CONTRACT_DOWN_PAYMENT_SOURCE,
+      category: "down_payment",
+      note: "Contract down payment paid at signing"
+    });
+  });
+
+  const existingByPayer = new Map(
+    (store.payments || [])
+      .filter((payment) => payment.source === CONTRACT_DOWN_PAYMENT_SOURCE)
+      .map((payment) => [payment.memberId, payment])
+  );
+  const payments = (store.payments || []).filter((payment) => payment.source !== CONTRACT_DOWN_PAYMENT_SOURCE);
+  expected.forEach((payment, memberId) => {
+    payments.push({
+      id: existingByPayer.get(memberId)?.id || cryptoId("pay"),
+      ...payment
+    });
+  });
+
+  return {
+    ...store,
+    payments,
+    updatedAt: new Date().toISOString()
   };
 }
 
@@ -828,6 +759,7 @@ function notBilledPaymentState(member, currentMonth, label = "Covered by payer")
     recentMonths: [],
     billableMonths: [],
     paidMonths: new Set(),
+    prepaidMonths: new Set(),
     unpaidMonths: [],
     dueUnpaidMonths: [],
     upcomingUnpaidMonths: [],
@@ -873,8 +805,8 @@ export function getMemberPaymentState(member, payments, today = new Date(), pend
   if (billingMember.participant === false || billingMember.inactive) {
     return notBilledPaymentState(billingMember, currentMonth, "Non-participant");
   }
-  const firstDueMonth = getFirstDueMonth(billingMember, currentMonth);
-  const billableMonths = monthsInRange(firstDueMonth, currentMonth);
+  const billableMonths = billingMonthsForAgreement(billingMember, currentMonth);
+  const prepaidMonths = prepaidContractMonths(billingMember, billableMonths);
   const paidByMonth = new Map();
   payments.filter((payment) => account.accountMemberIds.includes(payment.memberId) && isTuitionPayment(payment)).forEach((payment) => {
     paidByMonth.set(payment.month, (paidByMonth.get(payment.month) || 0) + Number(payment.amount || 0));
@@ -890,7 +822,8 @@ export function getMemberPaymentState(member, payments, today = new Date(), pend
   const months = billableMonths.map((month) => {
     const dueDate = dueDateForMonth(billingMember, month);
     const daysLate = Math.floor((todayUtc - utcDateValue(dueDate)) / 86400000);
-    const paid = paidMonths.has(month);
+    const prepaid = prepaidMonths.has(month);
+    const paid = prepaid || paidMonths.has(month);
     const pending = !paid && pendingMonths.has(month);
     let state = "upcoming";
     if (paid) {
@@ -902,10 +835,11 @@ export function getMemberPaymentState(member, payments, today = new Date(), pend
     } else if (daysLate >= 0) {
       state = "attention";
     }
-    return { month, dueDate, daysLate, paid, pending, state };
+    return { month, dueDate, daysLate, paid, prepaid, pending, state };
   });
   const recentMonths = billableMonths.slice(-4);
-  const lastPaidMonth = Array.from(paidMonths).sort().at(-1) || "";
+  const allPaidMonths = new Set([...paidMonths, ...prepaidMonths]);
+  const lastPaidMonth = Array.from(allPaidMonths).sort().at(-1) || "";
   const unpaidMonths = months.filter((month) => !month.paid).map((month) => month.month);
   const dueUnpaidMonths = months.filter((month) => !month.paid && month.daysLate >= 0);
   const upcomingUnpaidMonths = months.filter((month) => !month.paid && month.daysLate < 0);
@@ -930,9 +864,10 @@ export function getMemberPaymentState(member, payments, today = new Date(), pend
     label,
     currentMonth,
     lastPaidMonth,
-    recentMonths: recentMonths.map((month) => ({ month, paid: paidMonths.has(month) })),
+    recentMonths: recentMonths.map((month) => ({ month, paid: allPaidMonths.has(month), prepaid: prepaidMonths.has(month) })),
     billableMonths,
-    paidMonths,
+    paidMonths: allPaidMonths,
+    prepaidMonths,
     unpaidMonths,
     dueUnpaidMonths,
     upcomingUnpaidMonths,
@@ -1386,7 +1321,6 @@ function memberRow(member, payment, accountHolder = member) {
     "Payment Note": payment?.note || "",
     "Payment Batch ID": payment?.batchId || "",
     "Square Payment ID": payment?.squarePaymentId || "",
-    "World Bankcard Payment ID": payment?.worldBankcardPaymentId || "",
     "Provider Payment ID": payment?.providerPaymentId || ""
   };
 }
@@ -1525,27 +1459,6 @@ function localReviewStatus(input) {
   return ["pending", "needs_match", "approved", "ignored"].includes(status) ? status : "";
 }
 
-function amountToCents(value) {
-  if (value && typeof value === "object") {
-    return amountToCents(value.value ?? value.amount);
-  }
-
-  const text = clean(value);
-  if (!text) {
-    return 0;
-  }
-
-  const numeric = Number(text.replace(/[^0-9.-]/g, ""));
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-
-  if (/^\s*-?\d+\s*$/.test(text) && Math.abs(numeric) > 999) {
-    return Math.round(numeric);
-  }
-  return Math.round(numeric * 100);
-}
-
 function normalizeDate(value) {
   const text = clean(value);
   if (!text) {
@@ -1582,8 +1495,44 @@ function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function getFirstDueMonth(member, currentMonth) {
-  return member.startDate?.slice(0, 7) || currentMonth;
+function billingMonthsForAgreement(member, currentMonth) {
+  const firstDueMonth = member.startDate?.slice(0, 7) || currentMonth;
+  const months = monthsInRange(firstDueMonth, currentMonth);
+  if (normalizeAgreementType(member.agreementType) !== "Contract" || !isIsoDate(member.agreementEndDate)) {
+    return months;
+  }
+  // The signing date begins the first paid month. A fixed-term agreement
+  // ends before the installment due on its expiration date, so a one-year
+  // agreement has twelve billing months (not thirteen).
+  return months.filter((month) => dueDateForMonth(member, month) < member.agreementEndDate);
+}
+
+function prepaidContractMonths(member, billableMonths) {
+  const monthlyAmount = Number(member.monthlyAmount || 0);
+  const downPayment = Number(member.downPayment || 0);
+  // A contract down payment only settles the first and final installments
+  // when it actually covers both of them. This keeps an arbitrary partial
+  // enrollment payment from silently erasing two monthly obligations.
+  if (
+    normalizeAgreementType(member.agreementType) !== "Contract" ||
+    monthlyAmount <= 0 ||
+    downPayment + 0.005 < monthlyAmount * 2 ||
+    billableMonths.length === 0
+  ) {
+    return new Set();
+  }
+  const prepaid = new Set([billableMonths[0]]);
+  const firstDueMonth = member.startDate.slice(0, 7);
+  const agreementEndDate = normalizeDate(member.agreementEndDate) || defaultAgreementEndDate(member.startDate);
+  const finalContractMonth = agreementEndDate
+    ? monthsInRange(firstDueMonth, agreementEndDate.slice(0, 7))
+      .filter((month) => dueDateForMonth(member, month) < agreementEndDate)
+      .at(-1)
+    : billableMonths.at(-1);
+  // The final prepaid month stays the real final installment even while the
+  // contract is in progress. Do not make each newly visible month look paid.
+  if (finalContractMonth && billableMonths.includes(finalContractMonth)) prepaid.add(finalContractMonth);
+  return prepaid;
 }
 
 function monthsInRange(startMonth, endMonth) {

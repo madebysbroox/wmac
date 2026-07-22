@@ -6,6 +6,7 @@ import {
   defaultAgreementEndDate,
   exportStoreRows,
   getAgreementExpirationStatus,
+  getLandscapeRows,
   getLateFeeBalance,
   getMemberBalance,
   getMemberPaymentState,
@@ -16,9 +17,12 @@ import {
   importPaymentsFromRecords,
   isActiveParticipant,
   migrateStore,
+  nextUnpaidTuitionMonth,
   parseCsv,
   removePayment,
   searchMembers,
+  stagedPaymentMonth,
+  suggestedPaymentMember,
   toCsv,
   upsertMember
 } from "./data.js";
@@ -31,15 +35,23 @@ const state = {
   selectedId: "",
   view: "home",
   rosterFilter: "all",
+  memberViewMode: "list",
   editorMode: "",
-  historyExpanded: false
+  historyExpanded: false,
+  squarePayments: [],
+  squareSelectedId: "",
+  squareConfigured: false,
+  squareLoading: false,
+  squareLoaded: false,
+  squareError: ""
 };
 
 const ids = [
-  "homeLink", "searchInput", "addMemberButton", "settingsButton", "saveStatus",
+  "homeLink", "homeNav", "membersNav", "squareNav", "squareNavBadge", "searchInput", "addMemberButton", "settingsButton", "saveStatus",
   "homeView", "attentionList", "seeAllMembersButton", "paidStat", "dueStat", "familyStat", "membersStat",
   "paidCount", "dueCount", "familyCount", "memberCount", "recentMembers",
-  "rosterView", "rosterBackButton", "rosterTitle", "rosterSummary", "rosterList",
+  "rosterView", "rosterTitle", "rosterSummary", "rosterList", "memberListToggle", "memberLandscapeToggle",
+  "memberLandscape", "memberLandscapeHead", "memberLandscapeBody",
   "memberView", "memberBackButton", "memberAvatar", "memberNameHeading", "memberStatusBadge", "memberSubtitle",
   "editProfileButton", "nextMemberButton", "paymentCard", "paymentHeadline", "paymentSubhead", "amountDue",
   "recordPaymentButton", "recordPaymentLabel", "paymentMenuButton", "paymentMenu", "customPaymentButton",
@@ -49,11 +61,17 @@ const ids = [
   "bioDob", "bioAddress", "editorDialog", "editorForm", "editorEyebrow", "editorTitle", "editorHelp",
   "editorFields", "closeEditorButton", "cancelEditorButton", "paymentDialog", "paymentForm", "closePaymentButton",
   "cancelPaymentButton", "paymentMonth", "paymentAmount", "paymentDate", "paymentNote",
-  "toolsDialog", "closeToolsButton", "memberCsv", "paymentCsv", "exportButton", "toast"
+  "toolsDialog", "closeToolsButton", "memberCsv", "paymentCsv", "exportButton", "toast",
+  "squareView", "syncSquareButton", "syncSquareLabel", "squareEmptySyncButton", "squarePendingCount", "squareMatchCount", "squareApprovedCount",
+  "squareConnectionStatus", "squareEmpty", "squareWorkspace", "squareQueue", "squareDetail", "squareRelayUrl",
+  "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus"
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id}`)]));
 
 el.homeLink.addEventListener("click", (event) => { event.preventDefault(); showHome(); });
+el.homeNav.addEventListener("click", showHome);
+el.membersNav.addEventListener("click", () => showRoster("all"));
+el.squareNav.addEventListener("click", showSquare);
 el.addMemberButton.addEventListener("click", addMember);
 el.settingsButton.addEventListener("click", () => el.toolsDialog.showModal());
 el.closeToolsButton.addEventListener("click", () => el.toolsDialog.close());
@@ -69,7 +87,8 @@ el.paidStat.addEventListener("click", () => showRoster("paid"));
 el.dueStat.addEventListener("click", () => showRoster("due"));
 el.familyStat.addEventListener("click", () => showRoster("families"));
 el.membersStat.addEventListener("click", () => showRoster("all"));
-el.rosterBackButton.addEventListener("click", showHome);
+el.memberListToggle.addEventListener("click", () => setMemberViewMode("list"));
+el.memberLandscapeToggle.addEventListener("click", () => setMemberViewMode("landscape"));
 el.memberBackButton.addEventListener("click", () => state.view === "member" ? showHome() : showRoster(state.rosterFilter));
 el.nextMemberButton.addEventListener("click", openNextMember);
 el.recordPaymentButton.addEventListener("click", recordPrimaryPayment);
@@ -91,6 +110,9 @@ el.paymentForm.addEventListener("submit", saveCustomPayment);
 el.memberCsv.addEventListener("change", () => importCsv(el.memberCsv.files[0], "members"));
 el.paymentCsv.addEventListener("change", () => importCsv(el.paymentCsv.files[0], "payments"));
 el.exportButton.addEventListener("click", exportBackup);
+el.syncSquareButton.addEventListener("click", syncSquarePayments);
+el.squareEmptySyncButton.addEventListener("click", syncSquarePayments);
+el.saveSquareSettingsButton.addEventListener("click", saveSquareSettings);
 
 function loadStore() {
   try {
@@ -174,6 +196,22 @@ function showRoster(filter = "all") {
   render();
 }
 
+function setMemberViewMode(mode) {
+  state.memberViewMode = mode === "landscape" ? "landscape" : "list";
+  if (state.view !== "roster") state.view = "roster";
+  render();
+}
+
+function showSquare() {
+  state.view = "square";
+  state.selectedId = "";
+  el.searchInput.value = "";
+  render();
+  if (!state.squareLoaded && !state.squareLoading) {
+    loadSquarePayments();
+  }
+}
+
 function openMember(memberId) {
   if (!state.store.members.some((member) => member.id === memberId)) return;
   state.view = "member";
@@ -188,9 +226,15 @@ function render() {
   el.homeView.classList.toggle("hidden", state.view !== "home");
   el.rosterView.classList.toggle("hidden", state.view !== "roster");
   el.memberView.classList.toggle("hidden", state.view !== "member");
+  el.squareView.classList.toggle("hidden", state.view !== "square");
+  el.homeNav.classList.toggle("active", state.view === "home");
+  el.membersNav.classList.toggle("active", state.view === "roster" || state.view === "member");
+  el.squareNav.classList.toggle("active", state.view === "square");
   if (state.view === "home") renderHome();
   if (state.view === "roster") renderRoster();
   if (state.view === "member") renderMember();
+  if (state.view === "square") renderSquare();
+  renderSquareNavBadge();
 }
 
 function billingPayers() {
@@ -275,6 +319,14 @@ function renderRoster() {
   const members = filteredRoster();
   el.rosterTitle.textContent = titles[state.rosterFilter] || "All members";
   el.rosterSummary.textContent = `${members.length} record${members.length === 1 ? "" : "s"}`;
+  el.memberListToggle.classList.toggle("active", state.memberViewMode === "list");
+  el.memberLandscapeToggle.classList.toggle("active", state.memberViewMode === "landscape");
+  el.rosterList.classList.toggle("hidden", state.memberViewMode !== "list");
+  el.memberLandscape.classList.toggle("hidden", state.memberViewMode !== "landscape");
+  if (state.memberViewMode === "landscape") {
+    renderMemberLandscape();
+    return;
+  }
   el.rosterList.innerHTML = members.length ? members.map((member) => {
     const payer = payerFor(member);
     const level = accountStatus(member);
@@ -293,6 +345,36 @@ function renderRoster() {
   el.rosterList.querySelectorAll("[data-open-member]").forEach((button) =>
     button.addEventListener("click", () => openMember(button.dataset.openMember))
   );
+}
+
+function renderMemberLandscape() {
+  const landscape = getLandscapeRows(state.store, state.squarePayments, new Date(), 12);
+  el.memberLandscapeHead.innerHTML = `
+    <tr>
+      <th class="landscape-member-name">Member</th>
+      <th>Status</th>
+      <th>Due</th>
+      ${landscape.months.map((month) => `<th>${escapeHtml(shortMonth(month))}</th>`).join("")}
+    </tr>`;
+  el.memberLandscapeBody.innerHTML = landscape.rows.length ? landscape.rows.map((row) => `
+    <tr>
+      <th class="landscape-member-name"><button class="landscape-member-button" type="button" data-open-member="${row.member.id}">${escapeHtml(row.member.name)}</button></th>
+      <td><span class="mini-status ${row.paymentState.level}">${statusLabel(row.paymentState.level)}</span></td>
+      <td><strong>${row.balance.dueNow ? money(row.balance.dueNow) : "—"}</strong></td>
+      ${row.cells.map((cell) => `<td class="simple-landscape-cell ${cell.state}" title="${escapeAttr(formatMonthEn(cell.month))}">${landscapeSymbol(cell.state)}</td>`).join("")}
+    </tr>`).join("") : `<tr><td colspan="15" class="empty-message">No active member accounts.</td></tr>`;
+  el.memberLandscapeBody.querySelectorAll("[data-open-member]").forEach((button) =>
+    button.addEventListener("click", () => openMember(button.dataset.openMember))
+  );
+}
+
+function shortMonth(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+}
+
+function landscapeSymbol(status) {
+  return { paid: "✓", attention: "!", behind: "!", pending: "…", upcoming: "○", not_billable: "—" }[status] || "—";
 }
 
 function renderMember() {
@@ -398,6 +480,323 @@ function renderBio(member) {
   el.bioEmail.textContent = member.email || "Not set";
   el.bioDob.textContent = dateLabel(member.dob);
   el.bioAddress.textContent = address || "Not set";
+}
+
+function renderSquareNavBadge() {
+  const count = state.squarePayments.filter((payment) => payment.status === "pending" || payment.status === "needs_match").length;
+  el.squareNavBadge.textContent = String(count);
+  el.squareNavBadge.classList.toggle("hidden", count === 0);
+}
+
+async function loadSquarePayments() {
+  state.squareLoading = true;
+  state.squareError = "";
+  if (state.view === "square") renderSquare();
+  try {
+    const data = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.list("square")
+      : await fetchSquareJson("/api/square/payments");
+    state.squareConfigured = Boolean(data.configured);
+    state.squarePayments = (data.payments || []).map((payment) => ({
+      ...payment,
+      provider: "square",
+      suggestedMemberId: payment.suggestedMemberId || suggestedPaymentMember(payment, state.store.members)?.id || ""
+    })).sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt)));
+    state.squareLoaded = true;
+    if (!state.squareSelectedId) {
+      state.squareSelectedId = state.squarePayments.find((payment) => payment.status === "pending" || payment.status === "needs_match")?.id
+        || state.squarePayments[0]?.id
+        || "";
+    }
+  } catch (error) {
+    state.squareError = error.message || "Square could not be reached.";
+    state.squareConfigured = false;
+    state.squareLoaded = true;
+  } finally {
+    state.squareLoading = false;
+    render();
+  }
+}
+
+async function syncSquarePayments() {
+  if (state.squareLoading) return;
+  state.squareLoading = true;
+  state.squareError = "";
+  renderSquare();
+  try {
+    const data = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.sync("square")
+      : await fetchSquareJson("/api/square/sync", { method: "POST" });
+    state.squareConfigured = Boolean(data.configured);
+    state.squarePayments = (data.payments || []).map((payment) => ({ ...payment, provider: "square" }))
+      .sort((a, b) => String(b.paidAt || b.createdAt).localeCompare(String(a.paidAt || a.createdAt)));
+    state.squareLoaded = true;
+    state.squareSelectedId = state.squarePayments.find((payment) => payment.status === "pending" || payment.status === "needs_match")?.id
+      || state.squarePayments[0]?.id
+      || "";
+    toast(`Square sync complete — ${data.imported || 0} payment${Number(data.imported || 0) === 1 ? "" : "s"} checked.`);
+  } catch (error) {
+    state.squareError = error.message || "Square sync failed.";
+    toast(state.squareError);
+  } finally {
+    state.squareLoading = false;
+    render();
+  }
+}
+
+function renderSquare() {
+  const pending = state.squarePayments.filter((payment) => payment.status === "pending" || payment.status === "needs_match");
+  const approved = state.squarePayments.filter((payment) => payment.status === "approved");
+  el.squarePendingCount.textContent = String(pending.length);
+  el.squareMatchCount.textContent = String(state.squarePayments.filter((payment) => payment.status === "needs_match").length);
+  el.squareApprovedCount.textContent = String(approved.length);
+  el.squareConnectionStatus.textContent = state.squareLoading
+    ? "Syncing…"
+    : state.squareError
+      ? "Needs attention"
+      : state.squareConfigured
+        ? "Ready"
+        : "Not configured";
+  el.squareConnectionStatus.classList.toggle("ready", state.squareConfigured && !state.squareError);
+  el.syncSquareButton.disabled = state.squareLoading;
+  el.squareEmptySyncButton.disabled = state.squareLoading;
+  el.syncSquareLabel.textContent = state.squareLoading ? "Syncing…" : "Sync Square";
+
+  const showEmpty = state.squarePayments.length === 0;
+  el.squareEmpty.classList.toggle("hidden", !showEmpty);
+  el.squareWorkspace.classList.toggle("hidden", showEmpty);
+  if (showEmpty) {
+    const emptyTitle = el.squareEmpty.querySelector("h2");
+    const emptyCopy = el.squareEmpty.querySelector("p");
+    if (emptyTitle) emptyTitle.textContent = state.squareError ? "Square connection needs attention" : "No Square payments waiting";
+    if (emptyCopy) emptyCopy.textContent = state.squareError || "Sync Square to check for new completed payments.";
+    return;
+  }
+
+  const selected = selectedSquarePayment();
+  el.squareQueue.innerHTML = state.squarePayments.map((payment) => squareQueueMarkup(payment)).join("");
+  el.squareDetail.innerHTML = selected ? squareDetailMarkup(selected) : `<div class="empty-message">Choose a Square payment.</div>`;
+  bindSquareEvents();
+}
+
+function selectedSquarePayment() {
+  const selected = state.squarePayments.find((payment) => payment.id === state.squareSelectedId)
+    || state.squarePayments.find((payment) => payment.status === "pending" || payment.status === "needs_match")
+    || state.squarePayments[0]
+    || null;
+  state.squareSelectedId = selected?.id || "";
+  return selected;
+}
+
+function squarePaymentMember(payment) {
+  return state.store.members.find((member) => member.id === (payment.memberId || payment.suggestedMemberId))
+    || suggestedPaymentMember(payment, state.store.members);
+}
+
+function squareStatusLabel(status) {
+  if (status === "approved") return "Confirmed";
+  if (status === "ignored") return "Ignored";
+  if (status === "needs_match") return "Needs member";
+  return "Waiting";
+}
+
+function squareQueueMarkup(payment) {
+  const member = squarePaymentMember(payment);
+  const details = [dateLabel(payment.paidAt || payment.createdAt, ""), payment.receiptNumber ? `Receipt ${payment.receiptNumber}` : ""].filter(Boolean).join(" · ");
+  return `
+    <button class="square-queue-item ${payment.id === state.squareSelectedId ? "active" : ""}" type="button" data-square-select="${escapeAttr(payment.id)}">
+      <span class="square-queue-top"><strong>${money(Number(payment.amountCents || 0) / 100)}</strong><span class="square-logo-pill">SQUARE</span></span>
+      <strong>${escapeHtml(member?.name || payment.buyerName || "Choose a member")}</strong>
+      <small>${escapeHtml(details || payment.buyerEmail || "No customer details")}</small>
+      <span class="square-state ${escapeAttr(payment.status)}">${escapeHtml(squareStatusLabel(payment.status))}</span>
+    </button>`;
+}
+
+function squareDetailMarkup(payment) {
+  const member = squarePaymentMember(payment);
+  const memberId = payment.memberId || payment.suggestedMemberId || member?.id || "";
+  const month = stagedPaymentMonth(payment) || currentMonthKey();
+  const completed = payment.status === "approved" || payment.status === "ignored";
+  const recommendedMonth = member
+    ? nextUnpaidTuitionMonth(member, state.store.payments, squarePaymentDate(payment), state.store.members)
+    : "";
+  const options = [
+    `<option value="">Choose a member</option>`,
+    ...state.store.members.filter((candidate) => !candidate.inactive)
+      .map((candidate) => `<option value="${escapeAttr(candidate.id)}" ${candidate.id === memberId ? "selected" : ""}>${escapeHtml(candidate.name || "New member")}</option>`)
+  ].join("");
+  return `
+    <div class="square-detail-inner">
+      <div class="square-detail-head">
+        <div>
+          <p class="eyebrow">Square payment</p>
+          <h2>${money(Number(payment.amountCents || 0) / 100)}</h2>
+          <p>${escapeHtml([payment.buyerName, payment.buyerEmail, payment.receiptNumber ? `Receipt ${payment.receiptNumber}` : ""].filter(Boolean).join(" · ") || "No customer details supplied")}</p>
+        </div>
+        <span class="square-state ${escapeAttr(payment.status)}">${escapeHtml(squareStatusLabel(payment.status))}</span>
+      </div>
+      <div class="square-confirmation-form">
+        <label><span>Member</span><select data-square-member="${escapeAttr(payment.id)}" ${completed ? "disabled" : ""}>${options}</select></label>
+        <label><span>Tuition month</span><input data-square-month="${escapeAttr(payment.id)}" type="month" value="${escapeAttr(month)}" ${completed ? "disabled" : ""}></label>
+        <label class="full"><span>Note <small>optional</small></span><input data-square-note="${escapeAttr(payment.id)}" type="text" value="${escapeAttr(payment.reviewNote || "")}" placeholder="Gear, testing, special payment…" ${completed ? "disabled" : ""}></label>
+        <div class="square-recommendation">${member ? `Recommended: apply to ${escapeHtml(formatMonthEn(recommendedMonth))}, the next unpaid tuition month.` : "Choose the member this payment belongs to."}</div>
+      </div>
+      <div class="square-detail-actions">
+        <button class="button secondary danger-link" type="button" data-square-ignore="${escapeAttr(payment.id)}" ${completed ? "disabled" : ""}>Ignore</button>
+        <button class="button secondary" type="button" data-square-other="${escapeAttr(payment.id)}" ${!memberId || completed ? "disabled" : ""}>Confirm as other sale</button>
+        <button class="button primary" type="button" data-square-tuition="${escapeAttr(payment.id)}" ${!memberId || completed ? "disabled" : ""}>Confirm tuition</button>
+      </div>
+    </div>`;
+}
+
+function bindSquareEvents() {
+  el.squareQueue.querySelectorAll("[data-square-select]").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.squareSelectedId = button.dataset.squareSelect;
+      renderSquare();
+    })
+  );
+  el.squareDetail.querySelectorAll("[data-square-member]").forEach((select) =>
+    select.addEventListener("change", () => updateSquareDraft(select.dataset.squareMember, { memberId: select.value, suggestedMemberId: select.value }))
+  );
+  el.squareDetail.querySelectorAll("[data-square-month]").forEach((input) =>
+    input.addEventListener("change", () => updateSquareDraft(input.dataset.squareMonth, { paymentMonth: input.value }))
+  );
+  el.squareDetail.querySelectorAll("[data-square-note]").forEach((input) => {
+    input.addEventListener("input", () => updateSquareDraft(input.dataset.squareNote, { reviewNote: input.value }, false));
+    input.addEventListener("change", () => saveSquareStatus(input.dataset.squareNote, { reviewNote: input.value }));
+  });
+  el.squareDetail.querySelectorAll("[data-square-tuition]").forEach((button) =>
+    button.addEventListener("click", () => confirmSquarePayment(button.dataset.squareTuition, "tuition"))
+  );
+  el.squareDetail.querySelectorAll("[data-square-other]").forEach((button) =>
+    button.addEventListener("click", () => confirmSquarePayment(button.dataset.squareOther, "one-off"))
+  );
+  el.squareDetail.querySelectorAll("[data-square-ignore]").forEach((button) =>
+    button.addEventListener("click", () => ignoreSquarePayment(button.dataset.squareIgnore))
+  );
+}
+
+function updateSquareDraft(paymentId, patch, rerender = true) {
+  state.squarePayments = state.squarePayments.map((payment) =>
+    payment.id === paymentId ? { ...payment, ...patch, status: patch.memberId && payment.status === "needs_match" ? "pending" : payment.status } : payment
+  );
+  if (rerender) renderSquare();
+}
+
+async function confirmSquarePayment(paymentId, category) {
+  const payment = state.squarePayments.find((item) => item.id === paymentId);
+  const member = payment && squarePaymentMember(payment);
+  if (!payment || !member) return toast("Choose a member first.");
+  const squareStatus = String(payment.squareStatus || payment.providerStatus || "").toUpperCase();
+  if (squareStatus && squareStatus !== "COMPLETED") return toast("Only completed Square payments can be confirmed.");
+  const payer = payerFor(member);
+  const month = stagedPaymentMonth(payment) || nextUnpaidTuitionMonth(member, state.store.payments, squarePaymentDate(payment), state.store.members);
+  const amount = Number(payment.amountCents || 0) / 100;
+  const priorStore = state.store;
+  const nextStore = addPayment(state.store, {
+    memberId: category === "tuition" ? payer.id : member.id,
+    month,
+    amount,
+    paidAt: payment.paidAt || todayKey(),
+    source: "square",
+    category,
+    note: payment.reviewNote || (category === "one-off" ? "Square other sale" : ""),
+    squarePaymentId: payment.squarePaymentId || payment.id,
+    providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.id,
+    paymentProvider: "square"
+  });
+  state.store = nextStore;
+  const saved = await saveSquareStatus(paymentId, {
+    status: "approved",
+    memberId: category === "tuition" ? payer.id : member.id,
+    suggestedMemberId: category === "tuition" ? payer.id : member.id,
+    paymentMonth: month,
+    paymentCategory: category,
+    reviewNote: payment.reviewNote || ""
+  });
+  if (!saved) {
+    state.store = priorStore;
+    return;
+  }
+  saveStore("Square payment confirmed");
+  toast(`${money(amount)} confirmed for ${member.name}.`);
+  render();
+}
+
+async function ignoreSquarePayment(paymentId) {
+  if (!window.confirm("Ignore this Square payment?")) return;
+  const saved = await saveSquareStatus(paymentId, { status: "ignored", ignoredReason: "manual-review" });
+  if (saved) {
+    toast("Square payment ignored.");
+    render();
+  }
+}
+
+async function saveSquareStatus(paymentId, patch) {
+  const prior = state.squarePayments.find((payment) => payment.id === paymentId);
+  updateSquareDraft(paymentId, patch, false);
+  try {
+    const data = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.updateStatus("square", paymentId, patch)
+      : await fetchSquareJson("/api/square/payments/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: paymentId, ...patch })
+      });
+    if (data.payment) updateSquareDraft(paymentId, data.payment, false);
+    return true;
+  } catch (error) {
+    if (prior) updateSquareDraft(paymentId, prior, false);
+    toast(error.message || "Could not save the Square confirmation.");
+    return false;
+  }
+}
+
+async function saveSquareSettings() {
+  if (!window.paymentTrackerProviders?.saveSquareRelay) {
+    el.squareSettingsStatus.textContent = "Set Square relay values in the server environment for browser use.";
+    return;
+  }
+  el.saveSquareSettingsButton.disabled = true;
+  try {
+    const result = await window.paymentTrackerProviders.saveSquareRelay({
+      baseUrl: el.squareRelayUrl.value,
+      token: el.squareRelayToken.value
+    });
+    state.squareConfigured = Boolean(result.configured);
+    el.squareRelayToken.value = "";
+    el.squareSettingsStatus.textContent = result.configured ? "Square connection saved." : "Square connection cleared.";
+    await loadSquarePayments();
+  } catch (error) {
+    el.squareSettingsStatus.textContent = error.message || "Could not save Square settings.";
+  } finally {
+    el.saveSquareSettingsButton.disabled = false;
+  }
+}
+
+async function loadSquareSettings() {
+  if (!window.paymentTrackerProviders?.getSettings) return;
+  try {
+    const settings = await window.paymentTrackerProviders.getSettings();
+    el.squareRelayUrl.value = settings.squareRelayBaseUrl || "";
+    state.squareConfigured = Boolean(settings.squareRelayConfigured || settings.squareDirectConfigured);
+  } catch {
+    // The confirmation page will show the connection error when it loads payments.
+  }
+}
+
+async function fetchSquareJson(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Square request failed.");
+  return data;
+}
+
+function squarePaymentDate(payment) {
+  const value = payment.paidAt || payment.createdAt;
+  const parsed = value ? new Date(`${String(value).slice(0, 10)}T12:00:00`) : new Date();
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 function recordPrimaryPayment() {
@@ -715,3 +1114,5 @@ function escapeAttr(value = "") {
 }
 
 render();
+loadSquareSettings();
+loadSquarePayments();

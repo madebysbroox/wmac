@@ -24,7 +24,6 @@ import {
   importPaymentsFromRecords,
   isFullBackupCsv,
   normalizeSquarePayment,
-  normalizeWorldBankcardPayment,
   nextUnpaidTuitionMonth,
   pendingSquarePaymentsForMember,
   parseCsv,
@@ -37,7 +36,8 @@ import {
   suggestedSquareMember,
   toCsv,
   undoPaymentBatch,
-  migrateStore
+  migrateStore,
+  upsertMember
 } from "../src/data.js";
 
 test("parses CSV with quoted commas", () => {
@@ -575,36 +575,6 @@ test("pending Square payments can be attached to a member without becoming real 
   assert.equal(pendingSquarePaymentsForMember([squarePayment], member).length, 1);
 });
 
-test("normalizes World Bankcard POS transactions for manual review", () => {
-  const memberImport = importMembersFromRecords(
-    [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
-    { name: "Name", email: "Email", monthlyAmount: "Amount" },
-    createEmptyStore()
-  );
-
-  const worldbankcardPayment = normalizeWorldBankcardPayment(
-    {
-      transactionId: "wbc_123",
-      amount: { value: "120.00", currency: "USD" },
-      transactionDate: "2026-06-12T16:00:00Z",
-      customerEmail: "sam@example.com",
-      terminalId: "TERM-7",
-      batchId: "B-42",
-      status: "approved"
-    },
-    memberImport.store.members
-  );
-
-  assert.equal(worldbankcardPayment.provider, "worldbankcard");
-  assert.equal(worldbankcardPayment.id, "wbc_123");
-  assert.equal(worldbankcardPayment.amountCents, 12000);
-  assert.equal(worldbankcardPayment.paidAt, "2026-06-12");
-  assert.equal(worldbankcardPayment.paymentMonth, "2026-06");
-  assert.equal(worldbankcardPayment.status, "pending");
-  assert.equal(worldbankcardPayment.suggestedMemberId, memberImport.store.members[0].id);
-  assert.match(worldbankcardPayment.note, /Terminal TERM-7/);
-});
-
 test("finds the next unpaid tuition month for card payment review", () => {
   const imported = importMembersFromRecords(
     [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
@@ -686,6 +656,79 @@ test("uses only the payer contract signing date for a household due day", () => 
   const state = getMemberPaymentState(payer, [], new Date("2026-02-15T12:00:00"), [], [payer, child]);
 
   assert.equal(state.months.find((month) => month.month === "2026-02").dueDate, "2026-02-10");
+});
+
+test("treats a contract down payment as the first and last prepaid month", () => {
+  const member = {
+    id: "contract-member",
+    name: "Morgan Lee",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-01-15",
+    agreementType: "Contract",
+    agreementEndDate: "2027-01-15",
+    downPayment: 240
+  };
+  const state = getMemberPaymentState(member, [], new Date("2027-02-01T12:00:00"));
+
+  assert.deepEqual(state.billableMonths, ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]);
+  assert.deepEqual([...state.prepaidMonths].sort(), ["2026-01", "2026-12"]);
+  assert.deepEqual(state.unpaidMonths, ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
+});
+
+test("does not mark contract months prepaid when the down payment is partial", () => {
+  const member = {
+    id: "contract-partial-down-payment",
+    name: "Partial Payment",
+    monthlyAmount: 120,
+    startDate: "2026-01-15",
+    agreementEndDate: "2027-01-15",
+    agreementType: "Contract",
+    downPayment: 50,
+    participant: true
+  };
+  const status = getMemberPaymentState(member, [], new Date("2026-12-20T12:00:00"), [], [member]);
+  assert.deepEqual(status.prepaidMonths, new Set());
+  assert.deepEqual(status.unpaidMonths, [
+    "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06",
+    "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"
+  ]);
+});
+
+test("records a payer down payment on the contract signing date without making it a monthly tuition payment", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "payer-with-down-payment",
+    name: "Morgan Lee",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-12-28",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+
+  const downPayment = store.payments.find((payment) => payment.source === "contract-down-payment");
+  assert.deepEqual(
+    {
+      memberId: downPayment.memberId,
+      amount: downPayment.amount,
+      month: downPayment.month,
+      paidAt: downPayment.paidAt,
+      category: downPayment.category
+    },
+    {
+      memberId: "payer-with-down-payment",
+      amount: 240,
+      month: "2026-12",
+      paidAt: "2026-12-28",
+      category: "down_payment"
+    }
+  );
+  const activeContract = getMemberPaymentState(store.members[0], store.payments, new Date("2027-01-05T12:00:00"), [], store.members);
+  assert.deepEqual([...activeContract.prepaidMonths], ["2026-12"]);
+  assert.deepEqual(activeContract.unpaidMonths, ["2027-01"]);
+  assert.equal(getYearRevenue(store, 2026).totalRevenue, 240);
+  assert.equal(migrateStore(store).payments.filter((payment) => payment.source === "contract-down-payment").length, 1);
 });
 
 test("matches a Square subscription payment by dedicated Square customer ID", () => {

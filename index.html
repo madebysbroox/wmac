@@ -15,6 +15,18 @@
           <small>회원 및 회비 관리 · Members &amp; payments</small>
         </span>
       </a>
+      <nav class="main-nav" aria-label="Main pages">
+        <button id="homeNav" class="nav-item active" type="button">
+          <span>Home</span><small>홈</small>
+        </button>
+        <button id="membersNav" class="nav-item" type="button">
+          <span>Members</span><small>회원</small>
+        </button>
+        <button id="squareNav" class="nav-item" type="button">
+          <span>Square Confirmations</span><small>Square 확인</small>
+          <b id="squareNavBadge" class="nav-badge hidden">0</b>
+        </button>
+      </nav>
       <div class="header-actions">
         <label class="global-search">
           <span class="sr-only">Search members</span>
@@ -83,15 +95,32 @@
       </section>
 
       <section id="rosterView" class="roster-view hidden">
-        <div class="page-heading">
-          <button id="rosterBackButton" class="back-button" type="button" aria-label="Back to home">←</button>
+        <div class="page-heading members-page-heading">
           <div>
             <p class="eyebrow">Member roster · 회원 명단</p>
             <h1 id="rosterTitle">All members</h1>
             <p id="rosterSummary"></p>
           </div>
+          <div class="view-toggle" aria-label="Member view">
+            <button id="memberListToggle" class="active" type="button">List</button>
+            <button id="memberLandscapeToggle" type="button">Payment landscape</button>
+          </div>
         </div>
         <div id="rosterList" class="roster-list"></div>
+        <div id="memberLandscape" class="member-landscape hidden">
+          <div class="landscape-legend">
+            <span><i class="landscape-dot paid">✓</i> Paid</span>
+            <span><i class="landscape-dot attention">!</i> Due</span>
+            <span><i class="landscape-dot behind">!</i> Behind</span>
+            <span><i class="landscape-dot upcoming">○</i> Upcoming</span>
+          </div>
+          <div class="landscape-table-wrap">
+            <table class="simple-landscape-table">
+              <thead id="memberLandscapeHead"></thead>
+              <tbody id="memberLandscapeBody"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section id="memberView" class="member-view hidden">
@@ -200,6 +229,57 @@
           </aside>
         </div>
       </section>
+
+      <section id="squareView" class="square-confirmations-view hidden">
+        <div class="square-page-heading">
+          <div>
+            <p class="eyebrow">Square · 결제 확인</p>
+            <h1>Square Confirmations</h1>
+            <p>Confirm incoming Square payments before they update a member’s record.</p>
+          </div>
+          <button id="syncSquareButton" class="button primary" type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.5-2L20 9M4 15l2.4 2A7 7 0 0 0 18 15"/></svg>
+            <span id="syncSquareLabel">Sync Square</span>
+          </button>
+        </div>
+
+        <div class="square-summary-grid">
+          <div><span>Waiting to confirm</span><strong id="squarePendingCount">0</strong></div>
+          <div><span>Needs member match</span><strong id="squareMatchCount">0</strong></div>
+          <div><span>Confirmed</span><strong id="squareApprovedCount">0</strong></div>
+          <div><span>Connection</span><strong id="squareConnectionStatus" class="connection-label">Checking…</strong></div>
+        </div>
+
+        <div id="squareEmpty" class="square-empty-state hidden">
+          <div class="square-mark" aria-hidden="true">S</div>
+          <h2>No Square payments waiting</h2>
+          <p>Sync Square to check for new completed payments.</p>
+          <button id="squareEmptySyncButton" class="button primary" type="button">Sync Square</button>
+        </div>
+
+        <div id="squareWorkspace" class="square-workspace hidden">
+          <section class="square-queue-card">
+            <div class="square-card-heading">
+              <div><h2>Incoming payments</h2><p>Newest first</p></div>
+            </div>
+            <div id="squareQueue" class="square-queue"></div>
+          </section>
+          <section id="squareDetail" class="square-detail-card"></section>
+        </div>
+
+        <details class="square-setup">
+          <summary>Square connection settings</summary>
+          <p>Use the relay address and limited-scope sync token provided during Square setup.</p>
+          <div class="square-setup-fields">
+            <label><span>Relay URL</span><input id="squareRelayUrl" type="url" placeholder="https://…"></label>
+            <label><span>Sync token</span><input id="squareRelayToken" type="password" autocomplete="off" placeholder="Leave blank to keep saved token"></label>
+          </div>
+          <div class="square-setup-actions">
+            <button id="saveSquareSettingsButton" class="button secondary" type="button">Save Square connection</button>
+            <span id="squareSettingsStatus"></span>
+          </div>
+        </details>
+      </section>
     </main>
 
     <dialog id="editorDialog" class="editor-dialog">
@@ -258,7 +338,7 @@
         <label class="tool-tile" for="paymentCsv"><span>Import payments</span><small>CSV file</small></label>
         <input id="paymentCsv" class="hidden" type="file" accept=".csv,text/csv">
         <button id="exportButton" class="tool-tile" type="button"><span>Download backup</span><small>Full CSV</small></button>
-        <a class="tool-tile" href="advanced.html"><span>Open advanced tools</span><small>Reports, card sync &amp; collections</small></a>
+        <a class="tool-tile" href="advanced.html"><span>Open advanced tools</span><small>Reports, renewals &amp; collections</small></a>
       </div>
     </dialog>
 

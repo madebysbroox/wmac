@@ -317,6 +317,22 @@
   box-shadow: 0 10px 24px rgba(92, 70, 12, .08);
 }
 
+.member-main > .progress-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.member-main > .progress-card h3 {
+  margin: 3px 0 7px;
+  font-size: 17px;
+}
+
+.member-main > .progress-card .progress-encouragement {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
 .progress-copy p {
   display: flex;
   flex-wrap: wrap;
@@ -2508,10 +2524,6 @@ dialog::backdrop {
   color: var(--muted);
   font-size: 14px;
   font-weight: 900;
-}
-
-.provider-worldbankcard {
-  color: #3a4f9f;
 }
 
 .review-shell {
