@@ -479,6 +479,17 @@
         <input id="restoreCsv" class="hidden" type="file" accept=".csv,text/csv">
         <button id="advancedToolsButton" class="tool-tile wide" type="button"><span>Open advanced tools</span><small>Reports, renewals &amp; collections</small></button>
       </div>
+      <section id="updatePanel" class="update-panel hidden" aria-labelledby="updatePanelTitle">
+        <div>
+          <p class="eyebrow">Desktop app · 앱 업데이트</p>
+          <h3 id="updatePanelTitle">Application updates</h3>
+          <p id="updateStatus" class="update-status" aria-live="polite">Ready to check for updates.</p>
+        </div>
+        <div class="update-actions">
+          <button id="checkUpdateButton" class="button secondary" type="button">Check for updates</button>
+          <button id="installUpdateButton" class="button primary hidden" type="button">Restart and install</button>
+        </div>
+      </section>
     </dialog>
 
     <dialog id="collectionDialog" class="editor-dialog collection-dialog">

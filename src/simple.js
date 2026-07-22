@@ -98,7 +98,8 @@ const ids = [
   "bioDob", "bioAddress", "editorDialog", "editorForm", "editorEyebrow", "editorTitle", "editorHelp",
   "editorFields", "closeEditorButton", "cancelEditorButton", "paymentDialog", "paymentForm", "closePaymentButton",
   "cancelPaymentButton", "paymentMonth", "paymentAmount", "paymentDate", "paymentNote",
-  "toolsDialog", "closeToolsButton", "memberCsv", "paymentCsv", "exportButton", "restoreCsv", "advancedToolsButton", "toast",
+  "toolsDialog", "closeToolsButton", "memberCsv", "paymentCsv", "exportButton", "restoreCsv", "advancedToolsButton",
+  "updatePanel", "updateStatus", "checkUpdateButton", "installUpdateButton", "toast",
   "advancedView", "advancedBackButton", "yearReportThisButton", "yearReportLastButton", "dailyStatusButton",
   "nextYearRosterButton", "openBlankContractButton", "renewalList", "collectionList",
   "collectionDialog", "collectionForm", "closeCollectionButton", "cancelCollectionButton", "collectionMemberLine",
@@ -177,6 +178,8 @@ el.paymentCsv.addEventListener("change", () => importCsv(el.paymentCsv.files[0],
 el.restoreCsv.addEventListener("change", () => importCsv(el.restoreCsv.files[0], "backup"));
 el.exportButton.addEventListener("click", exportBackup);
 el.advancedToolsButton.addEventListener("click", () => { el.toolsDialog.close(); showAdvanced(); });
+el.checkUpdateButton.addEventListener("click", checkForAppUpdate);
+el.installUpdateButton.addEventListener("click", installAppUpdate);
 el.advancedBackButton.addEventListener("click", showHome);
 el.yearReportThisButton.addEventListener("click", () => runYearReport(new Date().getFullYear()));
 el.yearReportLastButton.addEventListener("click", () => runYearReport(new Date().getFullYear() - 1));
@@ -202,6 +205,43 @@ el.saveSquareSettingsButton.addEventListener("click", saveSquareSettings);
 
 function loadStore() {
   return loadStoreWithMigrationBackup(localStorage, { storageKey: STORAGE_KEY });
+}
+
+function initAppUpdates() {
+  if (!window.paymentTrackerUpdates) return;
+
+  el.updatePanel.classList.remove("hidden");
+  window.paymentTrackerUpdates.onStatus(renderUpdateStatus);
+  window.paymentTrackerUpdates.getStatus().then(renderUpdateStatus).catch(() => {
+    renderUpdateStatus({ status: "error", message: "Could not read update status." });
+  });
+}
+
+function checkForAppUpdate() {
+  if (!window.paymentTrackerUpdates) return;
+
+  renderUpdateStatus({ status: "checking", message: "Checking GitHub for updates..." });
+  window.paymentTrackerUpdates.check().catch((error) => {
+    renderUpdateStatus({ status: "error", message: `Update check failed: ${error.message}` });
+  });
+}
+
+function installAppUpdate() {
+  if (!window.paymentTrackerUpdates) return;
+
+  renderUpdateStatus({ status: "installing", message: "Restarting to install the update..." });
+  window.paymentTrackerUpdates.install().catch((error) => {
+    renderUpdateStatus({ status: "error", message: `Could not install the update: ${error.message}` });
+  });
+}
+
+function renderUpdateStatus(updateStatus) {
+  if (!updateStatus) return;
+
+  el.updateStatus.textContent = updateStatus.message || "Ready to check for updates.";
+  el.checkUpdateButton.disabled = ["checking", "available", "downloading", "installing"].includes(updateStatus.status);
+  el.installUpdateButton.disabled = updateStatus.status === "installing";
+  el.installUpdateButton.classList.toggle("hidden", updateStatus.status !== "ready");
 }
 
 function saveStore(message = "Saved on this computer") {
@@ -2167,5 +2207,6 @@ function escapeAttr(value = "") {
 }
 
 render();
+initAppUpdates();
 loadSquareSettings();
 loadSquarePayments();

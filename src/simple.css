@@ -308,6 +308,13 @@ dialog { color: var(--ink); }
 .tool-tile small { color: var(--muted); }
 .tool-tile.wide { grid-column: 1 / -1; min-height: 72px; }
 .link-button { padding: 0; border: 0; background: transparent; color: var(--green); font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; }
+.update-panel { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+.update-panel h3 { margin: 0; font-size: 17px; }
+.update-panel .eyebrow { margin-bottom: 5px; }
+.update-status { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.update-actions { display: flex; flex: 0 0 auto; gap: 9px; }
+.update-actions .button { white-space: nowrap; }
+.update-actions .button:disabled { opacity: .55; cursor: wait; }
 
 .snapshot-view { display: grid; gap: 8px; }
 .snapshot-page-heading { justify-content: space-between; }
@@ -448,6 +455,8 @@ dialog { color: var(--ink); }
   .editor-fields, .editor-fields.two-column { grid-template-columns: 1fr; }
   .editor-fields label.full { grid-column: auto; }
   .tools-grid { grid-template-columns: 1fr; }
+  .update-panel { align-items: stretch; flex-direction: column; }
+  .update-actions { flex-direction: column; }
   .advanced-row { flex-wrap: wrap; }
   .collection-summary { grid-template-columns: 1fr; }
   .snapshot-chart-wrap { flex-direction: column; align-items: stretch; gap: 20px; }
