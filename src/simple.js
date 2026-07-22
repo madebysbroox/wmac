@@ -66,6 +66,7 @@ const state = {
   editorMode: "",
   historyExpanded: false,
   calendarOpen: false,
+  memberOrigin: "home",
   collectionMemberId: "",
   collectionDraft: null,
   squarePayments: [],
@@ -129,7 +130,11 @@ el.familyStat.addEventListener("click", () => showRoster("families"));
 el.membersStat.addEventListener("click", () => showRoster("all"));
 el.memberListToggle.addEventListener("click", () => setMemberViewMode("list"));
 el.memberLandscapeToggle.addEventListener("click", () => setMemberViewMode("landscape"));
-el.memberBackButton.addEventListener("click", () => state.view === "member" ? showHome() : showRoster(state.rosterFilter));
+el.memberBackButton.addEventListener("click", () => {
+  if (state.memberOrigin === "roster") return showRoster(state.rosterFilter);
+  if (state.memberOrigin === "advanced") return showAdvanced();
+  showHome();
+});
 el.nextMemberButton.addEventListener("click", openNextMember);
 el.recordPaymentButton.addEventListener("click", toggleRecordPayments);
 el.paymentMenuButton.addEventListener("click", () => el.paymentMenu.classList.toggle("hidden"));
@@ -291,6 +296,9 @@ function showAdvanced() {
 
 function openMember(memberId) {
   if (!state.store.members.some((member) => member.id === memberId)) return;
+  // Remember which page led here so Back returns there, even after
+  // stepping through members with the next-member arrow.
+  if (state.view !== "member") state.memberOrigin = state.view;
   state.view = "member";
   state.selectedId = memberId;
   state.historyExpanded = false;
