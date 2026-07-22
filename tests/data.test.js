@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CURRENT_STORE_VERSION,
   addPayment,
   accountMembers,
   bringMemberUpToDate,
@@ -8,6 +9,8 @@ import {
   defaultAgreementEndDate,
   exportDailyPaymentStatusRows,
   getAgreementExpirationStatus,
+  getContractDownPaymentRecord,
+  clearContractDownPayment,
   getDashboardSummary,
   exportStoreRows,
   exportRosterRows,
@@ -24,10 +27,11 @@ import {
   importPaymentsFromRecords,
   isFullBackupCsv,
   normalizeSquarePayment,
-  normalizeWorldBankcardPayment,
   nextUnpaidTuitionMonth,
   pendingSquarePaymentsForMember,
   parseCsv,
+  prepareStoreForLoad,
+  recordContractDownPayment,
   removePayment,
   reconcileDuePayments,
   restoreStoreFromBackupRows,
@@ -37,7 +41,8 @@ import {
   suggestedSquareMember,
   toCsv,
   undoPaymentBatch,
-  migrateStore
+  migrateStore,
+  upsertMember
 } from "../src/data.js";
 
 test("parses CSV with quoted commas", () => {
@@ -88,7 +93,8 @@ test("daily status export records every account and every month in the report ye
     householdId: "lee",
     householdRole: "parent_guardian",
     participant: false,
-    inactive: false
+    inactive: false,
+    startDate: "2026-01-15"
   };
   const student = {
     id: "student-1",
@@ -574,36 +580,6 @@ test("pending Square payments can be attached to a member without becoming real 
   assert.equal(pendingSquarePaymentsForMember([squarePayment], member).length, 1);
 });
 
-test("normalizes World Bankcard POS transactions for manual review", () => {
-  const memberImport = importMembersFromRecords(
-    [{ Name: "Sam Park", Email: "sam@example.com", Amount: "120" }],
-    { name: "Name", email: "Email", monthlyAmount: "Amount" },
-    createEmptyStore()
-  );
-
-  const worldbankcardPayment = normalizeWorldBankcardPayment(
-    {
-      transactionId: "wbc_123",
-      amount: { value: "120.00", currency: "USD" },
-      transactionDate: "2026-06-12T16:00:00Z",
-      customerEmail: "sam@example.com",
-      terminalId: "TERM-7",
-      batchId: "B-42",
-      status: "approved"
-    },
-    memberImport.store.members
-  );
-
-  assert.equal(worldbankcardPayment.provider, "worldbankcard");
-  assert.equal(worldbankcardPayment.id, "wbc_123");
-  assert.equal(worldbankcardPayment.amountCents, 12000);
-  assert.equal(worldbankcardPayment.paidAt, "2026-06-12");
-  assert.equal(worldbankcardPayment.paymentMonth, "2026-06");
-  assert.equal(worldbankcardPayment.status, "pending");
-  assert.equal(worldbankcardPayment.suggestedMemberId, memberImport.store.members[0].id);
-  assert.match(worldbankcardPayment.note, /Terminal TERM-7/);
-});
-
 test("finds the next unpaid tuition month for card payment review", () => {
   const imported = importMembersFromRecords(
     [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
@@ -649,7 +625,8 @@ test("uses the payer account for a non-participating parent's family payment sch
     name: "Morgan Lee",
     participant: false,
     householdRole: "parent_guardian",
-    responsiblePartyId: "payer"
+    responsiblePartyId: "payer",
+    startDate: "2026-04-10"
   };
   const child = {
     id: "child",
@@ -676,6 +653,264 @@ test("uses the payer account for a non-participating parent's family payment sch
   const reconciled = reconcileDuePayments({ members, payments: [] }, payer, ["2026-05"], today);
   assert.deepEqual(reconciled.store.payments.map((payment) => payment.memberId), ["payer", "payer"]);
   assert.deepEqual(getMemberBalance(payer, reconciled.store.payments, today, members).unpaidMonths, ["2026-05"]);
+});
+
+test("uses only the payer contract signing date for a household due day", () => {
+  const payer = { id: "payer", name: "Morgan Lee", participant: false, responsiblePartyId: "payer", startDate: "2026-01-10" };
+  const child = { id: "child", name: "Jamie Lee", participant: true, responsiblePartyId: "payer", monthlyAmount: 120, startDate: "2026-01-25" };
+  const state = getMemberPaymentState(payer, [], new Date("2026-02-15T12:00:00"), [], [payer, child]);
+
+  assert.equal(state.months.find((month) => month.month === "2026-02").dueDate, "2026-02-10");
+});
+
+test("treats a contract down payment as the first and last prepaid month", () => {
+  const member = {
+    id: "contract-member",
+    name: "Morgan Lee",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-01-15",
+    agreementType: "Contract",
+    agreementEndDate: "2027-01-15",
+    downPayment: 240
+  };
+  const state = getMemberPaymentState(member, [], new Date("2027-02-01T12:00:00"));
+
+  assert.deepEqual(state.billableMonths, ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]);
+  assert.deepEqual([...state.prepaidMonths].sort(), ["2026-01", "2026-12"]);
+  assert.deepEqual(state.unpaidMonths, ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"]);
+});
+
+test("does not mark contract months prepaid when the down payment is partial", () => {
+  const member = {
+    id: "contract-partial-down-payment",
+    name: "Partial Payment",
+    monthlyAmount: 120,
+    startDate: "2026-01-15",
+    agreementEndDate: "2027-01-15",
+    agreementType: "Contract",
+    downPayment: 50,
+    participant: true
+  };
+  const status = getMemberPaymentState(member, [], new Date("2026-12-20T12:00:00"), [], [member]);
+  assert.deepEqual(status.prepaidMonths, new Set());
+  assert.deepEqual(status.unpaidMonths, [
+    "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06",
+    "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"
+  ]);
+});
+
+test("records a payer down payment only after an explicit action and remains idempotent", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "payer-with-down-payment",
+    name: "Morgan Lee",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-12-28",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+
+  assert.deepEqual(store.payments, [], "saving a member must not create a financial transaction");
+  const first = recordContractDownPayment(store, "payer-with-down-payment");
+  assert.equal(first.changed, true);
+  store = first.store;
+  const downPayment = getContractDownPaymentRecord(store, "payer-with-down-payment");
+  assert.deepEqual(
+    {
+      memberId: downPayment.memberId,
+      amount: downPayment.amount,
+      month: downPayment.month,
+      paidAt: downPayment.paidAt,
+      category: downPayment.category
+    },
+    {
+      memberId: "payer-with-down-payment",
+      amount: 240,
+      month: "2026-12",
+      paidAt: "2026-12-28",
+      category: "down_payment"
+    }
+  );
+  const activeContract = getMemberPaymentState(store.members[0], store.payments, new Date("2027-01-05T12:00:00"), [], store.members);
+  assert.deepEqual([...activeContract.prepaidMonths], ["2026-12"]);
+  assert.deepEqual(activeContract.unpaidMonths, ["2027-01"]);
+  assert.equal(getYearRevenue(store, 2026).totalRevenue, 240);
+  const second = recordContractDownPayment(store, "payer-with-down-payment");
+  assert.equal(second.changed, false);
+  assert.equal(second.store, store);
+  assert.equal(migrateStore(store).payments.filter((payment) => payment.source === "contract-down-payment").length, 1);
+});
+
+test("a recorded down payment can be corrected by re-recording a new amount", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "correct-me",
+    name: "Fix Me",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-03-10",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+  store = recordContractDownPayment(store, "correct-me").store;
+  assert.equal(getContractDownPaymentRecord(store, "correct-me").amount, 240);
+
+  // The owner realizes the amount was wrong: edit the saved amount, then
+  // re-record. Recording overwrites the existing entry instead of duplicating.
+  store = upsertMember(store, { ...store.members[0], downPayment: 300 });
+  const corrected = recordContractDownPayment(store, "correct-me");
+  assert.equal(corrected.changed, true);
+  store = corrected.store;
+  const records = store.payments.filter((payment) => payment.source === "contract-down-payment");
+  assert.equal(records.length, 1, "correcting must not create a duplicate down-payment entry");
+  assert.equal(records[0].amount, 300);
+  assert.equal(getYearRevenue(store, 2026).totalRevenue, 300);
+});
+
+test("clearing a recorded down payment removes the transaction but keeps the saved amount", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "clear-me",
+    name: "Clear Me",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-04-01",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+  store = recordContractDownPayment(store, "clear-me").store;
+  assert.ok(getContractDownPaymentRecord(store, "clear-me"));
+
+  const cleared = clearContractDownPayment(store, "clear-me");
+  assert.equal(cleared.changed, true);
+  store = cleared.store;
+  assert.equal(getContractDownPaymentRecord(store, "clear-me"), null, "the recorded transaction is removed");
+  assert.equal(store.members[0].downPayment, 240, "the saved contract amount is preserved for re-entry");
+  assert.equal(getYearRevenue(store, 2026).totalRevenue, 0, "cleared money no longer counts as revenue");
+});
+
+test("clearing then re-recording a corrected amount works end to end", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "clear-and-fix",
+    name: "Clear And Fix",
+    participant: true,
+    monthlyAmount: 100,
+    startDate: "2026-05-05",
+    agreementType: "Contract",
+    downPayment: 250
+  });
+  store = recordContractDownPayment(store, "clear-and-fix").store;
+  store = clearContractDownPayment(store, "clear-and-fix").store;
+  store = upsertMember(store, { ...store.members[0], downPayment: 400 });
+  const rerecorded = recordContractDownPayment(store, "clear-and-fix");
+  assert.equal(rerecorded.changed, true);
+  store = rerecorded.store;
+  const records = store.payments.filter((payment) => payment.source === "contract-down-payment");
+  assert.equal(records.length, 1);
+  assert.equal(records[0].amount, 400);
+});
+
+test("clearing a down payment that was never recorded is a harmless no-op", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "nothing-recorded",
+    name: "Nothing Recorded",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-06-01",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+  const cleared = clearContractDownPayment(store, "nothing-recorded");
+  assert.equal(cleared.changed, false);
+  assert.equal(cleared.store, store);
+  assert.equal(cleared.payment, null);
+});
+
+test("down-payment corrections must target the responsible payer", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "family-payer",
+    name: "Family Payer",
+    participant: false,
+    monthlyAmount: 0,
+    startDate: "2026-02-01",
+    agreementType: "Contract",
+    downPayment: 300
+  });
+  store = upsertMember(store, {
+    id: "family-child",
+    name: "Family Child",
+    participant: true,
+    responsiblePartyId: "family-payer",
+    monthlyAmount: 150,
+    startDate: "2026-02-01",
+    agreementType: "Contract"
+  });
+  store = recordContractDownPayment(store, "family-payer").store;
+  assert.throws(() => clearContractDownPayment(store, "family-child"), /responsible payer/);
+});
+
+test("loading a current store preserves member and payment records exactly", () => {
+  const current = {
+    version: 2,
+    updatedAt: "2026-07-20T12:00:00.000Z",
+    members: [{
+      id: "member-1",
+      name: "Original Name",
+      startDate: "2026-01-15",
+      downPayment: 240,
+      customLegacyField: { keep: true }
+    }],
+    payments: [{
+      id: "payment-1",
+      memberId: "member-1",
+      month: "2026-06",
+      amount: 120,
+      paidAt: "2026-06-15",
+      customPaymentField: "keep-me"
+    }]
+  };
+  const prepared = prepareStoreForLoad(current);
+  assert.equal(prepared.needsBackup, true);
+  assert.equal(prepared.sourceVersion, 2);
+  assert.equal(prepared.targetVersion, CURRENT_STORE_VERSION);
+  assert.equal(prepared.store.version, CURRENT_STORE_VERSION);
+  assert.deepEqual(prepared.store.members, current.members);
+  assert.deepEqual(prepared.store.payments, current.payments);
+  assert.equal(prepared.store.updatedAt, current.updatedAt);
+});
+
+test("editing one member field preserves unknown fields and every payment", () => {
+  const original = {
+    version: CURRENT_STORE_VERSION,
+    updatedAt: "2026-07-20T12:00:00.000Z",
+    members: [{
+      id: "member-1",
+      name: "Original Name",
+      email: "original@example.com",
+      monthlyAmount: 120,
+      startDate: "2026-01-15",
+      participant: true,
+      customLegacyField: { keep: true }
+    }],
+    payments: [{
+      id: "payment-1",
+      memberId: "member-1",
+      month: "2026-06",
+      amount: 120,
+      paidAt: "2026-06-15",
+      customPaymentField: "keep-me"
+    }]
+  };
+  const edited = upsertMember(original, { ...original.members[0], name: "Updated Name" });
+  assert.equal(edited.members[0].name, "Updated Name");
+  assert.equal(edited.members[0].email, "original@example.com");
+  assert.deepEqual(edited.members[0].customLegacyField, { keep: true });
+  assert.deepEqual(edited.payments, original.payments);
 });
 
 test("matches a Square subscription payment by dedicated Square customer ID", () => {

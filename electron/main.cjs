@@ -85,8 +85,8 @@ function createWindow() {
     height: 850,
     minWidth: 1060,
     minHeight: 720,
-    title: "회비 관리 · Payment Tracker",
-    backgroundColor: "#f7f4ef",
+    title: "WMAC Member Desk",
+    backgroundColor: "#f4f7f3",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -138,6 +138,7 @@ ipcMain.handle("updates:install", () => {
 ipcMain.handle("providers:list", (_event, provider) => paymentProviders.list(provider));
 ipcMain.handle("providers:sync", (_event, provider) => paymentProviders.sync(provider));
 ipcMain.handle("providers:update-status", (_event, provider, paymentId, patch) => paymentProviders.updateStatus(provider, paymentId, patch));
+ipcMain.handle("providers:create-square-monthly-invoice", (_event, input) => paymentProviders.createSquareMonthlyInvoice(input || {}));
 ipcMain.handle("providers:get-settings", () => paymentProviders.getPublicSettings());
 ipcMain.handle("providers:save-square-relay", (_event, settings) => paymentProviders.saveSquareRelay(settings || {}));
 

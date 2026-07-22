@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WMAC Demo Seed</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f7f3; color: #183133; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      main { width: min(680px, calc(100% - 32px)); padding: 34px; border: 1px solid #dde5df; border-radius: 18px; background: #fff; box-shadow: 0 18px 48px rgba(29, 54, 49, .08); }
+      h1 { margin: 0 0 8px; font-family: Georgia, serif; font-weight: 500; font-size: 34px; letter-spacing: -.03em; }
+      p { color: #687a7b; line-height: 1.5; }
+      code { padding: 2px 5px; border-radius: 5px; background: #eef3ef; }
+      .status { margin-top: 18px; padding: 14px; border-radius: 10px; background: #e7f2ec; color: #15503e; font-weight: 750; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+      a, button { min-height: 42px; padding: 0 16px; border-radius: 10px; border: 1px solid #cddbd2; background: #fff; color: inherit; text-decoration: none; font: inherit; font-weight: 750; display: inline-flex; align-items: center; cursor: pointer; }
+      .primary { border-color: #1f6b52; background: #1f6b52; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>WMAC demo data loaded</h1>
+      <p>This page seeded the local browser store with demo members, payments, contracts, families, down payments, and Square identifiers. Any existing store was copied to a timestamped backup key before seeding.</p>
+      <p id="status" class="status">Preparing demo data…</p>
+      <div class="actions">
+        <a class="primary" href="/">Open current app</a>
+        <button id="restoreButton" type="button">Restore previous local store</button>
+      </div>
+    </main>
+    <script type="module" src="src/demo-seed.js"></script>
+  </body>
+</html>
