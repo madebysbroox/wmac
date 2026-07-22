@@ -169,6 +169,8 @@
                 <button id="customPaymentButton" type="button">Record a different month or amount</button>
                 <button id="catchUpButton" type="button">Mark all due months paid</button>
                 <button id="reminderButton" type="button">Write payment reminder email</button>
+                <button id="invoiceButton" type="button">Generate printable invoice</button>
+                <button id="squareRecurringButton" type="button">Set up monthly Square invoice</button>
               </div>
 
               <div class="payment-timeline">
@@ -235,6 +237,22 @@
                 <div><dt>Email</dt><dd id="bioEmail"></dd></div>
                 <div><dt>Birthday</dt><dd id="bioDob"></dd></div>
                 <div><dt>Address</dt><dd id="bioAddress"></dd></div>
+              </dl>
+            </section>
+
+            <section class="info-card training-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">Training · 수련</p>
+                  <h2>Programs &amp; belts</h2>
+                </div>
+                <button id="editTrainingButton" class="text-button" type="button">Edit</button>
+              </div>
+              <dl>
+                <div><dt>Programs</dt><dd id="trainingPrograms"></dd></div>
+                <div><dt>Tae Kwon Do</dt><dd id="trainingTkd"></dd></div>
+                <div><dt>Muay Thai</dt><dd id="trainingMt"></dd></div>
+                <div><dt>Next goal</dt><dd id="trainingNext"></dd></div>
               </dl>
             </section>
           </aside>
@@ -338,7 +356,7 @@
             <div id="renewalList" class="advanced-list"></div>
           </section>
 
-          <section class="info-card advanced-card collections">
+          <section class="info-card advanced-card">
             <div class="card-heading">
               <div>
                 <p class="eyebrow">Collections · 추심</p>
@@ -347,6 +365,21 @@
             </div>
             <p class="advanced-note">Accounts 10+ days behind can be placed with First Credit Services. Finalize every payment and fee first — creating a placement file freezes the balance and stops WMAC billing for that member.</p>
             <div id="collectionList" class="advanced-list"></div>
+          </section>
+
+          <section class="info-card advanced-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Email · 이메일</p>
+                <h2>Email all members</h2>
+              </div>
+            </div>
+            <p class="advanced-note">For occasional announcements. Opens your mail program with the selected members in BCC — no message is sent automatically.</p>
+            <div class="advanced-actions">
+              <button id="groupEmailButton" class="advanced-action" type="button">
+                <span>Choose recipients…</span><small id="groupEmailCount"></small>
+              </button>
+            </div>
           </section>
         </div>
       </section>
@@ -465,6 +498,29 @@
           <button id="collectionSaveEmailButton" class="button primary" type="button">Save + open email</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="groupEmailDialog" class="editor-dialog compact-dialog group-email-dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Email · 이메일</p>
+          <h2>Email all members</h2>
+          <p id="groupEmailHelp"></p>
+        </div>
+        <button id="closeGroupEmailButton" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="editor-fields">
+        <label class="full"><span>Subject</span><input id="groupEmailSubject" type="text" value="World Martial Arts Center"></label>
+      </div>
+      <div class="group-email-tools">
+        <button id="selectAllGroupEmail" class="button secondary small" type="button">Select all</button>
+        <button id="clearAllGroupEmail" class="button secondary small" type="button">Clear all</button>
+      </div>
+      <div id="groupEmailMembers" class="group-email-members"></div>
+      <div class="dialog-actions">
+        <button id="cancelGroupEmailButton" class="button secondary" type="button">Cancel</button>
+        <button id="openGroupEmailButton" class="button primary" type="button">Open email</button>
+      </div>
     </dialog>
 
     <div id="toast" class="toast hidden" role="status" popover="manual"></div>

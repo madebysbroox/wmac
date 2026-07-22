@@ -45,6 +45,12 @@ import {
   getCollectionMissingFields
 } from "./collections.js";
 import { seedDemoData } from "./demo-seed.js";
+import {
+  CERTIFICATION_LEVELS,
+  MUAY_THAI_LEVELS,
+  nextMemberCertification,
+  normalizeMemberCertifications
+} from "./certification.js";
 
 const CONTRACT_PDF_URL = new URL("./assets/WMAC-membership-agreement-with-contact-permission.pdf", import.meta.url).href;
 const CONTRACT_PDF_FILENAME = "WMAC-membership-agreement-renewal.pdf";
@@ -79,7 +85,8 @@ const ids = [
   "memberView", "memberBackButton", "memberAvatar", "memberNameHeading", "memberStatusBadge", "memberSubtitle",
   "editProfileButton", "nextMemberButton", "paymentCard", "paymentHeadline", "paymentSubhead", "amountDue",
   "recordPaymentButton", "recordPaymentLabel", "paymentMenuButton", "paymentMenu", "customPaymentButton",
-  "catchUpButton", "reminderButton", "showAllPaymentsButton", "paymentHistory",
+  "catchUpButton", "reminderButton", "invoiceButton", "squareRecurringButton", "showAllPaymentsButton", "paymentHistory",
+  "editTrainingButton", "trainingPrograms", "trainingTkd", "trainingMt", "trainingNext",
   "familyCard", "editFamilyButton", "familyMembers", "editContractButton", "contractStart", "contractEnd",
   "contractAmount", "contractDownPayment", "contractType", "contractProgress", "contractNote", "downPaymentAction",
   "downPaymentActionTitle", "downPaymentActionHelp", "recordDownPaymentButton", "clearDownPaymentButton", "editBioButton", "bioPhone", "bioEmail",
@@ -91,6 +98,9 @@ const ids = [
   "nextYearRosterButton", "openBlankContractButton", "renewalList", "collectionList",
   "collectionDialog", "collectionForm", "closeCollectionButton", "cancelCollectionButton", "collectionMemberLine",
   "collectionMissing", "collectionSummary", "collectionFinalized", "collectionSaveButton", "collectionSaveEmailButton",
+  "groupEmailButton", "groupEmailCount", "groupEmailDialog", "groupEmailHelp", "closeGroupEmailButton",
+  "groupEmailSubject", "selectAllGroupEmail", "clearAllGroupEmail", "groupEmailMembers",
+  "cancelGroupEmailButton", "openGroupEmailButton",
   "squareView", "syncSquareButton", "syncSquareLabel", "squareEmptySyncButton", "squarePendingCount", "squareMatchCount", "squareApprovedCount",
   "squareConnectionStatus", "squareEmpty", "squareWorkspace", "squareQueue", "squareDetail", "squareRelayUrl",
   "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus"
@@ -125,6 +135,9 @@ el.paymentMenuButton.addEventListener("click", () => el.paymentMenu.classList.to
 el.customPaymentButton.addEventListener("click", openPaymentDialog);
 el.catchUpButton.addEventListener("click", catchUpPayments);
 el.reminderButton.addEventListener("click", sendReminder);
+el.invoiceButton.addEventListener("click", generateInvoice);
+el.squareRecurringButton.addEventListener("click", setUpSquareMonthlyInvoice);
+el.editTrainingButton.addEventListener("click", () => openEditor("training"));
 el.showAllPaymentsButton.addEventListener("click", () => { state.historyExpanded = !state.historyExpanded; renderMember(); });
 el.editProfileButton.addEventListener("click", () => openEditor("profile"));
 el.editBioButton.addEventListener("click", () => openEditor("bio"));
@@ -155,6 +168,13 @@ el.collectionForm.addEventListener("input", updateCollectionPreview);
 el.collectionForm.addEventListener("change", updateCollectionPreview);
 el.collectionForm.addEventListener("submit", (event) => finalizeCollection(event, false));
 el.collectionSaveEmailButton.addEventListener("click", (event) => finalizeCollection(event, true));
+el.groupEmailButton.addEventListener("click", openGroupEmailDialog);
+el.closeGroupEmailButton.addEventListener("click", () => el.groupEmailDialog.close());
+el.cancelGroupEmailButton.addEventListener("click", () => el.groupEmailDialog.close());
+el.selectAllGroupEmail.addEventListener("click", () => setAllGroupEmailMembers(true));
+el.clearAllGroupEmail.addEventListener("click", () => setAllGroupEmailMembers(false));
+el.groupEmailMembers.addEventListener("change", updateGroupEmailHelp);
+el.openGroupEmailButton.addEventListener("click", openGroupEmail);
 el.syncSquareButton.addEventListener("click", syncSquarePayments);
 el.squareEmptySyncButton.addEventListener("click", syncSquarePayments);
 el.saveSquareSettingsButton.addEventListener("click", saveSquareSettings);
@@ -475,10 +495,48 @@ function renderMember() {
 
   el.catchUpButton.disabled = !isPayer(member) || !balance.dueUnpaidMonths.length || balance.monthlyAmount <= 0;
   el.reminderButton.disabled = !payer.email || !balance.dueUnpaidMonths.length;
+  el.invoiceButton.disabled = !isPayer(member) || !balance.dueUnpaidMonths.length;
+  renderSquareRecurringItem(member, payer, balance);
   renderPaymentHistory(member);
   renderFamily(member);
   renderContract(member);
   renderBio(member);
+  renderTraining(member);
+}
+
+function renderSquareRecurringItem(member, payer, balance) {
+  const setup = payer.squareMonthlyInvoice || null;
+  const active = ["ACTIVE", "PENDING"].includes(String(setup?.status || "").toUpperCase());
+  const startDate = squareInvoiceStartDate(payer, new Date(), balance.monthlyAmount);
+  const missing = [];
+  if (!payer.email) missing.push("payer email");
+  if (!payer.startDate) missing.push("contract date");
+  if (balance.monthlyAmount <= 0) missing.push("monthly amount");
+  const placed = payer.collectionPlacement?.status === "charged_off";
+  if (active) {
+    el.squareRecurringButton.textContent = `Square monthly invoice ${String(setup.status).toLowerCase()} · starts ${setup.startDate}`;
+    el.squareRecurringButton.disabled = true;
+    el.squareRecurringButton.title = "";
+    return;
+  }
+  el.squareRecurringButton.textContent = "Set up monthly Square invoice";
+  el.squareRecurringButton.disabled = !isPayer(member) || placed || missing.length > 0 || !startDate;
+  el.squareRecurringButton.title = !isPayer(member)
+    ? `Set this up on ${payer.name}'s payer account.`
+    : missing.length
+      ? `Before setup, save: ${missing.join(", ")}.`
+      : "";
+}
+
+function renderTraining(member) {
+  const certifications = normalizeMemberCertifications(member);
+  const programs = [];
+  if ((member.programs || []).includes("tae_kwon_do")) programs.push("Tae Kwon Do");
+  if ((member.programs || []).includes("muay_thai")) programs.push("Muay Thai");
+  el.trainingPrograms.textContent = programs.join(" · ") || "Not set";
+  el.trainingTkd.textContent = certifications.tae_kwon_do || "Not set";
+  el.trainingMt.textContent = certifications.muay_thai || "Not set";
+  el.trainingNext.textContent = nextMemberCertification(member) || "—";
 }
 
 function renderPaymentHistory(member) {
@@ -604,6 +662,9 @@ function renderAdvanced() {
   const thisYear = new Date().getFullYear();
   el.yearReportThisButton.querySelector("span").textContent = `${thisYear} year-end report`;
   el.yearReportLastButton.querySelector("span").textContent = `${thisYear - 1} year-end report`;
+  const emailable = groupEmailMembers().length;
+  el.groupEmailCount.textContent = `${emailable} active member${emailable === 1 ? "" : "s"} with an email address`;
+  el.groupEmailButton.disabled = emailable === 0;
   renderRenewalList();
   renderCollectionList();
 }
@@ -1316,6 +1377,253 @@ function sendReminder() {
   el.paymentMenu.classList.add("hidden");
 }
 
+function generateInvoice() {
+  const member = selectedMember();
+  if (!member || !isPayer(member)) return;
+  const payer = payerFor(member);
+  el.paymentMenu.classList.add("hidden");
+  const balance = getLateFeeBalance(payer, state.store.payments, new Date(), state.store.members);
+  if (!balance.lines.length) return toast("Nothing is currently due.");
+  const rows = balance.lines.map((line) => `
+    <tr>
+      <td>${escapeHtml(formatMonthEn(line.month))}</td>
+      <td>Monthly training tuition · 월 회비</td>
+      <td class="money">${money(line.amount)}</td>
+      <td class="money">${line.lateFee > 0 ? money(line.lateFee) : "—"}</td>
+      <td class="money">${money(line.total)}</td>
+    </tr>`).join("");
+  const contactLines = [payer.parentName && `Parent/guardian: ${payer.parentName}`, payer.cellPhone || payer.phone, payer.email]
+    .filter(Boolean)
+    .map((line) => `<div>${escapeHtml(line)}</div>`)
+    .join("");
+  const invoiceHtml = `<!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>Invoice · ${escapeHtml(payer.name)}</title>
+        <style>
+          body { margin: 0; background: #f4f7f3; color: #183133; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          .page { width: min(820px, calc(100vw - 32px)); margin: 24px auto; padding: 46px; background: #fff; border-radius: 14px; box-shadow: 0 18px 48px rgba(29, 54, 49, .08); }
+          header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; border-bottom: 3px solid #1f6b52; padding-bottom: 24px; }
+          img { width: 88px; height: 88px; object-fit: contain; border-radius: 50%; }
+          h1 { margin: 0 0 8px; font-family: Georgia, "Times New Roman", serif; font-weight: 500; font-size: 32px; letter-spacing: -.02em; }
+          h2 { margin: 28px 0 8px; font-size: 19px; }
+          p { margin: 0; color: #687a7b; }
+          .meta { text-align: right; color: #687a7b; line-height: 1.45; }
+          .billto { line-height: 1.5; }
+          table { width: 100%; border-collapse: collapse; margin-top: 22px; }
+          th, td { padding: 14px 10px; border-bottom: 1px solid #dde5df; text-align: left; }
+          th { color: #687a7b; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+          .money { text-align: right; }
+          .total { display: flex; justify-content: flex-end; margin-top: 24px; font-size: 23px; font-weight: 800; }
+          .note { margin-top: 34px; padding: 18px; border-radius: 12px; background: #e7f2ec; color: #15503e; }
+          .actions { width: min(820px, calc(100vw - 32px)); margin: 0 auto 24px; text-align: right; }
+          button { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 11px; background: #1f6b52; color: #fff; font-weight: 750; cursor: pointer; }
+          @media print {
+            body { background: #fff; }
+            .page { width: auto; margin: 0; box-shadow: none; border-radius: 0; }
+            .actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header>
+            <div>
+              <h1>World Martial Arts Center</h1>
+              <p>Member tuition invoice · 회비 청구서</p>
+            </div>
+            <div class="meta">
+              <img src="${new URL("assets/wmac-logo.jpeg", import.meta.url).href}" alt="World Martial Arts Center logo">
+              <div>Invoice date: ${new Date().toLocaleDateString()}</div>
+            </div>
+          </header>
+          <section class="billto">
+            <h2>Bill to</h2>
+            <strong>${escapeHtml(payer.name)}</strong>
+            ${contactLines}
+          </section>
+          <section>
+            <h2>Amount due</h2>
+            <table>
+              <thead>
+                <tr><th>Month</th><th>Description</th><th class="money">Tuition</th><th class="money">Late fee</th><th class="money">Amount</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div class="total">Total due: ${money(balance.totalDue)}</div>
+          </section>
+          <div class="note">Please bring this account current at your next class, or contact the front desk if a payment was already made.</div>
+        </main>
+        <div class="actions"><button type="button" onclick="window.print()">Print or save as PDF</button></div>
+      </body>
+    </html>`;
+  const invoiceWindow = window.open("", "_blank");
+  if (!invoiceWindow) return toast("Allow pop-ups to open the invoice.");
+  invoiceWindow.document.write(invoiceHtml);
+  invoiceWindow.document.close();
+}
+
+async function setUpSquareMonthlyInvoice() {
+  const member = selectedMember();
+  if (!member) return;
+  const payer = payerFor(member);
+  el.paymentMenu.classList.add("hidden");
+  if (payer.id !== member.id) return toast(`Set up Square monthly invoices on ${payer.name}'s payer account.`);
+  const balance = accountBalance(member);
+  const startDate = squareInvoiceStartDate(payer, new Date(), balance.monthlyAmount);
+  if (!payer.email || !startDate || balance.monthlyAmount <= 0) {
+    return toast("Save the payer email, contract date, and monthly amount before Square setup.");
+  }
+  if (["ACTIVE", "PENDING"].includes(String(payer.squareMonthlyInvoice?.status || "").toUpperCase())) {
+    return toast("A Square monthly invoice is already set up for this payer.");
+  }
+  el.squareRecurringButton.disabled = true;
+  try {
+    const payload = {
+      memberId: payer.id,
+      name: payer.name,
+      email: payer.email,
+      phone: payer.cellPhone || payer.phone || "",
+      squareCustomerId: payer.squareCustomerId || "",
+      amount: balance.monthlyAmount,
+      startDate,
+      cancelDate: squareInvoiceCancelDate(payer, startDate, balance.monthlyAmount)
+    };
+    const result = window.paymentTrackerProviders
+      ? await window.paymentTrackerProviders.createSquareMonthlyInvoice(payload)
+      : await fetchSquareJson("/api/square/subscriptions/monthly-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    state.store = upsertMember(state.store, {
+      ...payer,
+      squareCustomerId: result.customerId || payer.squareCustomerId,
+      squareMonthlyInvoice: {
+        subscriptionId: result.subscription?.id || "",
+        status: result.subscription?.status || "PENDING",
+        startDate: result.subscription?.start_date || startDate,
+        cancelDate: result.subscription?.canceled_date || payload.cancelDate || "",
+        monthlyAmount: balance.monthlyAmount,
+        createdAt: result.subscription?.created_at || new Date().toISOString()
+      }
+    });
+    saveStore("Square monthly invoice set up");
+    toast(`Square will email ${payer.email} a monthly payment link starting ${startDate}.`);
+  } catch (error) {
+    toast(error.message || "Square monthly invoice setup failed.");
+  } finally {
+    render();
+  }
+}
+
+function squareInvoiceStartDate(member, today = new Date(), monthlyAmount = Number(member?.monthlyAmount || 0)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(member?.startDate || ""))) return "";
+  const [year, month, day] = member.startDate.split("-").map(Number);
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const signingDate = new Date(year, month - 1, day);
+  let candidate = signingDate > todayDate
+    ? signingDate
+    : dateWithDueDay(today.getFullYear(), today.getMonth() + 1, day);
+  if (candidate < todayDate) candidate = dateWithDueDay(today.getFullYear(), today.getMonth() + 2, day);
+  if (contractEndpointsPrepaid(member, monthlyAmount) && monthKeyFromDate(candidate) === member.startDate.slice(0, 7)) {
+    candidate = dateWithDueDay(candidate.getFullYear(), candidate.getMonth() + 2, day);
+  }
+  const result = isoLocalDate(candidate);
+  if (member.agreementType === "Contract" && member.agreementEndDate && result >= member.agreementEndDate) return "";
+  return result;
+}
+
+function squareInvoiceCancelDate(member, startDate, monthlyAmount = Number(member?.monthlyAmount || 0)) {
+  if (member.agreementType !== "Contract" || !/^\d{4}-\d{2}-\d{2}$/.test(String(member.agreementEndDate || ""))) return "";
+  const dueDay = Number(member.startDate?.slice(8, 10)) || 1;
+  const end = member.agreementEndDate;
+  const cancelDate = contractEndpointsPrepaid(member, monthlyAmount)
+    ? isoLocalDate(dateWithDueDay(Number(end.slice(0, 4)), Number(end.slice(5, 7)) - 1, dueDay))
+    : end;
+  return cancelDate > startDate ? cancelDate : "";
+}
+
+function contractEndpointsPrepaid(member, monthlyAmount) {
+  return member?.agreementType === "Contract" &&
+    Number(monthlyAmount || 0) > 0 &&
+    Number(member.downPayment || 0) + 0.005 >= Number(monthlyAmount) * 2;
+}
+
+function dateWithDueDay(year, month, dueDay) {
+  const lastDay = new Date(year, month, 0).getDate();
+  return new Date(year, month - 1, Math.min(dueDay, lastDay));
+}
+
+function isoLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthKeyFromDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function groupEmailMembers() {
+  return state.store.members
+    .filter((member) => !member.inactive && memberEmailList(member).length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function memberEmailList(member) {
+  return String(member.email || "")
+    .split(/[;,]/)
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
+function openGroupEmailDialog() {
+  const members = groupEmailMembers();
+  if (!members.length) return toast("No active members have email addresses.");
+  el.groupEmailSubject.value = "World Martial Arts Center";
+  el.groupEmailMembers.innerHTML = members.map((member) => `
+    <label class="group-email-member">
+      <input type="checkbox" value="${escapeAttr(member.id)}" checked>
+      <span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(memberEmailList(member).join(", "))}</small></span>
+    </label>`).join("");
+  updateGroupEmailHelp();
+  el.groupEmailDialog.showModal();
+}
+
+function selectedGroupEmailMembers() {
+  const selectedIds = new Set(
+    Array.from(el.groupEmailMembers.querySelectorAll("input[type='checkbox']:checked")).map((input) => input.value)
+  );
+  return groupEmailMembers().filter((member) => selectedIds.has(member.id));
+}
+
+function setAllGroupEmailMembers(checked) {
+  el.groupEmailMembers.querySelectorAll("input[type='checkbox']").forEach((input) => { input.checked = checked; });
+  updateGroupEmailHelp();
+}
+
+function updateGroupEmailHelp() {
+  const total = el.groupEmailMembers.querySelectorAll("input[type='checkbox']").length;
+  const checked = el.groupEmailMembers.querySelectorAll("input[type='checkbox']:checked").length;
+  el.groupEmailHelp.textContent = `${checked} of ${total} members with email selected.`;
+  el.openGroupEmailButton.disabled = checked === 0;
+}
+
+function openGroupEmail() {
+  const members = selectedGroupEmailMembers();
+  if (!members.length) return toast("Select at least one member.");
+  const seen = new Set();
+  const emails = members.flatMap(memberEmailList).filter((email) => {
+    const key = email.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const subject = el.groupEmailSubject.value.trim() || "World Martial Arts Center";
+  el.groupEmailDialog.close();
+  window.location.href = `mailto:?bcc=${encodeURIComponent(emails.join(","))}&subject=${encodeURIComponent(subject)}`;
+}
+
 function removePaymentById(paymentId) {
   const payment = state.store.payments.find((item) => item.id === paymentId);
   if (!payment) return;
@@ -1400,6 +1708,17 @@ function openEditor(mode) {
         selectField("Responsible payer", "responsiblePartyId", payer.id, state.store.members.filter((candidate) => !candidate.inactive).map((candidate) => [candidate.id, candidate.name || "New member"])),
         checkboxField("Participates in classes", "participant", member.participant !== false)
       ]
+    },
+    training: {
+      eyebrow: "Training · 수련",
+      title: "Programs & certification",
+      help: "White → Yellow → Green → Blue → Red, three tips per belt. Black-belt tip cycles advance the Dan stripe.",
+      fields: [
+        checkboxField("Tae Kwon Do", "programTaeKwonDo", (member.programs || []).includes("tae_kwon_do")),
+        checkboxField("Muay Thai", "programMuayThai", (member.programs || []).includes("muay_thai")),
+        selectField("Tae Kwon Do certification", "certTaeKwonDo", normalizeMemberCertifications(member).tae_kwon_do, [["", "Not set"], ...CERTIFICATION_LEVELS.map((level) => [level, level])]),
+        selectField("Muay Thai certification", "certMuayThai", normalizeMemberCertifications(member).muay_thai, [["", "Not set"], ...MUAY_THAI_LEVELS.map((level) => [level, level])])
+      ]
     }
   };
   const config = configs[mode];
@@ -1438,6 +1757,23 @@ function saveEditor(event) {
   if (state.editorMode === "family") {
     const responsible = state.store.members.find((candidate) => candidate.id === values.responsiblePartyId);
     next.parentName = responsible && responsible.id !== member.id ? responsible.name : "";
+  }
+  if (state.editorMode === "training") {
+    next.programs = [
+      values.programTaeKwonDo ? "tae_kwon_do" : "",
+      values.programMuayThai ? "muay_thai" : ""
+    ].filter(Boolean);
+    next.certifications = {
+      tae_kwon_do: values.certTaeKwonDo || "",
+      muay_thai: values.certMuayThai || "",
+      legacyLabel: normalizeMemberCertifications(member).legacyLabel
+    };
+    next.beltLevel = values.certTaeKwonDo || values.certMuayThai || "";
+    next.nextLevel = nextMemberCertification(next);
+    delete next.programTaeKwonDo;
+    delete next.programMuayThai;
+    delete next.certTaeKwonDo;
+    delete next.certMuayThai;
   }
   state.store = upsertMember(state.store, next);
   saveStore("Member information saved");

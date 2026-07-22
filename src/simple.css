@@ -170,6 +170,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 46px 0 80
 .payment-menu { display: grid; margin-left: auto; width: min(360px, 100%); padding: 7px; border: 1px solid var(--line); border-radius: 11px; background: #fff; box-shadow: 0 15px 35px rgba(26,50,45,.15); }
 .payment-menu button { padding: 11px 13px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
 .payment-menu button:hover { background: #f1f6f2; }
+.payment-menu button:disabled { color: var(--muted); opacity: .65; cursor: default; }
+.payment-menu button:disabled:hover { background: transparent; }
 .payment-timeline { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e7ece8; }
 .timeline-heading h3 { margin: 0; font-size: 15px; }
 .payment-history { display: grid; margin-top: 10px; }
@@ -290,7 +292,6 @@ dialog { color: var(--ink); }
 .advanced-view { display: grid; gap: 8px; }
 .advanced-page-heading { align-items: center; }
 .advanced-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
-.advanced-card.collections { grid-column: 1 / -1; }
 .advanced-note { margin: -8px 0 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .advanced-actions { display: grid; gap: 10px; }
 .advanced-action { display: grid; gap: 4px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 12px; background: #f8faf8; text-align: left; cursor: pointer; }
@@ -320,6 +321,15 @@ dialog { color: var(--ink); }
 .collection-confirm { display: flex; align-items: flex-start; gap: 10px; margin-top: 20px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #fbfcfb; font-size: 12px; line-height: 1.5; }
 .collection-confirm input { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 1px; }
 .collection-send-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+
+.group-email-tools { display: flex; gap: 8px; margin: 16px 0 10px; }
+.group-email-members { display: grid; gap: 6px; max-height: 320px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
+.group-email-member { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; }
+.group-email-member:hover { background: #f1f6f2; }
+.group-email-member input { width: 17px; height: 17px; flex: 0 0 auto; }
+.group-email-member span { display: grid; gap: 1px; min-width: 0; }
+.group-email-member strong { font-size: 13px; }
+.group-email-member small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
 
 .toast { position: fixed; inset: auto auto 28px 50%; width: max-content; max-width: calc(100vw - 40px); z-index: 50; transform: translateX(-50%); margin: 0; padding: 12px 18px; border: 0; border-radius: 10px; background: #193a31; color: #fff; box-shadow: 0 12px 40px rgba(17,37,31,.28); font-size: 13px; font-weight: 700; overflow: hidden; }
 
