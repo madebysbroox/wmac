@@ -159,9 +159,11 @@ for (const member of members) {
   store = upsertMember(store, member);
 }
 
-for (const payerId of ["demo-lee-parent", "demo-park-sam"]) {
-  store = recordContractDownPayment(store, payerId).store;
-}
+// Record the Lee family down payment so you can see the "Already recorded"
+// state (and its lump-sum entry in the 2025 tax revenue). Sam Park's contract
+// intentionally keeps its down-payment amount UNrecorded so you can click
+// through the explicit "Record down payment" workflow yourself.
+store = recordContractDownPayment(store, "demo-lee-parent").store;
 
 const payments = [
   ["demo-lee-parent", "2026-01", 280, "2026-01-15", "manual"],

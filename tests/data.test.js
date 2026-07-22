@@ -10,6 +10,7 @@ import {
   exportDailyPaymentStatusRows,
   getAgreementExpirationStatus,
   getContractDownPaymentRecord,
+  clearContractDownPayment,
   getDashboardSummary,
   exportStoreRows,
   exportRosterRows,
@@ -740,6 +741,117 @@ test("records a payer down payment only after an explicit action and remains ide
   assert.equal(second.changed, false);
   assert.equal(second.store, store);
   assert.equal(migrateStore(store).payments.filter((payment) => payment.source === "contract-down-payment").length, 1);
+});
+
+test("a recorded down payment can be corrected by re-recording a new amount", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "correct-me",
+    name: "Fix Me",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-03-10",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+  store = recordContractDownPayment(store, "correct-me").store;
+  assert.equal(getContractDownPaymentRecord(store, "correct-me").amount, 240);
+
+  // The owner realizes the amount was wrong: edit the saved amount, then
+  // re-record. Recording overwrites the existing entry instead of duplicating.
+  store = upsertMember(store, { ...store.members[0], downPayment: 300 });
+  const corrected = recordContractDownPayment(store, "correct-me");
+  assert.equal(corrected.changed, true);
+  store = corrected.store;
+  const records = store.payments.filter((payment) => payment.source === "contract-down-payment");
+  assert.equal(records.length, 1, "correcting must not create a duplicate down-payment entry");
+  assert.equal(records[0].amount, 300);
+  assert.equal(getYearRevenue(store, 2026).totalRevenue, 300);
+});
+
+test("clearing a recorded down payment removes the transaction but keeps the saved amount", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "clear-me",
+    name: "Clear Me",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-04-01",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+  store = recordContractDownPayment(store, "clear-me").store;
+  assert.ok(getContractDownPaymentRecord(store, "clear-me"));
+
+  const cleared = clearContractDownPayment(store, "clear-me");
+  assert.equal(cleared.changed, true);
+  store = cleared.store;
+  assert.equal(getContractDownPaymentRecord(store, "clear-me"), null, "the recorded transaction is removed");
+  assert.equal(store.members[0].downPayment, 240, "the saved contract amount is preserved for re-entry");
+  assert.equal(getYearRevenue(store, 2026).totalRevenue, 0, "cleared money no longer counts as revenue");
+});
+
+test("clearing then re-recording a corrected amount works end to end", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "clear-and-fix",
+    name: "Clear And Fix",
+    participant: true,
+    monthlyAmount: 100,
+    startDate: "2026-05-05",
+    agreementType: "Contract",
+    downPayment: 250
+  });
+  store = recordContractDownPayment(store, "clear-and-fix").store;
+  store = clearContractDownPayment(store, "clear-and-fix").store;
+  store = upsertMember(store, { ...store.members[0], downPayment: 400 });
+  const rerecorded = recordContractDownPayment(store, "clear-and-fix");
+  assert.equal(rerecorded.changed, true);
+  store = rerecorded.store;
+  const records = store.payments.filter((payment) => payment.source === "contract-down-payment");
+  assert.equal(records.length, 1);
+  assert.equal(records[0].amount, 400);
+});
+
+test("clearing a down payment that was never recorded is a harmless no-op", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "nothing-recorded",
+    name: "Nothing Recorded",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-06-01",
+    agreementType: "Contract",
+    downPayment: 240
+  });
+  const cleared = clearContractDownPayment(store, "nothing-recorded");
+  assert.equal(cleared.changed, false);
+  assert.equal(cleared.store, store);
+  assert.equal(cleared.payment, null);
+});
+
+test("down-payment corrections must target the responsible payer", () => {
+  let store = createEmptyStore();
+  store = upsertMember(store, {
+    id: "family-payer",
+    name: "Family Payer",
+    participant: false,
+    monthlyAmount: 0,
+    startDate: "2026-02-01",
+    agreementType: "Contract",
+    downPayment: 300
+  });
+  store = upsertMember(store, {
+    id: "family-child",
+    name: "Family Child",
+    participant: true,
+    responsiblePartyId: "family-payer",
+    monthlyAmount: 150,
+    startDate: "2026-02-01",
+    agreementType: "Contract"
+  });
+  store = recordContractDownPayment(store, "family-payer").store;
+  assert.throws(() => clearContractDownPayment(store, "family-child"), /responsible payer/);
 });
 
 test("loading a current store preserves member and payment records exactly", () => {

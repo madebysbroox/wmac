@@ -73,6 +73,16 @@
   background: #f3f8f5;
 }
 
+.down-payment-record-control .button.ghost {
+  border: 1px solid #d7746b;
+  background: #fff;
+  color: #a4362b;
+}
+
+.down-payment-record-control .button.ghost:hover {
+  background: #fbeeec;
+}
+
 .household-card,
 .progress-card {
   margin: 18px 0;

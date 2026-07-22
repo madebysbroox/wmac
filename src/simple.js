@@ -6,6 +6,7 @@ import {
   exportStoreRows,
   getAgreementExpirationStatus,
   getContractDownPaymentRecord,
+  clearContractDownPayment,
   getLandscapeRows,
   getLateFeeBalance,
   getMemberBalance,
@@ -59,7 +60,7 @@ const ids = [
   "catchUpButton", "reminderButton", "showAllPaymentsButton", "paymentHistory",
   "familyCard", "editFamilyButton", "familyMembers", "editContractButton", "contractStart", "contractEnd",
   "contractAmount", "contractDownPayment", "contractType", "contractProgress", "contractNote", "downPaymentAction",
-  "downPaymentActionTitle", "downPaymentActionHelp", "recordDownPaymentButton", "editBioButton", "bioPhone", "bioEmail",
+  "downPaymentActionTitle", "downPaymentActionHelp", "recordDownPaymentButton", "clearDownPaymentButton", "editBioButton", "bioPhone", "bioEmail",
   "bioDob", "bioAddress", "editorDialog", "editorForm", "editorEyebrow", "editorTitle", "editorHelp",
   "editorFields", "closeEditorButton", "cancelEditorButton", "paymentDialog", "paymentForm", "closePaymentButton",
   "cancelPaymentButton", "paymentMonth", "paymentAmount", "paymentDate", "paymentNote",
@@ -103,6 +104,7 @@ el.editProfileButton.addEventListener("click", () => openEditor("profile"));
 el.editBioButton.addEventListener("click", () => openEditor("bio"));
 el.editContractButton.addEventListener("click", () => openEditor("contract"));
 el.recordDownPaymentButton.addEventListener("click", recordSelectedDownPayment);
+el.clearDownPaymentButton.addEventListener("click", clearSelectedDownPayment);
 el.editFamilyButton.addEventListener("click", () => openEditor("family"));
 el.closeEditorButton.addEventListener("click", closeEditor);
 el.cancelEditorButton.addEventListener("click", closeEditor);
@@ -475,18 +477,27 @@ function renderContract(member) {
   el.contractNote.textContent = expiration.level === "expired" ? "Contract renewal is due." : expiration.daysUntil != null ? `${Math.max(0, expiration.daysUntil)} days remaining` : "";
   const canRecord = isPayer(member) && downPaymentAmount > 0 && Boolean(payer.startDate);
   el.downPaymentAction.classList.toggle("hidden", !isPayer(member) || downPaymentAmount <= 0);
-  el.recordDownPaymentButton.disabled = !canRecord;
+  // A recorded down payment can always be cleared, even when the current
+  // contract amount would fail validation, so an amount entered in error is
+  // never stuck. Clearing keeps the saved contract amount so a corrected
+  // figure can be typed and re-recorded.
+  el.clearDownPaymentButton.classList.toggle("hidden", !isPayer(member) || !downPaymentRecord);
+  el.clearDownPaymentButton.disabled = !isPayer(member) || !downPaymentRecord;
   if (downPaymentRecord) {
     const matchesContract = Number(downPaymentRecord.amount || 0) === downPaymentAmount
       && downPaymentRecord.paidAt === payer.startDate;
     el.downPaymentActionTitle.textContent = matchesContract ? "Down payment recorded" : "Recorded payment needs updating";
-    el.downPaymentActionHelp.textContent = `${money(downPaymentRecord.amount)} recorded on ${dateLabel(downPaymentRecord.paidAt)}.`;
-    el.recordDownPaymentButton.textContent = matchesContract ? "Already recorded" : "Update recorded payment";
-    el.recordDownPaymentButton.disabled = matchesContract || !canRecord;
+    el.downPaymentActionHelp.textContent = matchesContract
+      ? `${money(downPaymentRecord.amount)} recorded on ${dateLabel(downPaymentRecord.paidAt)}. Edit the contract or clear it to correct the amount.`
+      : `${money(downPaymentRecord.amount)} recorded on ${dateLabel(downPaymentRecord.paidAt)}. Update it to match the saved amount, or clear it to start over.`;
+    // Keep Record clickable so a corrected amount can overwrite the entry.
+    el.recordDownPaymentButton.textContent = matchesContract ? "Re-record" : "Update recorded payment";
+    el.recordDownPaymentButton.disabled = !canRecord;
   } else {
     el.downPaymentActionTitle.textContent = "Down payment not recorded";
     el.downPaymentActionHelp.textContent = "The contract value is saved, but no financial transaction has been created.";
     el.recordDownPaymentButton.textContent = "Record down payment";
+    el.recordDownPaymentButton.disabled = !canRecord;
   }
 }
 
@@ -496,7 +507,7 @@ function recordSelectedDownPayment() {
   try {
     const result = recordContractDownPayment(state.store, payerFor(member).id);
     if (!result.changed) {
-      toast("The contract down payment is already recorded.");
+      toast("The recorded amount already matches the contract.");
       return;
     }
     state.store = result.store;
@@ -505,6 +516,24 @@ function recordSelectedDownPayment() {
     render();
   } catch (error) {
     toast(error.message || "Could not record the contract down payment.");
+  }
+}
+
+function clearSelectedDownPayment() {
+  const member = selectedMember();
+  if (!member) return;
+  try {
+    const result = clearContractDownPayment(state.store, payerFor(member).id);
+    if (!result.changed) {
+      toast("There is no recorded down payment to clear.");
+      return;
+    }
+    state.store = result.store;
+    saveStore("Contract down payment cleared");
+    toast("Cleared the recorded down payment. Enter the correct amount, then record it again.");
+    render();
+  } catch (error) {
+    toast(error.message || "Could not clear the contract down payment.");
   }
 }
 

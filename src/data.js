@@ -786,6 +786,35 @@ export function recordContractDownPayment(store, memberId) {
   };
 }
 
+// Removing a recorded down payment is always explicit. It clears only the
+// recorded financial transaction; the member's saved contract down-payment
+// amount is left untouched so a corrected amount can be typed and re-recorded.
+export function clearContractDownPayment(store, memberId) {
+  const member = (store?.members || []).find((candidate) => candidate.id === memberId);
+  if (!member) {
+    throw new Error("Member not found.");
+  }
+  const payer = getResponsibleParty(member, store.members) || member;
+  if (payer.id !== member.id) {
+    throw new Error("Clear the down payment on the responsible payer.");
+  }
+  const existing = getContractDownPaymentRecord(store, member.id);
+  if (!existing) {
+    return { store, payment: null, changed: false };
+  }
+  return {
+    store: {
+      ...store,
+      payments: store.payments.filter((item) =>
+        !(item.memberId === member.id && item.source === CONTRACT_DOWN_PAYMENT_SOURCE)
+      ),
+      updatedAt: new Date().toISOString()
+    },
+    payment: existing,
+    changed: true
+  };
+}
+
 function notBilledPaymentState(member, currentMonth, label = "Covered by payer") {
   return {
     level: "paid",

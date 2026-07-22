@@ -9,6 +9,7 @@ import {
   exportStoreRows,
   getAgreementExpirationStatus,
   getContractDownPaymentRecord,
+  clearContractDownPayment,
   getMemberBalance,
   getLateFeeBalance,
   getLandscapeRows,
@@ -124,7 +125,7 @@ const elements = {};
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
   "memberEmail", "memberParent", "memberResponsibleParty", "memberHousehold", "memberRole", "memberParticipant",
   "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberLateFeeMinimum", "memberLateFeePercentage", "memberStart",
-  "memberAgreementType", "memberAgreementEnd", "memberDownPayment", "memberRecordDownPaymentButton", "memberDownPaymentRecordStatus", "memberEmailConsent", "memberTextConsent", "memberPhoneConsent",
+  "memberAgreementType", "memberAgreementEnd", "memberDownPayment", "memberRecordDownPaymentButton", "memberClearDownPaymentButton", "memberDownPaymentRecordStatus", "memberEmailConsent", "memberTextConsent", "memberPhoneConsent",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
   "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
@@ -322,6 +323,7 @@ elements.syncSquareButton.addEventListener("click", syncSquarePayments);
 elements.saveSquareSettingsButton.addEventListener("click", saveSquareConnectionSettings);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
 elements.memberRecordDownPaymentButton.addEventListener("click", recordMemberDownPayment);
+elements.memberClearDownPaymentButton.addEventListener("click", clearMemberDownPayment);
 elements.catchUpButton.addEventListener("click", catchUpMemberPayments);
 elements.undoCatchUpButton.addEventListener("click", undoMemberCatchUp);
 elements.reviewAllAttentionButton.addEventListener("click", () => openAttentionReview());
@@ -1141,16 +1143,21 @@ function renderDetail() {
   const downPaymentMatches = downPaymentRecord
     && Number(downPaymentRecord.amount || 0) === downPaymentAmount
     && downPaymentRecord.paidAt === payer.startDate;
-  elements.memberRecordDownPaymentButton.disabled = collectionPlaced
-    || !isPayer
-    || downPaymentAmount <= 0
-    || !payer.startDate
-    || Boolean(downPaymentMatches);
-  elements.memberRecordDownPaymentButton.classList.toggle("hidden", !isPayer || downPaymentAmount <= 0);
+  // Record stays available whenever a valid amount/date exist, so a corrected
+  // figure can overwrite an amount recorded in error. Clear appears whenever a
+  // recorded down payment exists, even if the current amount would be invalid.
+  const canRecord = !collectionPlaced && isPayer && downPaymentAmount > 0 && Boolean(payer.startDate);
+  elements.memberRecordDownPaymentButton.disabled = !canRecord;
+  elements.memberRecordDownPaymentButton.classList.toggle("hidden", !isPayer || (downPaymentAmount <= 0 && !downPaymentRecord));
+  elements.memberRecordDownPaymentButton.querySelector('[lang="en"]').textContent = downPaymentRecord
+    ? (downPaymentMatches ? "Re-record Down Payment" : "Update Recorded Down Payment")
+    : "Record Down Payment";
+  elements.memberClearDownPaymentButton.classList.toggle("hidden", !isPayer || !downPaymentRecord);
+  elements.memberClearDownPaymentButton.disabled = collectionPlaced || !isPayer || !downPaymentRecord;
   if (downPaymentMatches) {
-    elements.memberDownPaymentRecordStatus.textContent = `${formatMoney(downPaymentRecord.amount)} recorded on ${downPaymentRecord.paidAt}.`;
+    elements.memberDownPaymentRecordStatus.textContent = `${formatMoney(downPaymentRecord.amount)} recorded on ${downPaymentRecord.paidAt}. To fix it, change the amount and update, or clear it and record the correct amount.`;
   } else if (downPaymentRecord) {
-    elements.memberDownPaymentRecordStatus.textContent = `${formatMoney(downPaymentRecord.amount)} was recorded on ${downPaymentRecord.paidAt}. Save contract changes, then update the recorded payment.`;
+    elements.memberDownPaymentRecordStatus.textContent = `${formatMoney(downPaymentRecord.amount)} was recorded on ${downPaymentRecord.paidAt}. Save contract changes, then update the recorded payment — or clear it to start over.`;
   } else if (downPaymentAmount > 0) {
     elements.memberDownPaymentRecordStatus.textContent = "The contract amount is saved, but no payment transaction has been created.";
   } else {
@@ -3192,6 +3199,29 @@ function recordMemberDownPayment() {
     render();
   } catch (error) {
     showToast(error.message || "계약금 결제를 기록할 수 없습니다. · Could not record the down payment.");
+  }
+}
+
+function clearMemberDownPayment() {
+  const member = selectedMember();
+  if (!member) return;
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`계약금은 ${payer.name} 계정에서 관리하세요. · Manage the down payment on the payer account.`);
+    return;
+  }
+  try {
+    const result = clearContractDownPayment(state.store, payer.id);
+    if (!result.changed) {
+      showToast("지울 계약금 기록이 없습니다. · There is no recorded down payment to clear.");
+      return;
+    }
+    state.store = result.store;
+    saveStore("계약금 기록 삭제됨 · Contract down payment cleared");
+    showToast("계약금 기록을 지웠습니다. 올바른 금액을 입력한 뒤 다시 기록하세요. · Cleared the recorded down payment. Enter the correct amount, then record it again.");
+    render();
+  } catch (error) {
+    showToast(error.message || "계약금 기록을 지울 수 없습니다. · Could not clear the down payment.");
   }
 }
 
