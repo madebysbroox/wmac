@@ -40,6 +40,74 @@ test("installed-app provider settings persist without exposing the relay token",
   assert.deepEqual(staged.payments, []);
 });
 
+test("Square monthly invoices create an email-payment subscription without a stored card", async () => {
+  const oldEnvironment = {
+    SQUARE_ACCESS_TOKEN: process.env.SQUARE_ACCESS_TOKEN,
+    SQUARE_LOCATION_ID: process.env.SQUARE_LOCATION_ID,
+    SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID: process.env.SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID,
+    SQUARE_ENVIRONMENT: process.env.SQUARE_ENVIRONMENT,
+    SQUARE_API_VERSION: process.env.SQUARE_API_VERSION
+  };
+  Object.assign(process.env, {
+    SQUARE_ACCESS_TOKEN: "test-square-token",
+    SQUARE_LOCATION_ID: "location-1",
+    SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID: "monthly-plan-1",
+    SQUARE_ENVIRONMENT: "sandbox",
+    SQUARE_API_VERSION: "2026-07-15"
+  });
+  try {
+    const userDataPath = await mkdtemp(join(tmpdir(), "wmac-square-invoice-test-"));
+    const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    const requests = [];
+    const service = createPaymentProviderService({
+      userDataPath,
+      appRoot,
+      fetchImpl: async (url, options = {}) => {
+        requests.push({ url, options });
+        if (url.endsWith("/v2/customers")) return jsonFetchResponse(200, { customer: { id: "customer-1" } });
+        if (url.endsWith("/v2/subscriptions")) {
+          return jsonFetchResponse(200, {
+            subscription: { id: "subscription-1", status: "PENDING", start_date: "2026-08-15", canceled_date: "2027-07-15" }
+          });
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      }
+    });
+
+    const result = await service.createSquareMonthlyInvoice({
+      memberId: "payer-1",
+      name: "Jamie Park",
+      email: "jamie@example.com",
+      phone: "555-0100",
+      amount: 240,
+      startDate: "2026-08-15",
+      cancelDate: "2027-07-15"
+    });
+
+    assert.equal(result.customerId, "customer-1");
+    assert.equal(result.subscription.id, "subscription-1");
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/customers");
+    assert.equal(requests[1].url, "https://connect.squareupsandbox.com/v2/subscriptions");
+    assert.equal(requests[1].options.headers.Authorization, "Bearer test-square-token");
+    assert.equal(requests[1].options.headers["Square-Version"], "2026-07-15");
+    const subscriptionRequest = JSON.parse(requests[1].options.body);
+    assert.equal(subscriptionRequest.customer_id, "customer-1");
+    assert.equal(subscriptionRequest.location_id, "location-1");
+    assert.equal(subscriptionRequest.plan_variation_id, "monthly-plan-1");
+    assert.deepEqual(subscriptionRequest.price_override_money, { amount: 24000, currency: "USD" });
+    assert.equal(subscriptionRequest.start_date, "2026-08-15");
+    assert.equal(subscriptionRequest.monthly_billing_anchor_date, 15);
+    assert.equal(subscriptionRequest.canceled_date, "2027-07-15");
+    assert.equal("card_id" in subscriptionRequest, false);
+  } finally {
+    for (const [key, value] of Object.entries(oldEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("installed app imports completed relay payments and safely acknowledges every exact event version", async () => {
   const userDataPath = await mkdtemp(join(tmpdir(), "wmac-provider-relay-test-"));
   const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));

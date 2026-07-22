@@ -138,6 +138,7 @@ ipcMain.handle("updates:install", () => {
 ipcMain.handle("providers:list", (_event, provider) => paymentProviders.list(provider));
 ipcMain.handle("providers:sync", (_event, provider) => paymentProviders.sync(provider));
 ipcMain.handle("providers:update-status", (_event, provider, paymentId, patch) => paymentProviders.updateStatus(provider, paymentId, patch));
+ipcMain.handle("providers:create-square-monthly-invoice", (_event, input) => paymentProviders.createSquareMonthlyInvoice(input || {}));
 ipcMain.handle("providers:get-settings", () => paymentProviders.getPublicSettings());
 ipcMain.handle("providers:save-square-relay", (_event, settings) => paymentProviders.saveSquareRelay(settings || {}));
 

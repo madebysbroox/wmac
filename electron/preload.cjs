@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("paymentTrackerProviders", {
   list: (provider) => ipcRenderer.invoke("providers:list", provider),
   sync: (provider) => ipcRenderer.invoke("providers:sync", provider),
   updateStatus: (provider, paymentId, patch) => ipcRenderer.invoke("providers:update-status", provider, paymentId, patch),
+  createSquareMonthlyInvoice: (input) => ipcRenderer.invoke("providers:create-square-monthly-invoice", input),
   getSettings: () => ipcRenderer.invoke("providers:get-settings"),
   saveSquareRelay: (settings) => ipcRenderer.invoke("providers:save-square-relay", settings)
 });
