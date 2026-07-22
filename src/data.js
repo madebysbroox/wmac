@@ -845,7 +845,6 @@ function billingAccount(member, members = []) {
   const payer = getResponsibleParty(member, allMembers) || member;
   const isPayer = payer?.id === member?.id;
   const contributors = accountMembers(allMembers, payer).filter(isActiveParticipant);
-  const startDates = contributors.map((person) => person.startDate).filter(isIsoDate).sort();
   const monthlyAmount = contributors.reduce((sum, person) => sum + Number(person.monthlyAmount || 0), 0);
   return {
     payer,
@@ -856,7 +855,10 @@ function billingAccount(member, members = []) {
       participant: contributors.length > 0,
       inactive: false,
       monthlyAmount,
-      startDate: startDates[0] || ""
+      // The payer's contract signing date is the single household billing
+      // date. Dependents may have their own enrollment dates, but they never
+      // change when the payer's monthly tuition is due.
+      startDate: isIsoDate(payer?.startDate) ? payer.startDate : ""
     }
   };
 }

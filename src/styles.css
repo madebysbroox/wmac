@@ -632,6 +632,14 @@ a.button {
   grid-template-columns: 400px minmax(0, 1fr);
 }
 
+.layout.members-layout.roster-active {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.roster-active .member-list {
+  display: none;
+}
+
 .sidebar,
 .detail,
 .edit-panel,
@@ -1144,9 +1152,9 @@ textarea {
 }
 
 .roster-member {
-  display: grid;
-  grid-template-columns: 170px minmax(180px, 1.3fr) minmax(160px, 1fr) minmax(160px, 1fr);
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   align-items: center;
   width: 100%;
   min-height: 82px;
@@ -1159,11 +1167,18 @@ textarea {
   text-align: left;
 }
 
+.roster-member .status-badge {
+  flex: 0 0 auto;
+  min-width: 150px;
+}
+
 .roster-member strong {
+  flex: 1 1 180px;
   font-size: 21px;
 }
 
 .roster-member > span:not(.status-badge) {
+  flex: 1 1 160px;
   color: var(--muted);
   font-size: 17px;
 }
@@ -1694,7 +1709,8 @@ menu {
     display: grid;
   }
 
-  .layout.members-layout {
+  .layout.members-layout,
+  .layout.members-layout.roster-active {
     grid-template-columns: 1fr;
   }
 
@@ -2718,6 +2734,7 @@ dialog::backdrop {
   }
 
   .layout.members-layout,
+  .layout.members-layout.roster-active,
   .layout.square-layout,
   .detail-grid,
   .command-grid,

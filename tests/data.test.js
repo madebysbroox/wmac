@@ -88,7 +88,8 @@ test("daily status export records every account and every month in the report ye
     householdId: "lee",
     householdRole: "parent_guardian",
     participant: false,
-    inactive: false
+    inactive: false,
+    startDate: "2026-01-15"
   };
   const student = {
     id: "student-1",
@@ -649,7 +650,8 @@ test("uses the payer account for a non-participating parent's family payment sch
     name: "Morgan Lee",
     participant: false,
     householdRole: "parent_guardian",
-    responsiblePartyId: "payer"
+    responsiblePartyId: "payer",
+    startDate: "2026-04-10"
   };
   const child = {
     id: "child",
@@ -676,6 +678,14 @@ test("uses the payer account for a non-participating parent's family payment sch
   const reconciled = reconcileDuePayments({ members, payments: [] }, payer, ["2026-05"], today);
   assert.deepEqual(reconciled.store.payments.map((payment) => payment.memberId), ["payer", "payer"]);
   assert.deepEqual(getMemberBalance(payer, reconciled.store.payments, today, members).unpaidMonths, ["2026-05"]);
+});
+
+test("uses only the payer contract signing date for a household due day", () => {
+  const payer = { id: "payer", name: "Morgan Lee", participant: false, responsiblePartyId: "payer", startDate: "2026-01-10" };
+  const child = { id: "child", name: "Jamie Lee", participant: true, responsiblePartyId: "payer", monthlyAmount: 120, startDate: "2026-01-25" };
+  const state = getMemberPaymentState(payer, [], new Date("2026-02-15T12:00:00"), [], [payer, child]);
+
+  assert.equal(state.months.find((month) => month.month === "2026-02").dueDate, "2026-02-10");
 });
 
 test("matches a Square subscription payment by dedicated Square customer ID", () => {

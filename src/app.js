@@ -583,6 +583,7 @@ function renderPageShell() {
   const isLandscape = state.page === "landscape";
   elements.appLayout.classList.toggle("home-layout", isHome);
   elements.appLayout.classList.toggle("members-layout", state.page === "members");
+  elements.appLayout.classList.toggle("roster-active", state.page === "members" && state.view === "roster");
   elements.appLayout.classList.toggle("landscape-layout", isLandscape);
   elements.appLayout.classList.toggle("square-layout", isSquare);
   elements.memberSidebar.classList.toggle("hidden", state.page !== "members");
@@ -929,11 +930,13 @@ function renderRoster() {
   }
 
   const title = ROSTER_TITLES[state.statusFilter] || ROSTER_TITLES.all;
+  const searchedIds = new Set(searchMembers(state.store.members, elements.searchInput.value).map((member) => member.id));
   const rows = memberRows().filter((row) =>
-    state.statusFilter === "all" ||
-    (state.statusFilter === "pending" ? row.status.flags?.pending :
-      state.statusFilter === "setup" ? row.status.flags?.setupNeeded :
-        row.status.level === state.statusFilter)
+    searchedIds.has(row.member.id) &&
+    (state.statusFilter === "all" ||
+      (state.statusFilter === "pending" ? row.status.flags?.pending :
+        state.statusFilter === "setup" ? row.status.flags?.setupNeeded :
+          row.status.level === state.statusFilter))
   );
   elements.rosterTitle.innerHTML = `${title.ko} <small lang="en">${title.en}</small>`;
   elements.rosterHelp.textContent = `${rows.length}명 · ${rows.length} member${rows.length === 1 ? "" : "s"}`;
@@ -960,10 +963,13 @@ function renderMemberList() {
     const payer = getResponsibleParty(member, state.store.members) || member;
     if (payer.id !== accountId) {
       accountId = payer.id;
-      const heading = document.createElement("div");
-      heading.className = "account-list-heading";
-      heading.textContent = `계정 · Account: ${payer.name || "Unnamed member"}`;
-      elements.memberList.append(heading);
+      const familySize = accountMembers(state.store.members, payer).length;
+      if (familySize > 1) {
+        const heading = document.createElement("div");
+        heading.className = "account-list-heading";
+        heading.textContent = `계정 · Account: ${payer.name || "Unnamed member"}`;
+        elements.memberList.append(heading);
+      }
     }
     const isPayer = member.id === payer.id;
     const status = displayedMemberStatus(member);
@@ -1116,10 +1122,30 @@ function renderDetail() {
   elements.memberTextConsent.checked = member.textConsent === "Yes";
   elements.memberPhoneConsent.checked = member.phoneConsent === "Yes";
   elements.memberInactive.checked = Boolean(member.inactive);
-  elements.memberAmount.disabled = collectionPlaced;
+  const family = accountMembers(state.store.members, payer);
+  const hasDependents = family.some((person) => person.id !== payer.id);
+  const automaticPayerAmount = isPayer && member.participant === false;
+  const memberAmountLabel = document.querySelector('label[for="memberAmount"]');
+  const quickAmountLabel = document.querySelector('label[for="quickMemberAmount"]');
+  const amountLabel = automaticPayerAmount
+    ? `월 회비 자동 합산 <small lang="en">Calculated from participating family members</small>`
+    : isPayer && member.participant !== false && hasDependents
+      ? `본인 월 회비 <small lang="en">This member's amount; household total includes each participant</small>`
+      : `월 회비 <small lang="en">Monthly amount</small>`;
+  memberAmountLabel.innerHTML = amountLabel;
+  quickAmountLabel.innerHTML = amountLabel;
+  elements.memberAmount.disabled = collectionPlaced || automaticPayerAmount;
+  elements.memberAmount.title = automaticPayerAmount ? "This payer total is calculated from participating family members." : "";
+  if (automaticPayerAmount) {
+    elements.memberAmount.value = "";
+    elements.quickMemberAmount.value = "";
+  }
   elements.memberLateFeeMinimum.disabled = collectionPlaced;
   elements.memberLateFeePercentage.disabled = collectionPlaced;
-  elements.memberStart.disabled = collectionPlaced;
+  elements.memberStart.disabled = collectionPlaced || !isPayer;
+  elements.memberStart.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
+  elements.memberAgreementEnd.disabled = collectionPlaced || !isPayer;
+  elements.memberAgreementEnd.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
   elements.memberInactive.disabled = collectionPlaced;
   elements.memberResponsibleParty.disabled = collectionPlaced;
 
@@ -1140,6 +1166,12 @@ function renderDetail() {
   elements.quickProfileForm.querySelectorAll("input, select, button").forEach((control) => {
     control.disabled = collectionPlaced;
   });
+  elements.quickMemberStart.disabled = collectionPlaced || !isPayer;
+  elements.quickMemberStart.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
+  elements.quickMemberAgreementEnd.disabled = collectionPlaced || !isPayer;
+  elements.quickMemberAgreementEnd.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
+  elements.quickMemberAmount.disabled = collectionPlaced || automaticPayerAmount;
+  elements.quickMemberAmount.title = automaticPayerAmount ? "This payer total is calculated from participating family members." : "";
 }
 
 function populateResponsiblePartyChoices(member, select = elements.memberResponsibleParty) {
@@ -1190,7 +1222,7 @@ function renderHouseholdCard(member) {
     <div class="household-people">
       ${family.map((person) => `
         <button type="button" class="household-person ${person.id === member.id ? "current" : ""}" data-household-member="${escapeHtml(person.id)}">
-          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-monthly">월 회비: ${formatMoney(person.monthlyAmount)} · Monthly: ${formatMoney(person.monthlyAmount)}</small><small class="household-certification">자격: ${escapeHtml(primaryCertificationLabel(person) || "미설정")}<span lang="en">Certification: ${escapeHtml(primaryCertificationLabel(person) || "Not set")}</span></small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
+          <span class="household-person-main"><strong>${escapeHtml(person.name)}</strong><small>${roleLabels[person.householdRole] || roleLabels.adult}</small><small class="household-monthly">${person.id === payer.id && person.participant === false ? "가족 회비 자동 합산 · Calculated from participating family members" : `월 회비: ${formatMoney(person.monthlyAmount)} · Monthly: ${formatMoney(person.monthlyAmount)}`}</small><small class="household-certification">자격: ${escapeHtml(primaryCertificationLabel(person) || "미설정")}<span lang="en">Certification: ${escapeHtml(primaryCertificationLabel(person) || "Not set")}</span></small><small class="household-contract">계약 시작: ${escapeHtml(person.startDate || "미정")} · Contract start: ${escapeHtml(person.startDate || "Not set")}</small></span>
           <span class="participation-chip ${person.id === payer.id ? "payer" : person.participant === false ? "contact" : "student"}">${person.id === payer.id ? "청구 책임자 · Payer" : person.participant === false ? "비참가 · Contact only" : "수련생 · Participant"}</span>
         </button>
       `).join("")}
@@ -1227,15 +1259,35 @@ function renderFamilyAccountPanel(member) {
       <div class="family-account-member-grid">
         <label>이름 <small lang="en">Name</small><input data-family-name value="${escapeHtml(person.name)}" required></label>
         <label>역할 <small lang="en">Role</small><select data-family-role><option value="parent_guardian"${person.householdRole === "parent_guardian" ? " selected" : ""}>부모/보호자 · Parent/guardian</option><option value="child"${person.householdRole === "child" ? " selected" : ""}>자녀 · Child</option><option value="adult"${person.householdRole === "adult" ? " selected" : ""}>성인 · Adult</option></select></label>
-        <label>월 회비 <small lang="en">Individual monthly amount</small><input data-family-monthly type="number" min="0" step="0.01" value="${Number(person.monthlyAmount || 0)}"></label>
+        <label><span data-family-amount-label>월 회비 <small lang="en">Individual monthly amount</small></span><input data-family-monthly type="number" min="0" step="0.01" value="${Number(person.monthlyAmount || 0)}"${person.id === payer.id && person.participant === false ? " disabled" : ""}></label>
       </div>
     </article>
   `).join("");
+  syncFamilyAmountControls();
+}
+
+function syncFamilyAmountControls(rows = Array.from(elements.familyAccountMembers.querySelectorAll("[data-family-account-member]"))) {
+  const payerId = elements.familyAccountMembers.querySelector("input[name='familyPayer']:checked")?.value;
+  rows.forEach((row) => {
+    const participates = row.querySelector("[data-family-participant]")?.checked;
+    const isAutomaticPayer = row.dataset.familyAccountMember === payerId && !participates;
+    const amount = row.querySelector("[data-family-monthly]");
+    const label = row.querySelector("[data-family-amount-label]");
+    if (!amount || !label) return;
+    amount.disabled = isAutomaticPayer;
+    amount.title = isAutomaticPayer ? "The payer total is calculated from participating family members." : "";
+    label.innerHTML = isAutomaticPayer
+      ? `월 회비 자동 합산 <small lang="en">Calculated from participating family members</small>`
+      : row.dataset.familyAccountMember === payerId
+        ? `본인 월 회비 <small lang="en">This payer's own amount only</small>`
+        : `월 회비 <small lang="en">Individual monthly amount</small>`;
+  });
 }
 
 function updateFamilyAccountDraftTotal() {
   const rows = Array.from(elements.familyAccountMembers.querySelectorAll("[data-family-account-member]"));
   if (!rows.length) return;
+  syncFamilyAmountControls(rows);
   const payerRow = elements.familyAccountMembers.querySelector("input[name='familyPayer']:checked")?.closest("[data-family-account-member]");
   const payerName = payerRow?.querySelector("[data-family-name]")?.value.trim() || "Not selected";
   const monthlyTotal = rows
@@ -2517,7 +2569,9 @@ function saveFamilyAccount(event) {
       name: row.querySelector("[data-family-name]").value.trim() || member.name,
       householdRole: row.querySelector("[data-family-role]").value,
       participant: row.querySelector("[data-family-participant]").checked,
-      monthlyAmount: row.querySelector("[data-family-monthly]").value,
+      monthlyAmount: member.id === payerId && !row.querySelector("[data-family-participant]").checked
+        ? 0
+        : row.querySelector("[data-family-monthly]").value,
       responsiblePartyId: payerId,
       parentName: member.id === payerId ? "" : payerName,
       householdName,
@@ -2910,6 +2964,7 @@ function saveQuickProfile(event) {
     ? defaultAgreementEndDate(startDate)
     : requestedEnd;
   const payerId = elements.quickResponsibleParty.value || member.id;
+  const automaticPayerAmount = payerId === member.id && member.participant === false;
   state.store = upsertMember(state.store, {
     ...member,
     name: elements.quickMemberName.value,
@@ -2924,7 +2979,7 @@ function saveQuickProfile(event) {
     responsiblePartyId: payerId,
     parentName: parentNameForPayer(member, payerId, member.parentName),
     agreementType: elements.quickAgreementType.value,
-    monthlyAmount: elements.quickMemberAmount.value,
+    monthlyAmount: automaticPayerAmount ? 0 : elements.quickMemberAmount.value,
     startDate,
     agreementEndDate
   });
@@ -2940,6 +2995,7 @@ function saveMember(event) {
     return;
   }
   const payerId = elements.memberResponsibleParty.value || member.id;
+  const automaticPayerAmount = payerId === member.id && !elements.memberParticipant.checked;
   const householdName = elements.memberHousehold.value.trim() || suggestedHouseholdName(payerId, member);
   state.store = upsertMember(state.store, {
     ...member,
@@ -2972,7 +3028,7 @@ function saveMember(event) {
     beltLevel: elements.memberBeltLevel.value || elements.memberMuayThaiLevel.value,
     nextLevel: elements.memberNextLevel.value,
     squareCustomerId: elements.memberSquareCustomerId.value,
-    monthlyAmount: elements.memberAmount.value,
+    monthlyAmount: automaticPayerAmount ? 0 : elements.memberAmount.value,
     lateFeeMinimum: elements.memberLateFeeMinimum.value,
     lateFeePercentage: elements.memberLateFeePercentage.value,
     startDate: elements.memberStart.value,

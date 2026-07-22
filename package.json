@@ -1,6 +1,6 @@
 {
   "name": "master-lee-payment-tracker",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "Desktop payment tracker for World Martial Arts Center",
   "author": "World Martial Arts Center",
   "private": true,
@@ -27,6 +27,7 @@
     "files": [
       "electron/**/*",
       "index.html",
+      "advanced.html",
       "src/**/*",
       "package.json"
     ],
