@@ -1729,7 +1729,7 @@ function openEditor(mode) {
       fields: [
         field("Name", "name", member.name, "text", true, "full"),
         field("Birthday", "dob", member.dob, "date"),
-        field("Family / household name", "householdName", member.householdName, "text"),
+        householdField("Family / household name", member.householdName),
         selectField("Family role", "householdRole", member.householdRole || "adult", [["adult", "Adult"], ["parent", "Parent / guardian"], ["child", "Child"]]),
         checkboxField("Participates in classes", "participant", member.participant !== false)
       ]
@@ -1763,9 +1763,9 @@ function openEditor(mode) {
     family: {
       eyebrow: "Family · 가족",
       title: "Family structure",
-      help: "Assign this person to a family and choose who is responsible for payment.",
+      help: "Pick an existing household from the list or type a new name. Households are named after the responsible payer's full name, so shared last names stay separate.",
       fields: [
-        field("Family / household name", "householdName", member.householdName, "text", false, "full"),
+        householdField("Family / household name", member.householdName, "full"),
         selectField("Family role", "householdRole", member.householdRole || "adult", [["adult", "Adult"], ["parent", "Parent / guardian"], ["child", "Child"]]),
         selectField("Responsible payer", "responsiblePartyId", payer.id, state.store.members.filter((candidate) => !candidate.inactive).map((candidate) => [candidate.id, candidate.name || "New member"])),
         checkboxField("Participates in classes", "participant", member.participant !== false)
@@ -1790,6 +1790,17 @@ function openEditor(mode) {
   el.editorFields.innerHTML = config.fields.join("");
   if (mode === "contract" && !isPayer(member)) {
     el.editorFields.querySelectorAll("input, select").forEach((input) => { input.disabled = true; });
+  }
+  if (mode === "family") {
+    // Choosing a payer names the household after that person's full name
+    // when the name field is still blank.
+    const payerSelect = el.editorFields.querySelector("[name='responsiblePartyId']");
+    const householdInput = el.editorFields.querySelector("[name='householdName']");
+    payerSelect?.addEventListener("change", () => {
+      if (householdInput.value.trim()) return;
+      const chosen = state.store.members.find((candidate) => candidate.id === payerSelect.value);
+      if (chosen?.name) householdInput.value = `${chosen.name} family`;
+    });
   }
   el.editorDialog.showModal();
   el.editorFields.querySelector("input:not([type='checkbox']):not(:disabled)")?.focus();
@@ -1846,6 +1857,24 @@ function saveEditor(event) {
 
 function field(label, name, value = "", type = "text", required = false, className = "") {
   return `<label class="${className}"><span>${escapeHtml(label)}</span><input name="${name}" type="${type}" value="${escapeAttr(value)}" ${required ? "required" : ""}></label>`;
+}
+
+function householdNameOptions() {
+  const seen = new Map();
+  state.store.members.forEach((member) => {
+    const name = String(member.householdName || "").trim();
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+  });
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+// A datalist combobox: type a new household name freely, or pick an existing
+// one — the list filters to matching names as you type, like the search bar.
+function householdField(label, value = "", className = "") {
+  return `<label class="${className}"><span>${escapeHtml(label)}</span>
+    <input name="householdName" type="text" value="${escapeAttr(value)}" list="householdNameList" autocomplete="off" placeholder="Type a new name or pick an existing household">
+    <datalist id="householdNameList">${householdNameOptions().map((name) => `<option value="${escapeAttr(name)}"></option>`).join("")}</datalist>
+  </label>`;
 }
 
 function moneyField(label, name, value = "") {
