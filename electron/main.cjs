@@ -85,8 +85,8 @@ function createWindow() {
     height: 850,
     minWidth: 1060,
     minHeight: 720,
-    title: "회비 관리 · Payment Tracker",
-    backgroundColor: "#f7f4ef",
+    title: "WMAC Member Desk",
+    backgroundColor: "#f4f7f3",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

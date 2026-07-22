@@ -291,6 +291,65 @@
           </div>
         </details>
       </section>
+
+      <section id="advancedView" class="advanced-view hidden">
+        <div class="page-heading advanced-page-heading">
+          <button id="advancedBackButton" class="back-button" type="button" aria-label="Back">←</button>
+          <div>
+            <p class="eyebrow">Occasional tasks · 도구</p>
+            <h1>Advanced tools</h1>
+            <p>Reports, contract renewals, and collections — kept out of the daily workflow.</p>
+          </div>
+        </div>
+
+        <div class="advanced-grid">
+          <section class="info-card advanced-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Reports · 보고서</p>
+                <h2>Reports</h2>
+              </div>
+            </div>
+            <div class="advanced-actions">
+              <button id="yearReportThisButton" class="advanced-action" type="button">
+                <span></span><small>Printable year-to-date revenue report for tax records</small>
+              </button>
+              <button id="yearReportLastButton" class="advanced-action" type="button">
+                <span></span><small>Printable year-end revenue report for tax records</small>
+              </button>
+              <button id="dailyStatusButton" class="advanced-action" type="button">
+                <span>Daily payment status email</span><small>Downloads today’s status CSV and opens an email draft</small>
+              </button>
+              <button id="nextYearRosterButton" class="advanced-action" type="button">
+                <span>New-year member roster CSV</span><small>Active members, ready for next year’s spreadsheet</small>
+              </button>
+            </div>
+          </section>
+
+          <section class="info-card advanced-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Contracts · 계약 갱신</p>
+                <h2>Contract renewals</h2>
+              </div>
+              <button id="openBlankContractButton" class="text-button" type="button">Open blank contract</button>
+            </div>
+            <p class="advanced-note">Agreements that have expired or expire within 30 days. Emailing a renewal downloads the contract first — attach it to the message manually.</p>
+            <div id="renewalList" class="advanced-list"></div>
+          </section>
+
+          <section class="info-card advanced-card collections">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Collections · 추심</p>
+                <h2>Collections</h2>
+              </div>
+            </div>
+            <p class="advanced-note">Accounts 10+ days behind can be placed with First Credit Services. Finalize every payment and fee first — creating a placement file freezes the balance and stops WMAC billing for that member.</p>
+            <div id="collectionList" class="advanced-list"></div>
+          </section>
+        </div>
+      </section>
     </main>
 
     <dialog id="editorDialog" class="editor-dialog">
@@ -349,11 +408,66 @@
         <label class="tool-tile" for="paymentCsv"><span>Import payments</span><small>CSV file</small></label>
         <input id="paymentCsv" class="hidden" type="file" accept=".csv,text/csv">
         <button id="exportButton" class="tool-tile" type="button"><span>Download backup</span><small>Full CSV</small></button>
-        <a class="tool-tile" href="advanced.html"><span>Open advanced tools</span><small>Reports, renewals &amp; collections</small></a>
+        <label class="tool-tile" for="restoreCsv"><span>Restore backup</span><small>Replace data from a backup CSV</small></label>
+        <input id="restoreCsv" class="hidden" type="file" accept=".csv,text/csv">
+        <button id="advancedToolsButton" class="tool-tile wide" type="button"><span>Open advanced tools</span><small>Reports, renewals &amp; collections</small></button>
       </div>
     </dialog>
 
-    <div id="toast" class="toast hidden" role="status"></div>
+    <dialog id="collectionDialog" class="editor-dialog collection-dialog">
+      <form id="collectionForm">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Collections · 추심 배치</p>
+            <h2>First Credit Services placement</h2>
+            <p id="collectionMemberLine"></p>
+          </div>
+          <button id="closeCollectionButton" class="icon-button" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="collection-warning">
+          <strong>Important</strong>
+          <p>Finalize every payment and fee before saving. Creating the file freezes the balance — billing, payment drafts, and direct collection attempts for this member must stop.</p>
+        </div>
+        <p id="collectionMissing" class="collection-missing"></p>
+        <div id="collectionSummary" class="collection-summary"></div>
+        <h3 class="collection-section-title">Required member information</h3>
+        <div class="editor-fields">
+          <label><span>First name</span><input name="firstName" required></label>
+          <label><span>Last name</span><input name="lastName" required></label>
+          <label class="full"><span>Street address</span><input name="address" required></label>
+          <label><span>City</span><input name="city" required></label>
+          <label><span>State</span><input name="state" maxlength="2" required></label>
+          <label><span>ZIP code</span><input name="zip" inputmode="numeric" required></label>
+          <label><span>Date of birth</span><input name="dob" type="date" required></label>
+          <label><span>Home phone</span><input name="homePhone" type="tel" required></label>
+          <label><span>Work phone</span><input name="workPhone" type="tel" required></label>
+          <label><span>Cell phone</span><input name="cellPhone" type="tel" required></label>
+        </div>
+        <h3 class="collection-section-title">Agreement and charge-off</h3>
+        <div class="editor-fields">
+          <label><span>Agreement sign date</span><input name="agreementSignDate" type="date" required></label>
+          <label><span>Agreement type</span><select name="agreementType"><option value="Contract">Contract</option><option value="Month-to-Month">Month-to-Month</option></select></label>
+          <label><span>Agreement expiration</span><input name="agreementExpirationDate" type="date"></label>
+          <label><span>Charge-off date</span><input name="chargeOffDate" type="date" required></label>
+          <label><span>Service fees</span><span class="money-input"><b>$</b><input name="serviceFees" type="number" min="0" step="0.01" value="0" required></span></label>
+          <label><span>Down payment <small>optional</small></span><span class="money-input"><b>$</b><input name="downPayment" type="number" min="0" step="0.01"></span></label>
+          <label><span>Email consent</span><select name="emailConsent"><option value="No">No</option><option value="Yes">Yes</option></select></label>
+          <label><span>Text consent</span><select name="textConsent"><option value="No">No</option><option value="Yes">Yes</option></select></label>
+        </div>
+        <label class="collection-confirm">
+          <input id="collectionFinalized" type="checkbox" required>
+          <span><b>I finalized the balance.</b> WMAC billing, drafts, and collection attempts stop as of the charge-off date, and the amounts will not change afterward.</span>
+        </label>
+        <p class="collection-send-note">Email the saved spreadsheet to placements@fcsbpo.com — attach the file manually, the app cannot add attachments automatically.</p>
+        <div class="dialog-actions">
+          <button id="cancelCollectionButton" class="button secondary" type="button">Cancel</button>
+          <button id="collectionSaveButton" class="button secondary" type="submit">Save spreadsheet</button>
+          <button id="collectionSaveEmailButton" class="button primary" type="button">Save + open email</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden" role="status" popover="manual"></div>
     <script type="module" src="src/simple.js"></script>
   </body>
 </html>

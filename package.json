@@ -27,7 +27,6 @@
     "files": [
       "electron/**/*",
       "index.html",
-      "advanced.html",
       "src/**/*",
       "package.json"
     ],

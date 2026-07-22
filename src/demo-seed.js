@@ -8,17 +8,12 @@ import {
 
 const STORE_KEY = "master-lee-payment-tracker";
 const BACKUP_POINTER_KEY = "master-lee-payment-tracker-demo-previous-key";
-const now = new Date().toISOString().replace(/[:.]/g, "-");
-const backupKey = `master-lee-payment-tracker-before-demo-${now}`;
-const previous = localStorage.getItem(STORE_KEY);
 
-if (previous) {
-  localStorage.setItem(backupKey, previous);
-  localStorage.setItem(BACKUP_POINTER_KEY, backupKey);
-}
-
-let store = createEmptyStore();
-const members = [
+// The demo people, payments, and down payments live here so both the standalone
+// seeder page and the main app's "Load sample data" action build identical data.
+export function buildDemoStore() {
+  let store = createEmptyStore();
+  const members = [
   {
     id: "demo-lee-parent",
     name: "Janet Lee",
@@ -155,48 +150,75 @@ const members = [
   }
 ];
 
-for (const member of members) {
-  store = upsertMember(store, member);
-}
-
-// Record the Lee family down payment so you can see the "Already recorded"
-// state (and its lump-sum entry in the 2025 tax revenue). Sam Park's contract
-// intentionally keeps its down-payment amount UNrecorded so you can click
-// through the explicit "Record down payment" workflow yourself.
-store = recordContractDownPayment(store, "demo-lee-parent").store;
-
-const payments = [
-  ["demo-lee-parent", "2026-01", 280, "2026-01-15", "manual"],
-  ["demo-lee-parent", "2026-02", 280, "2026-02-15", "manual"],
-  ["demo-lee-parent", "2026-03", 280, "2026-03-15", "manual"],
-  ["demo-park-sam", "2026-02", 120, "2026-02-05", "manual"],
-  ["demo-park-sam", "2026-03", 120, "2026-03-05", "manual"],
-  ["demo-park-sam", "2026-04", 120, "2026-04-05", "manual"],
-  ["demo-kim-sarah", "2025-12", 120, "2025-12-15", "manual"],
-  ["demo-kim-sarah", "2026-01", 120, "2026-01-15", "manual"],
-  ["demo-kim-sarah", "2026-02", 120, "2026-02-15", "manual"],
-  ["demo-chen-mia", "2026-07", 150, "2026-07-01", "manual"],
-  ["demo-garcia-alex", "2026-06", 110, "2026-06-20", "manual"]
-];
-for (const [memberId, month, amount, paidAt, source] of payments) {
-  store = addPayment(store, { memberId, month, amount, paidAt, source });
-}
-
-localStorage.setItem(STORE_KEY, JSON.stringify({
-  ...store,
-  updatedAt: new Date().toISOString()
-}));
-
-const status = document.querySelector("#status");
-status.textContent = `Loaded ${store.members.length} demo people and ${store.payments.length} demo ledger entries. ${previous ? `Your previous store was backed up as ${backupKey}.` : "No previous local store was found."}`;
-
-document.querySelector("#restoreButton").addEventListener("click", () => {
-  const key = localStorage.getItem(BACKUP_POINTER_KEY);
-  const saved = key ? localStorage.getItem(key) : "";
-  if (!saved) {
-    status.textContent = "No previous demo backup was found in this browser.";
-    return;
+  for (const member of members) {
+    store = upsertMember(store, member);
   }
-  localStorage.setItem(STORE_KEY, saved);
-  status.textContent = `Restored previous local store from ${key}. Open the app again to view it.`;
-});
+
+  // Record the Lee family down payment so you can see the "Already recorded"
+  // state (and its lump-sum entry in the 2025 tax revenue). Sam Park's contract
+  // intentionally keeps its down-payment amount UNrecorded so you can click
+  // through the explicit "Record down payment" workflow yourself.
+  store = recordContractDownPayment(store, "demo-lee-parent").store;
+
+  const payments = [
+    ["demo-lee-parent", "2026-01", 280, "2026-01-15", "manual"],
+    ["demo-lee-parent", "2026-02", 280, "2026-02-15", "manual"],
+    ["demo-lee-parent", "2026-03", 280, "2026-03-15", "manual"],
+    ["demo-park-sam", "2026-02", 120, "2026-02-05", "manual"],
+    ["demo-park-sam", "2026-03", 120, "2026-03-05", "manual"],
+    ["demo-park-sam", "2026-04", 120, "2026-04-05", "manual"],
+    ["demo-kim-sarah", "2025-12", 120, "2025-12-15", "manual"],
+    ["demo-kim-sarah", "2026-01", 120, "2026-01-15", "manual"],
+    ["demo-kim-sarah", "2026-02", 120, "2026-02-15", "manual"],
+    ["demo-chen-mia", "2026-07", 150, "2026-07-01", "manual"],
+    ["demo-garcia-alex", "2026-06", 110, "2026-06-20", "manual"]
+  ];
+  for (const [memberId, month, amount, paidAt, source] of payments) {
+    store = addPayment(store, { memberId, month, amount, paidAt, source });
+  }
+
+  return { ...store, updatedAt: new Date().toISOString() };
+}
+
+// Writes demo data into the given Storage, backing up any existing store first.
+// Returns a summary the caller can surface to the user.
+export function seedDemoData(storage = localStorage) {
+  const previous = storage.getItem(STORE_KEY);
+  let backupKey = "";
+  if (previous) {
+    backupKey = `master-lee-payment-tracker-before-demo-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    storage.setItem(backupKey, previous);
+    storage.setItem(BACKUP_POINTER_KEY, backupKey);
+  }
+  const store = buildDemoStore();
+  storage.setItem(STORE_KEY, JSON.stringify(store));
+  return {
+    memberCount: store.members.length,
+    paymentCount: store.payments.length,
+    hadPrevious: Boolean(previous),
+    backupKey
+  };
+}
+
+export function restorePreDemoStore(storage = localStorage) {
+  const key = storage.getItem(BACKUP_POINTER_KEY);
+  const saved = key ? storage.getItem(key) : "";
+  if (!saved) {
+    return { restored: false, backupKey: "" };
+  }
+  storage.setItem(STORE_KEY, saved);
+  return { restored: true, backupKey: key };
+}
+
+// When loaded directly by demo-seed.html (has #status), run immediately.
+if (typeof document !== "undefined" && document.querySelector("#status")) {
+  const status = document.querySelector("#status");
+  const summary = seedDemoData(localStorage);
+  status.textContent = `Loaded ${summary.memberCount} demo people and ${summary.paymentCount} demo ledger entries. ${summary.hadPrevious ? `Your previous store was backed up as ${summary.backupKey}.` : "No previous local store was found."}`;
+  document.querySelector("#restoreButton")?.addEventListener("click", () => {
+    const result = restorePreDemoStore(localStorage);
+    status.textContent = result.restored
+      ? `Restored previous local store from ${result.backupKey}. Open the app again to view it.`
+      : "No previous demo backup was found in this browser.";
+  });
+}

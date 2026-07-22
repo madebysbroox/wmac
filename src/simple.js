@@ -7,8 +7,13 @@ import {
   getAgreementExpirationStatus,
   getContractDownPaymentRecord,
   clearContractDownPayment,
+  exportDailyPaymentStatusRows,
+  exportRosterRows,
   getLandscapeRows,
   getLateFeeBalance,
+  getYearRevenue,
+  isFullBackupCsv,
+  restoreStoreFromBackupRows,
   getMemberBalance,
   getMemberPaymentState,
   getResponsibleParty,
@@ -29,6 +34,21 @@ import {
 } from "./data.js";
 import { loadStoreWithMigrationBackup } from "./storage.js";
 import { buildReminderEmail, formatMonthEn } from "./i18n.js";
+import { buildRenewalEmail } from "./renewals.js";
+import {
+  buildCollectionPlacement,
+  collectionInfoFromDraft,
+  collectionPlacementFilename,
+  createCollectionDraft,
+  createFirstCreditServicesWorkbook,
+  firstCreditServicesEmailDraft,
+  getCollectionMissingFields
+} from "./collections.js";
+import { seedDemoData } from "./demo-seed.js";
+
+const CONTRACT_PDF_URL = new URL("./assets/WMAC-membership-agreement-with-contact-permission.pdf", import.meta.url).href;
+const CONTRACT_PDF_FILENAME = "WMAC-membership-agreement-renewal.pdf";
+const DAILY_STATUS_EMAIL = "world_martial_art_ct@msn.com";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
 const RECENT_KEY = "master-lee-payment-tracker-recent";
@@ -40,6 +60,8 @@ const state = {
   memberViewMode: "list",
   editorMode: "",
   historyExpanded: false,
+  collectionMemberId: "",
+  collectionDraft: null,
   squarePayments: [],
   squareSelectedId: "",
   squareConfigured: false,
@@ -64,7 +86,11 @@ const ids = [
   "bioDob", "bioAddress", "editorDialog", "editorForm", "editorEyebrow", "editorTitle", "editorHelp",
   "editorFields", "closeEditorButton", "cancelEditorButton", "paymentDialog", "paymentForm", "closePaymentButton",
   "cancelPaymentButton", "paymentMonth", "paymentAmount", "paymentDate", "paymentNote",
-  "toolsDialog", "closeToolsButton", "memberCsv", "paymentCsv", "exportButton", "toast",
+  "toolsDialog", "closeToolsButton", "memberCsv", "paymentCsv", "exportButton", "restoreCsv", "advancedToolsButton", "toast",
+  "advancedView", "advancedBackButton", "yearReportThisButton", "yearReportLastButton", "dailyStatusButton",
+  "nextYearRosterButton", "openBlankContractButton", "renewalList", "collectionList",
+  "collectionDialog", "collectionForm", "closeCollectionButton", "cancelCollectionButton", "collectionMemberLine",
+  "collectionMissing", "collectionSummary", "collectionFinalized", "collectionSaveButton", "collectionSaveEmailButton",
   "squareView", "syncSquareButton", "syncSquareLabel", "squareEmptySyncButton", "squarePendingCount", "squareMatchCount", "squareApprovedCount",
   "squareConnectionStatus", "squareEmpty", "squareWorkspace", "squareQueue", "squareDetail", "squareRelayUrl",
   "squareRelayToken", "saveSquareSettingsButton", "squareSettingsStatus"
@@ -114,7 +140,21 @@ el.cancelPaymentButton.addEventListener("click", () => el.paymentDialog.close())
 el.paymentForm.addEventListener("submit", saveCustomPayment);
 el.memberCsv.addEventListener("change", () => importCsv(el.memberCsv.files[0], "members"));
 el.paymentCsv.addEventListener("change", () => importCsv(el.paymentCsv.files[0], "payments"));
+el.restoreCsv.addEventListener("change", () => importCsv(el.restoreCsv.files[0], "backup"));
 el.exportButton.addEventListener("click", exportBackup);
+el.advancedToolsButton.addEventListener("click", () => { el.toolsDialog.close(); showAdvanced(); });
+el.advancedBackButton.addEventListener("click", showHome);
+el.yearReportThisButton.addEventListener("click", () => runYearReport(new Date().getFullYear()));
+el.yearReportLastButton.addEventListener("click", () => runYearReport(new Date().getFullYear() - 1));
+el.dailyStatusButton.addEventListener("click", exportDailyStatusEmail);
+el.nextYearRosterButton.addEventListener("click", exportNextYearRoster);
+el.openBlankContractButton.addEventListener("click", openRenewalContract);
+el.closeCollectionButton.addEventListener("click", () => el.collectionDialog.close());
+el.cancelCollectionButton.addEventListener("click", () => el.collectionDialog.close());
+el.collectionForm.addEventListener("input", updateCollectionPreview);
+el.collectionForm.addEventListener("change", updateCollectionPreview);
+el.collectionForm.addEventListener("submit", (event) => finalizeCollection(event, false));
+el.collectionSaveEmailButton.addEventListener("click", (event) => finalizeCollection(event, true));
 el.syncSquareButton.addEventListener("click", syncSquarePayments);
 el.squareEmptySyncButton.addEventListener("click", syncSquarePayments);
 el.saveSquareSettingsButton.addEventListener("click", saveSquareSettings);
@@ -212,6 +252,13 @@ function showSquare() {
   }
 }
 
+function showAdvanced() {
+  state.view = "advanced";
+  state.selectedId = "";
+  el.searchInput.value = "";
+  render();
+}
+
 function openMember(memberId) {
   if (!state.store.members.some((member) => member.id === memberId)) return;
   state.view = "member";
@@ -227,6 +274,7 @@ function render() {
   el.rosterView.classList.toggle("hidden", state.view !== "roster");
   el.memberView.classList.toggle("hidden", state.view !== "member");
   el.squareView.classList.toggle("hidden", state.view !== "square");
+  el.advancedView.classList.toggle("hidden", state.view !== "advanced");
   el.homeNav.classList.toggle("active", state.view === "home");
   el.membersNav.classList.toggle("active", state.view === "roster" || state.view === "member");
   el.squareNav.classList.toggle("active", state.view === "square");
@@ -234,6 +282,7 @@ function render() {
   if (state.view === "roster") renderRoster();
   if (state.view === "member") renderMember();
   if (state.view === "square") renderSquare();
+  if (state.view === "advanced") renderAdvanced();
   renderSquareNavBadge();
 }
 
@@ -259,7 +308,10 @@ function renderHome() {
   el.memberCount.textContent = String(active.length);
 
   if (!due.length) {
-    el.attentionList.innerHTML = `<div class="empty-message">${active.length ? "Everyone is paid up. Nothing needs attention today." : "Add your first member to get started."}</div>`;
+    el.attentionList.innerHTML = active.length
+      ? `<div class="empty-message">Everyone is paid up. Nothing needs attention today.</div>`
+      : `<div class="empty-message">No members yet. <button type="button" class="link-button" data-load-demo>Load sample data</button> to explore the full workflow, or use New member.</div>`;
+    bindDemoLoaders();
   } else {
     el.attentionList.innerHTML = due.slice(0, 5).map(({ member, status, balance }) => `
       <div class="attention-row">
@@ -341,10 +393,13 @@ function renderRoster() {
         <span class="mini-status ${level}">${statusLabel(level)}</span>
         <strong>${balance.dueNow ? money(balance.dueNow) : "—"}</strong>
       </button>`;
-  }).join("") : `<div class="empty-message">No members in this group.</div>`;
+  }).join("") : state.rosterFilter === "all"
+    ? `<div class="empty-message">No members yet. <button type="button" class="link-button" data-load-demo>Load sample data</button> to explore the full workflow, or use New member.</div>`
+    : `<div class="empty-message">No members in this group.</div>`;
   el.rosterList.querySelectorAll("[data-open-member]").forEach((button) =>
     button.addEventListener("click", () => openMember(button.dataset.openMember))
   );
+  bindDemoLoaders();
 }
 
 function renderMemberLandscape() {
@@ -543,6 +598,330 @@ function renderBio(member) {
   el.bioEmail.textContent = member.email || "Not set";
   el.bioDob.textContent = dateLabel(member.dob);
   el.bioAddress.textContent = address || "Not set";
+}
+
+function renderAdvanced() {
+  const thisYear = new Date().getFullYear();
+  el.yearReportThisButton.querySelector("span").textContent = `${thisYear} year-end report`;
+  el.yearReportLastButton.querySelector("span").textContent = `${thisYear - 1} year-end report`;
+  renderRenewalList();
+  renderCollectionList();
+}
+
+function renderRenewalList() {
+  const rows = state.store.members
+    .map((member) => ({ member, renewal: getAgreementExpirationStatus(member) }))
+    .filter(({ renewal }) => renewal.level === "expired" || renewal.level === "expiring")
+    .sort((a, b) => (a.renewal.daysUntil ?? 0) - (b.renewal.daysUntil ?? 0));
+  el.renewalList.innerHTML = rows.length ? rows.map(({ member, renewal }) => {
+    const detail = renewal.level === "expired"
+      ? `Contract expired ${dateLabel(renewal.expirationDate)}`
+      : `Expires ${dateLabel(renewal.expirationDate)} · ${renewal.daysUntil} day${renewal.daysUntil === 1 ? "" : "s"} left`;
+    const email = member.email || payerFor(member).email || "";
+    return `
+      <div class="advanced-row">
+        <button class="advanced-person" type="button" data-open-member="${member.id}">
+          <div class="avatar">${escapeHtml(initials(member.name))}</div>
+          <div class="person-copy"><strong>${escapeHtml(member.name)}</strong><small class="${renewal.level === "expired" ? "overdue-text" : ""}">${escapeHtml(detail)}</small></div>
+        </button>
+        <button class="button secondary small" type="button" data-renewal-email="${member.id}" ${email ? "" : `disabled title="Save an email address first."`}>Email renewal</button>
+      </div>`;
+  }).join("") : `<div class="empty-message">No contracts are expired or expiring within 30 days.</div>`;
+  el.renewalList.querySelectorAll("[data-open-member]").forEach((button) =>
+    button.addEventListener("click", () => openMember(button.dataset.openMember))
+  );
+  el.renewalList.querySelectorAll("[data-renewal-email]").forEach((button) =>
+    button.addEventListener("click", () => sendRenewalEmail(button.dataset.renewalEmail))
+  );
+}
+
+function renderCollectionList() {
+  const behind = billingPayers()
+    .map((member) => ({ member, status: accountPaymentState(member), balance: accountBalance(member) }))
+    .filter(({ member, status }) => status.level === "late" && member.collectionPlacement?.status !== "charged_off")
+    .sort((a, b) => b.status.oldestDaysLate - a.status.oldestDaysLate);
+  const placed = state.store.members
+    .filter((member) => member.collectionPlacement?.status === "charged_off")
+    .sort((a, b) => String(b.collectionPlacement.chargeOffDate).localeCompare(String(a.collectionPlacement.chargeOffDate)));
+  const behindRows = behind.map(({ member, status, balance }) => `
+    <div class="advanced-row">
+      <button class="advanced-person" type="button" data-open-member="${member.id}">
+        <div class="avatar">${escapeHtml(initials(member.name))}</div>
+        <div class="person-copy"><strong>${escapeHtml(member.name)}</strong><small class="overdue-text">${status.oldestDaysLate} days behind · ${money(balance.dueNow)} due</small></div>
+      </button>
+      <button class="button secondary small" type="button" data-collection-member="${member.id}">Prepare placement…</button>
+    </div>`);
+  const placedRows = placed.map((member) => `
+    <div class="advanced-row placed">
+      <div class="advanced-person">
+        <div class="avatar">${escapeHtml(initials(member.name))}</div>
+        <div class="person-copy"><strong>${escapeHtml(member.name)}</strong><small>Placed ${dateLabel(member.collectionPlacement.chargeOffDate)} · ${money(member.collectionPlacement.frozenBalance)} frozen</small></div>
+      </div>
+      <span class="mini-status">Placed for collection</span>
+    </div>`);
+  el.collectionList.innerHTML = behindRows.concat(placedRows).join("")
+    || `<div class="empty-message">No accounts are far enough behind for collections.</div>`;
+  el.collectionList.querySelectorAll("[data-open-member]").forEach((button) =>
+    button.addEventListener("click", () => openMember(button.dataset.openMember))
+  );
+  el.collectionList.querySelectorAll("[data-collection-member]").forEach((button) =>
+    button.addEventListener("click", () => openCollectionDialog(button.dataset.collectionMember))
+  );
+}
+
+function openRenewalContract() {
+  const contractWindow = window.open(CONTRACT_PDF_URL, "_blank");
+  if (!contractWindow) toast("Allow pop-ups to open the contract.");
+}
+
+function downloadRenewalContract() {
+  const link = document.createElement("a");
+  link.href = CONTRACT_PDF_URL;
+  link.download = CONTRACT_PDF_FILENAME;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function sendRenewalEmail(memberId) {
+  const member = state.store.members.find((candidate) => candidate.id === memberId);
+  if (!member) return;
+  const email = member.email || payerFor(member).email;
+  if (!email) return toast("Save an email address first.");
+  const message = buildRenewalEmail(member, getAgreementExpirationStatus(member));
+  downloadRenewalContract();
+  toast("Contract downloaded — attach it to the email.");
+  window.location.href = `mailto:${email}?subject=${encodeURIComponent(message.subject)}&body=${encodeURIComponent(message.body)}`;
+}
+
+function runYearReport(year) {
+  const report = getYearRevenue(state.store, year);
+  if (report.paymentCount === 0) return toast(`No payments are recorded for ${year}.`);
+  const monthRows = report.monthly.map((row) => {
+    const monthNumber = Number(row.month.split("-")[1]);
+    const monthName = new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", { month: "long" });
+    return `<tr><td>${monthName}</td><td class="num">${row.count}</td><td class="money">${money(row.total)}</td></tr>`;
+  }).join("");
+  const memberRows = report.byMember.map((entry) =>
+    `<tr><td>${escapeHtml(entry.name)}</td><td class="num">${entry.count}</td><td class="money">${money(entry.total)}</td></tr>`
+  ).join("");
+  const reportHtml = `<!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>${year} Year-End Report · World Martial Arts Center</title>
+        <style>
+          body { margin: 0; background: #f4f7f3; color: #183133; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          .page { width: min(820px, calc(100vw - 32px)); margin: 24px auto; padding: 46px; background: #fff; border-radius: 14px; box-shadow: 0 18px 48px rgba(29, 54, 49, .08); }
+          header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; border-bottom: 3px solid #1f6b52; padding-bottom: 24px; }
+          img { width: 88px; height: 88px; object-fit: contain; border-radius: 50%; }
+          h1 { margin: 0 0 8px; font-family: Georgia, "Times New Roman", serif; font-weight: 500; font-size: 32px; letter-spacing: -.02em; }
+          h2 { margin: 32px 0 8px; font-size: 20px; }
+          p { margin: 0; color: #687a7b; }
+          .meta { text-align: right; color: #687a7b; line-height: 1.45; }
+          .totals { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 26px; }
+          .totals div { padding: 18px; border: 1px solid #dde5df; border-radius: 12px; background: #f4f7f3; }
+          .totals span { display: block; color: #687a7b; font-size: 14px; }
+          .totals strong { font-size: 30px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+          th, td { padding: 12px 10px; border-bottom: 1px solid #dde5df; text-align: left; }
+          th { color: #687a7b; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+          .num, .money { text-align: right; }
+          tfoot td { border-top: 3px solid #1f6b52; border-bottom: 0; font-weight: 800; font-size: 19px; }
+          .note { margin-top: 34px; padding: 18px; border-radius: 12px; background: #e7f2ec; color: #15503e; }
+          .actions { width: min(820px, calc(100vw - 32px)); margin: 0 auto 24px; text-align: right; }
+          button { min-height: 44px; padding: 10px 18px; border: 0; border-radius: 11px; background: #1f6b52; color: #fff; font-weight: 750; cursor: pointer; }
+          @media print {
+            body { background: #fff; }
+            .page { width: auto; margin: 0; box-shadow: none; border-radius: 0; }
+            .actions { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header>
+            <div>
+              <h1>World Martial Arts Center</h1>
+              <p>${year} Year-End Revenue Report · ${year}년 연말 결산 보고서</p>
+            </div>
+            <div class="meta">
+              <img src="${new URL("assets/wmac-logo.jpeg", import.meta.url).href}" alt="World Martial Arts Center logo">
+              <div>Generated ${new Date().toLocaleDateString()}</div>
+            </div>
+          </header>
+          <div class="totals">
+            <div><span>Total revenue</span><strong>${money(report.totalRevenue)}</strong></div>
+            <div><span>Payments received</span><strong>${report.paymentCount}</strong></div>
+          </div>
+          <h2>Revenue by month</h2>
+          <table>
+            <thead><tr><th>Month</th><th class="num">Payments</th><th class="money">Amount</th></tr></thead>
+            <tbody>${monthRows}</tbody>
+            <tfoot><tr><td>Total</td><td class="num">${report.paymentCount}</td><td class="money">${money(report.totalRevenue)}</td></tr></tfoot>
+          </table>
+          <h2>Revenue by member</h2>
+          <table>
+            <thead><tr><th>Member</th><th class="num">Payments</th><th class="money">Amount</th></tr></thead>
+            <tbody>${memberRows}</tbody>
+          </table>
+          <div class="note">Totals are grouped by the month each payment was for. Keep this report for tax records.</div>
+        </main>
+        <div class="actions"><button type="button" onclick="window.print()">Print or save as PDF</button></div>
+      </body>
+    </html>`;
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) return toast("Allow pop-ups to open the report.");
+  reportWindow.document.write(reportHtml);
+  reportWindow.document.close();
+}
+
+function exportDailyStatusEmail() {
+  const today = new Date();
+  const rows = exportDailyPaymentStatusRows(state.store, today);
+  if (rows.length === 0) return toast("There is no data to export.");
+  const date = today.toISOString().slice(0, 10);
+  const filename = `wmac-daily-payment-status-${date}.csv`;
+  downloadCsv(toCsv(rows), filename);
+  const subject = `WMAC daily payment status - ${date}`;
+  const body = [
+    "Hello,",
+    "",
+    "Attached is the daily World Martial Arts Center account and monthly payment-status snapshot.",
+    "",
+    `File to attach: ${filename}`,
+    "",
+    "Thank you,",
+    "World Martial Arts Center"
+  ].join("\r\n");
+  toast("Attach the downloaded daily CSV to the email.");
+  window.location.href = `mailto:${DAILY_STATUS_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function exportNextYearRoster() {
+  const rows = exportRosterRows(state.store);
+  if (rows.length === 0) return toast("There are no active members to export.");
+  const nextYear = new Date().getFullYear() + 1;
+  downloadCsv(toCsv(rows), `wmac-members-${nextYear}.csv`);
+  toast(`Saved ${rows.length} members for the ${nextYear} roster.`);
+}
+
+function collectionMember() {
+  return state.store.members.find((member) => member.id === state.collectionMemberId);
+}
+
+function openCollectionDialog(memberId) {
+  const member = state.store.members.find((candidate) => candidate.id === memberId);
+  if (!member || member.collectionPlacement?.status === "charged_off") return;
+  state.collectionMemberId = memberId;
+  state.collectionDraft = createCollectionDraft(member, state.store.payments, new Date(), state.store.members);
+  Object.entries(state.collectionDraft).forEach(([name, value]) => {
+    const input = el.collectionForm.elements[name];
+    if (input && typeof input.value === "string") input.value = value ?? "";
+  });
+  el.collectionFinalized.checked = false;
+  el.collectionMemberLine.textContent = `${member.name} · liable payer ${state.collectionDraft.responsiblePartyName || member.name}`;
+  updateCollectionPreview();
+  el.collectionDialog.showModal();
+}
+
+function readCollectionDraft() {
+  const draft = { ...state.collectionDraft };
+  [
+    "firstName", "lastName", "address", "city", "state", "zip", "dob", "homePhone", "workPhone", "cellPhone",
+    "agreementSignDate", "agreementType", "agreementExpirationDate", "chargeOffDate", "serviceFees", "downPayment",
+    "emailConsent", "textConsent"
+  ].forEach((name) => {
+    const input = el.collectionForm.elements[name];
+    if (input) draft[name] = input.value;
+  });
+  draft.serviceFees = Number(draft.serviceFees || 0);
+  return draft;
+}
+
+function updateCollectionPreview() {
+  const member = collectionMember();
+  if (!member) return;
+  const draft = readCollectionDraft();
+  const contract = draft.agreementType === "Contract";
+  el.collectionForm.elements.agreementExpirationDate.disabled = !contract;
+  el.collectionForm.elements.agreementExpirationDate.required = contract;
+  const missing = getCollectionMissingFields(draft, member, state.store.payments);
+  el.collectionMissing.textContent = missing.length
+    ? `${missing.length} required item${missing.length === 1 ? "" : "s"} remaining: ${missing.join(" · ")}`
+    : "All required placement fields are ready.";
+  el.collectionMissing.classList.toggle("ready", missing.length === 0);
+  let summary = `
+    <div><span>Liable payer</span><strong>${escapeHtml(draft.responsiblePartyName || member.name)}</strong></div>
+    <div><span>Monthly tuition</span><strong>${money(member.monthlyAmount)}</strong></div>
+    <div><span>Late-fee terms</span><strong>${member.lateFeePercentage ?? 5}% or ${money(member.lateFeeMinimum ?? 5)}</strong></div>`;
+  if (missing.length === 0) {
+    try {
+      const preview = buildCollectionPlacement(member, state.store.payments, draft);
+      summary += `
+        <div><span>Past due</span><strong>${money(preview.pastDueAmount)}</strong></div>
+        <div><span>Late fees</span><strong>${money(preview.lateFees)}</strong></div>
+        <div class="total"><span>Frozen balance</span><strong>${money(preview.frozenBalance)}</strong></div>`;
+    } catch {
+      // The missing-field message above stays the source of truth.
+    }
+  }
+  el.collectionSummary.innerHTML = summary;
+  const ready = missing.length === 0 && el.collectionFinalized.checked;
+  el.collectionSaveButton.disabled = !ready;
+  el.collectionSaveEmailButton.disabled = !ready;
+}
+
+function finalizeCollection(event, openEmail) {
+  event.preventDefault();
+  const member = collectionMember();
+  if (!member || member.collectionPlacement?.status === "charged_off") return;
+  if (!el.collectionForm.reportValidity()) return;
+  const draft = readCollectionDraft();
+  if (getCollectionMissingFields(draft, member, state.store.payments).length || !el.collectionFinalized.checked) {
+    updateCollectionPreview();
+    return;
+  }
+  let placement;
+  try {
+    placement = buildCollectionPlacement(member, state.store.payments, draft);
+  } catch (error) {
+    return toast(error.message);
+  }
+  const filename = collectionPlacementFilename(placement);
+  state.store = upsertMember(state.store, {
+    ...member,
+    inactive: true,
+    address: draft.address,
+    city: draft.city,
+    state: draft.state,
+    zip: draft.zip,
+    dob: draft.dob,
+    homePhone: draft.homePhone,
+    workPhone: draft.workPhone,
+    cellPhone: draft.cellPhone,
+    phone: draft.cellPhone,
+    startDate: draft.agreementSignDate,
+    agreementEndDate: draft.agreementExpirationDate || defaultAgreementEndDate(draft.agreementSignDate),
+    agreementType: draft.agreementType,
+    downPayment: draft.downPayment,
+    emailConsent: draft.emailConsent,
+    textConsent: draft.textConsent,
+    collectionInfo: collectionInfoFromDraft(draft),
+    collectionPlacement: placement
+  });
+  saveStore("Collection placement saved");
+  downloadBlob(
+    new Blob([createFirstCreditServicesWorkbook(placement)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    filename
+  );
+  el.collectionDialog.close();
+  toast(`Saved ${filename}.`);
+  render();
+  if (openEmail) {
+    const email = firstCreditServicesEmailDraft(placement, filename);
+    window.location.href = `mailto:${email.to}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
+  }
 }
 
 function renderSquareNavBadge() {
@@ -1120,6 +1499,10 @@ async function importCsv(file, kind) {
   try {
     const { headers, records } = parseCsv(await file.text());
     if (!records.length) throw new Error("The CSV is empty.");
+    if (kind === "backup" || isFullBackupCsv(headers)) {
+      restoreFullBackup(headers, records);
+      return;
+    }
     const aliases = kind === "members" ? MEMBER_FIELD_ALIASES : PAYMENT_FIELD_ALIASES;
     const map = guessColumnMap(headers, aliases);
     if (kind === "members") {
@@ -1138,28 +1521,75 @@ async function importCsv(file, kind) {
   } catch (error) {
     toast(error.message || "Could not import that file.");
   } finally {
-    el[kind === "members" ? "memberCsv" : "paymentCsv"].value = "";
+    el.memberCsv.value = "";
+    el.paymentCsv.value = "";
+    el.restoreCsv.value = "";
   }
+}
+
+function restoreFullBackup(headers, records) {
+  if (!isFullBackupCsv(headers)) {
+    return toast("Choose a WMAC full backup CSV.");
+  }
+  if (!window.confirm("This will replace the members and payment history saved on this computer with the selected backup. Continue?")) {
+    return;
+  }
+  const result = restoreStoreFromBackupRows(records);
+  state.store = result.store;
+  state.selectedId = "";
+  saveStore("Backup restored");
+  toast(`Restored ${result.memberCount} members and ${result.paymentCount} payments.`);
+  el.toolsDialog.close();
+  showHome();
 }
 
 function exportBackup() {
   const rows = exportStoreRows(state.store);
   if (!rows.length) return toast("There is no data to export.");
-  const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `wmac-backup-${todayKey()}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  downloadCsv(toCsv(rows), `wmac-backup-${todayKey()}.csv`);
   toast("Backup downloaded.");
 }
 
+function downloadCsv(csv, filename) {
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
+}
+
+function downloadBlob(blob, filename) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function bindDemoLoaders() {
+  document.querySelectorAll("[data-load-demo]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const summary = seedDemoData(localStorage);
+      state.store = loadStore();
+      state.selectedId = "";
+      toast(`Loaded ${summary.memberCount} sample members and ${summary.paymentCount} payments.`);
+      render();
+    }, { once: true })
+  );
+}
+
+// The toast uses the popover API so it appears in the browser's top layer,
+// above any open modal dialog (which would otherwise cover it). The .hidden
+// class only matters as the initial state for browsers without popover
+// support, where the attribute is ignored.
 let toastTimer;
 function toast(message) {
   clearTimeout(toastTimer);
   el.toast.textContent = message;
-  el.toast.classList.remove("hidden");
-  toastTimer = setTimeout(() => el.toast.classList.add("hidden"), 2800);
+  if (typeof el.toast.togglePopover === "function") {
+    el.toast.classList.remove("hidden");
+    el.toast.togglePopover(true);
+    toastTimer = setTimeout(() => el.toast.togglePopover(false), 2800);
+  } else {
+    el.toast.classList.remove("hidden");
+    toastTimer = setTimeout(() => el.toast.classList.add("hidden"), 2800);
+  }
 }
 
 function todayKey() {

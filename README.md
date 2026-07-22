@@ -113,12 +113,14 @@ The simplified interface uses the same `master-lee-payment-tracker` store and pr
 
 ## Code Layout
 
-- `index.html` — page structure with bilingual labels baked in
-- `src/app.js` — UI state, rendering, and actions
+- `index.html` — page structure, including the in-app advanced tools view (reports, renewals & collections)
+- `src/simple.js` — UI state, rendering, and actions
+- `src/simple.css` — the member-desk design system
 - `src/data.js` — pure data logic: CSV parsing, import matching, payment status (fully unit-tested)
 - `src/storage.js` — versioned pre-migration snapshots and safe store loading
-- `src/i18n.js` — every user-facing Korean/English string in one place
-- `src/styles.css` — large-type, high-contrast styling
+- `src/renewals.js` — contract-renewal email wording
+- `src/collections.js` — First Credit Services placement files (xlsx) and email drafts
+- `src/i18n.js` — reminder-email wording and shared Korean/English strings
 - `server.mjs` — tiny static file server
 
 ## Local Testing
