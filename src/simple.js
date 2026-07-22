@@ -77,6 +77,7 @@ const state = {
   squareLoaded: false,
   squareError: ""
 };
+const memberTuitionSaveTimers = new Map();
 
 const ids = [
   "homeLink", "homeNav", "membersNav", "snapshotNav", "squareNav", "squareNavBadge", "searchInput", "addMemberButton", "settingsButton", "saveStatus",
@@ -644,13 +645,68 @@ function renderPaymentHistory(member) {
 
 function renderFamily(member) {
   const family = householdMembers(state.store.members, member);
-  const payer = payerFor(member);
-  el.familyMembers.innerHTML = family.map((person) => `
+  el.familyMembers.innerHTML = family.map((person) => {
+    const personPayer = payerFor(person);
+    const participationNote = person.participant === false
+      ? "Contact only · not included in total"
+      : person.id === personPayer.id
+        ? "Responsible payer"
+        : `Paid by ${personPayer.name}`;
+    return `
     <div class="family-member ${person.id === member.id ? "current" : ""}">
       <div class="avatar">${escapeHtml(initials(person.name))}</div>
-      <div><strong>${escapeHtml(person.name)}</strong><small>${person.id === payer.id ? "Responsible payer" : person.participant === false ? "Contact only" : "Member"}</small></div>
-      <span class="family-role">${escapeHtml(person.householdRole || "adult")}</span>
-    </div>`).join("");
+      <div class="family-member-copy"><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(participationNote)}</small><span class="family-role">${escapeHtml(person.householdRole || "adult")}</span></div>
+      <label class="family-tuition-field">
+        <span>Monthly tuition</span>
+        <span class="money-input"><b>$</b><input type="number" min="0" step="0.01" inputmode="decimal" value="${escapeAttr(Number(person.monthlyAmount || 0))}" data-member-tuition="${escapeAttr(person.id)}" aria-label="${escapeAttr(`${person.name} monthly tuition`)}"></span>
+        <small data-member-tuition-status="${escapeAttr(person.id)}">Auto-saves</small>
+      </label>
+    </div>`;
+  }).join("") + `
+    <div class="family-account-total">
+      <span>Account monthly total <small>Active students only</small></span>
+      <strong data-family-account-total>${money(accountBalance(member).monthlyAmount)}</strong>
+    </div>`;
+
+  el.familyMembers.querySelectorAll("[data-member-tuition]").forEach((input) => {
+    input.addEventListener("input", () => queueMemberTuitionSave(input));
+    input.addEventListener("change", () => {
+      saveMemberTuition(input);
+      renderMember();
+    });
+  });
+}
+
+function queueMemberTuitionSave(input) {
+  const memberId = input.dataset.memberTuition;
+  clearTimeout(memberTuitionSaveTimers.get(memberId));
+  const status = el.familyMembers.querySelector(`[data-member-tuition-status="${CSS.escape(memberId)}"]`);
+  if (status) status.textContent = "Saving…";
+  memberTuitionSaveTimers.set(memberId, setTimeout(() => saveMemberTuition(input), 450));
+}
+
+function saveMemberTuition(input) {
+  const memberId = input.dataset.memberTuition;
+  clearTimeout(memberTuitionSaveTimers.get(memberId));
+  memberTuitionSaveTimers.delete(memberId);
+  const member = state.store.members.find((candidate) => candidate.id === memberId);
+  const amount = input.value === "" ? 0 : Number(input.value);
+  const status = el.familyMembers.querySelector(`[data-member-tuition-status="${CSS.escape(memberId)}"]`);
+  if (!member || !Number.isFinite(amount) || amount < 0) {
+    if (status) status.textContent = "Enter a valid amount";
+    return;
+  }
+
+  state.store = upsertMember(state.store, { ...member, monthlyAmount: Math.round(amount * 100) / 100 });
+  saveStore(`${member.name}'s tuition saved`);
+  if (status) status.textContent = "Saved";
+  const selected = selectedMember();
+  if (selected) {
+    const accountTotal = accountBalance(selected).monthlyAmount;
+    const total = el.familyMembers.querySelector("[data-family-account-total]");
+    if (total) total.textContent = money(accountTotal);
+    el.contractAmount.textContent = money(accountTotal);
+  }
 }
 
 function renderContract(member) {

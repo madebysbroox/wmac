@@ -221,11 +221,22 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 46px 0 80
 .button.ghost { border: 1px solid #d7746b; background: #fff; color: #a4362b; }
 .button.ghost:hover { background: #fbeeec; }
 .family-members { display: grid; gap: 9px; }
-.family-member { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5ebe6; border-radius: 12px; background: #fbfcfb; }
+.family-payment-help { margin: -8px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.family-member { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(145px, .65fr); align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5ebe6; border-radius: 12px; background: #fbfcfb; }
 .family-member.current { border-color: #a6c5b5; background: #f1f7f3; }
 .family-member strong { display: block; font-size: 14px; }
 .family-member small { color: var(--muted); }
-.family-role { padding: 4px 8px; border-radius: 999px; background: #edf2ee; color: #5b6f68; font-size: 10px; font-weight: 850; text-transform: capitalize; }
+.family-member-copy { min-width: 0; }
+.family-role { display: inline-block; margin-top: 5px; padding: 3px 7px; border-radius: 999px; background: #edf2ee; color: #5b6f68; font-size: 9px; font-weight: 850; text-transform: capitalize; }
+.family-tuition-field { display: grid; grid-template-columns: 1fr; gap: 4px; color: var(--muted); font-size: 10px; font-weight: 800; }
+.family-tuition-field .money-input input { width: 100%; height: 38px; padding: 0 9px 0 25px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); outline: none; }
+.family-tuition-field .money-input input:focus { border-color: #6da087; box-shadow: 0 0 0 3px rgba(31,107,82,.1); }
+.family-tuition-field .money-input b { left: 9px; }
+.family-tuition-field > small { min-height: 13px; font-size: 9px; font-weight: 700; }
+.family-account-total { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-radius: 11px; background: var(--green-soft); color: var(--green-dark); }
+.family-account-total span { display: grid; font-size: 12px; font-weight: 850; }
+.family-account-total small { color: var(--muted); font-size: 9px; font-weight: 650; }
+.family-account-total strong { font-size: 17px; }
 
 .square-confirmations-view { display: grid; gap: 20px; }
 .square-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
@@ -437,6 +448,8 @@ dialog { color: var(--ink); }
   .member-top-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .member-layout { gap: 12px; }
   .member-sidebar { grid-template-columns: 1fr; gap: 12px; }
+  .family-member { grid-template-columns: auto 1fr; }
+  .family-tuition-field { grid-column: 1 / -1; }
   .payment-card, .info-card { padding: 19px; border-radius: 16px; }
   .payment-card-header { align-items: flex-end; }
   .payment-card-header h2 { font-size: 21px; }

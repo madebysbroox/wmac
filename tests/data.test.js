@@ -655,6 +655,17 @@ test("uses the payer account for a non-participating parent's family payment sch
   assert.deepEqual(getMemberBalance(payer, reconciled.store.payments, today, members).unpaidMonths, ["2026-05"]);
 });
 
+test("updating any family member's tuition immediately changes the payer account total", () => {
+  const payer = { id: "payer", name: "Morgan Lee", participant: false, responsiblePartyId: "payer", startDate: "2026-04-10" };
+  const child = { id: "child", name: "Jamie Lee", participant: true, responsiblePartyId: "payer", monthlyAmount: 120 };
+  const sibling = { id: "sibling", name: "Taylor Lee", participant: true, responsiblePartyId: "payer", monthlyAmount: 80 };
+  const store = { members: [payer, child, sibling], payments: [] };
+
+  const updated = upsertMember(store, { ...child, monthlyAmount: 145.5 });
+  assert.equal(updated.members.find((member) => member.id === "child").monthlyAmount, 145.5);
+  assert.equal(getMemberBalance(payer, [], new Date("2026-06-18T12:00:00"), updated.members).monthlyAmount, 225.5);
+});
+
 test("uses only the payer contract signing date for a household due day", () => {
   const payer = { id: "payer", name: "Morgan Lee", participant: false, responsiblePartyId: "payer", startDate: "2026-01-10" };
   const child = { id: "child", name: "Jamie Lee", participant: true, responsiblePartyId: "payer", monthlyAmount: 120, startDate: "2026-01-25" };
