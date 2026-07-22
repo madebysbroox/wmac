@@ -78,7 +78,8 @@ const state = {
 };
 
 const ids = [
-  "homeLink", "homeNav", "membersNav", "squareNav", "squareNavBadge", "searchInput", "addMemberButton", "settingsButton", "saveStatus",
+  "homeLink", "homeNav", "membersNav", "snapshotNav", "squareNav", "squareNavBadge", "searchInput", "addMemberButton", "settingsButton", "saveStatus",
+  "snapshotView", "snapshotMonthLabel", "snapshotReceived", "snapshotExpected", "snapshotChart", "snapshotLegend", "snapshotFootnote",
   "homeView", "attentionList", "seeAllMembersButton", "paidStat", "dueStat", "familyStat", "membersStat",
   "paidCount", "dueCount", "familyCount", "memberCount", "recentMembers",
   "rosterView", "rosterTitle", "rosterSummary", "rosterList", "memberListToggle", "memberLandscapeToggle",
@@ -112,6 +113,7 @@ const el = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id
 el.homeLink.addEventListener("click", (event) => { event.preventDefault(); showHome(); });
 el.homeNav.addEventListener("click", showHome);
 el.membersNav.addEventListener("click", () => showRoster("all"));
+el.snapshotNav.addEventListener("click", showSnapshot);
 el.squareNav.addEventListener("click", showSquare);
 el.addMemberButton.addEventListener("click", addMember);
 el.settingsButton.addEventListener("click", () => el.toolsDialog.showModal());
@@ -294,6 +296,13 @@ function showAdvanced() {
   render();
 }
 
+function showSnapshot() {
+  state.view = "snapshot";
+  state.selectedId = "";
+  el.searchInput.value = "";
+  render();
+}
+
 function openMember(memberId) {
   if (!state.store.members.some((member) => member.id === memberId)) return;
   // Remember which page led here so Back returns there, even after
@@ -314,14 +323,17 @@ function render() {
   el.memberView.classList.toggle("hidden", state.view !== "member");
   el.squareView.classList.toggle("hidden", state.view !== "square");
   el.advancedView.classList.toggle("hidden", state.view !== "advanced");
+  el.snapshotView.classList.toggle("hidden", state.view !== "snapshot");
   el.homeNav.classList.toggle("active", state.view === "home");
   el.membersNav.classList.toggle("active", state.view === "roster" || state.view === "member");
+  el.snapshotNav.classList.toggle("active", state.view === "snapshot");
   el.squareNav.classList.toggle("active", state.view === "square");
   if (state.view === "home") renderHome();
   if (state.view === "roster") renderRoster();
   if (state.view === "member") renderMember();
   if (state.view === "square") renderSquare();
   if (state.view === "advanced") renderAdvanced();
+  if (state.view === "snapshot") renderSnapshot();
   renderSquareNavBadge();
 }
 
@@ -681,6 +693,96 @@ function renderBio(member) {
   el.bioEmail.textContent = member.email || "Not set";
   el.bioDob.textContent = dateLabel(member.dob);
   el.bioAddress.textContent = address || "Not set";
+}
+
+// Validated palette (CVD-safe, chroma/lightness in band): green = paid,
+// orange = overdue, lighter green = upcoming. The legend always shows
+// labels and dollar values, so color is never the only signal.
+const SNAPSHOT_SLICES = [
+  { key: "paid", label: "Paid", color: "#157f56" },
+  { key: "overdue", label: "Overdue", color: "#d97a1f" },
+  { key: "upcoming", label: "Upcoming due", color: "#6fbf92" }
+];
+
+function snapshotData() {
+  const totals = {
+    paid: { amount: 0, count: 0 },
+    overdue: { amount: 0, count: 0 },
+    upcoming: { amount: 0, count: 0 }
+  };
+  let earlierAmount = 0;
+  let earlierMonths = 0;
+  billingPayers().forEach((member) => {
+    const status = accountPaymentState(member);
+    const amount = accountBalance(member).monthlyAmount;
+    if (amount <= 0) return;
+    const current = status.months.find((month) => month.month === status.currentMonth);
+    if (current) {
+      const bucket = current.paid ? "paid" : current.pending || current.daysLate < 0 ? "upcoming" : "overdue";
+      totals[bucket].amount += amount;
+      totals[bucket].count += 1;
+    }
+    const earlier = status.dueUnpaidMonths.filter((month) => month.month !== status.currentMonth);
+    earlierMonths += earlier.length;
+    earlierAmount += earlier.length * amount;
+  });
+  const expected = totals.paid.amount + totals.overdue.amount + totals.upcoming.amount;
+  return { totals, expected, earlierAmount, earlierMonths };
+}
+
+function donutSlicePath(cx, cy, innerRadius, outerRadius, startAngle, endAngle) {
+  const sweep = Math.min(endAngle - startAngle, 359.99);
+  const point = (radius, angle) => {
+    const radians = ((angle - 90) * Math.PI) / 180;
+    return `${(cx + radius * Math.cos(radians)).toFixed(2)} ${(cy + radius * Math.sin(radians)).toFixed(2)}`;
+  };
+  const large = sweep > 180 ? 1 : 0;
+  const end = startAngle + sweep;
+  return `M ${point(outerRadius, startAngle)} A ${outerRadius} ${outerRadius} 0 ${large} 1 ${point(outerRadius, end)} L ${point(innerRadius, end)} A ${innerRadius} ${innerRadius} 0 ${large} 0 ${point(innerRadius, startAngle)} Z`;
+}
+
+function renderSnapshot() {
+  const now = new Date();
+  el.snapshotMonthLabel.textContent = `${now.toLocaleDateString("en-US", { month: "long", year: "numeric" })} tuition across all active accounts.`;
+  const { totals, expected, earlierAmount, earlierMonths } = snapshotData();
+  el.snapshotReceived.textContent = money(totals.paid.amount);
+  el.snapshotExpected.textContent = money(expected);
+  if (expected <= 0) {
+    el.snapshotChart.innerHTML = "";
+    el.snapshotLegend.innerHTML = `<div class="empty-message">No billable accounts this month. Add members with a monthly amount to see the snapshot.</div>`;
+    el.snapshotFootnote.textContent = "";
+    return;
+  }
+  const percentPaid = Math.round((totals.paid.amount / expected) * 100);
+  let angle = 0;
+  const paths = SNAPSHOT_SLICES.filter((slice) => totals[slice.key].amount > 0).map((slice) => {
+    const share = totals[slice.key].amount / expected;
+    const start = angle;
+    angle += share * 360;
+    return `<path class="snapshot-slice" fill="${slice.color}" d="${donutSlicePath(100, 100, 52, 88, start, angle)}">
+      <title>${escapeHtml(`${slice.label}: ${money(totals[slice.key].amount)} (${Math.round(share * 100)}%)`)}</title>
+    </path>`;
+  }).join("");
+  const summary = SNAPSHOT_SLICES.map((slice) => `${slice.label} ${money(totals[slice.key].amount)}`).join(", ");
+  el.snapshotChart.innerHTML = `
+    <svg viewBox="0 0 200 200" role="img" aria-label="${escapeAttr(`Tuition coverage this month: ${summary}.`)}">
+      ${paths}
+      <text x="100" y="97" class="snapshot-center-value">${percentPaid}%</text>
+      <text x="100" y="116" class="snapshot-center-label">received</text>
+    </svg>`;
+  el.snapshotLegend.innerHTML = SNAPSHOT_SLICES.map((slice) => {
+    const bucket = totals[slice.key];
+    const share = expected > 0 ? Math.round((bucket.amount / expected) * 100) : 0;
+    return `
+      <div class="snapshot-legend-row">
+        <i style="background:${slice.color}"></i>
+        <div class="legend-copy"><strong>${slice.label}</strong><small>${bucket.count} account${bucket.count === 1 ? "" : "s"}</small></div>
+        <div class="legend-amount"><strong>${money(bucket.amount)}</strong><small>${share}%</small></div>
+      </div>`;
+  }).join("");
+  el.snapshotFootnote.textContent = earlierMonths
+    ? `Not counted above: ${money(earlierAmount)} from ${earlierMonths} unpaid month${earlierMonths === 1 ? "" : "s"} before ${now.toLocaleDateString("en-US", { month: "long" })} is still outstanding.`
+    : "No earlier months are outstanding.";
 }
 
 function renderAdvanced() {

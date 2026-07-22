@@ -22,6 +22,9 @@
         <button id="membersNav" class="nav-item" type="button">
           <span>Members</span><small>회원</small>
         </button>
+        <button id="snapshotNav" class="nav-item" type="button">
+          <span>Snapshot</span><small>월간 현황</small>
+        </button>
         <button id="squareNav" class="nav-item" type="button">
           <span>Square Confirmations</span><small>Square 확인</small>
           <b id="squareNavBadge" class="nav-badge hidden">0</b>
@@ -313,6 +316,27 @@
             <span id="squareSettingsStatus"></span>
           </div>
         </details>
+      </section>
+
+      <section id="snapshotView" class="snapshot-view hidden">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">This month · 이번 달</p>
+            <h1>Payment snapshot</h1>
+            <p id="snapshotMonthLabel"></p>
+          </div>
+        </div>
+        <section class="info-card snapshot-card">
+          <div class="snapshot-totals">
+            <div><span>Received so far</span><strong id="snapshotReceived">$0</strong></div>
+            <div><span>Expected this month</span><strong id="snapshotExpected">$0</strong></div>
+          </div>
+          <div class="snapshot-chart-wrap">
+            <div id="snapshotChart" class="snapshot-chart"></div>
+            <div id="snapshotLegend" class="snapshot-legend"></div>
+          </div>
+          <p id="snapshotFootnote" class="snapshot-footnote"></p>
+        </section>
       </section>
 
       <section id="advancedView" class="advanced-view hidden">
