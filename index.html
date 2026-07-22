@@ -158,19 +158,24 @@
               </div>
 
               <div class="primary-payment-action">
-                <button id="recordPaymentButton" class="button payment-button" type="button">
-                  <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7h18v12H3zM3 11h18M7 16h3"/></svg>
-                  <span><strong>Record payment</strong><small id="recordPaymentLabel"></small></span>
+                <button id="recordPaymentButton" class="button payment-button" type="button" aria-expanded="false">
+                  <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+                  <span><strong id="recordPaymentTitle">Record payments</strong><small id="recordPaymentLabel"></small></span>
                 </button>
                 <button id="paymentMenuButton" class="button payment-menu-button" type="button" aria-label="More payment options">⌄</button>
               </div>
 
               <div id="paymentMenu" class="payment-menu hidden">
                 <button id="customPaymentButton" type="button">Record a different month or amount</button>
-                <button id="catchUpButton" type="button">Mark all due months paid</button>
                 <button id="reminderButton" type="button">Write payment reminder email</button>
                 <button id="invoiceButton" type="button">Generate printable invoice</button>
                 <button id="squareRecurringButton" type="button">Set up monthly Square invoice</button>
+              </div>
+
+              <div id="paymentCalendar" class="payment-calendar hidden">
+                <p class="calendar-hint">Click a month to record its payment — click it again to un-record. Changes save automatically.</p>
+                <div id="paymentCalendarGrid" class="payment-calendar-grid"></div>
+                <button id="catchUpButton" class="button secondary" type="button">Mark all due months paid</button>
               </div>
 
               <div class="payment-timeline">

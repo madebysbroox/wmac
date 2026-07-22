@@ -25,7 +25,6 @@ import {
   nextUnpaidTuitionMonth,
   parseCsv,
   recordContractDownPayment,
-  removePayment,
   searchMembers,
   stagedPaymentMonth,
   suggestedPaymentMember,
@@ -66,6 +65,7 @@ const state = {
   memberViewMode: "list",
   editorMode: "",
   historyExpanded: false,
+  calendarOpen: false,
   collectionMemberId: "",
   collectionDraft: null,
   squarePayments: [],
@@ -84,7 +84,8 @@ const ids = [
   "memberLandscape", "memberLandscapeHead", "memberLandscapeBody",
   "memberView", "memberBackButton", "memberAvatar", "memberNameHeading", "memberStatusBadge", "memberSubtitle",
   "editProfileButton", "nextMemberButton", "paymentCard", "paymentHeadline", "paymentSubhead", "amountDue",
-  "recordPaymentButton", "recordPaymentLabel", "paymentMenuButton", "paymentMenu", "customPaymentButton",
+  "recordPaymentButton", "recordPaymentTitle", "recordPaymentLabel", "paymentMenuButton", "paymentMenu",
+  "paymentCalendar", "paymentCalendarGrid", "customPaymentButton",
   "catchUpButton", "reminderButton", "invoiceButton", "squareRecurringButton", "showAllPaymentsButton", "paymentHistory",
   "editTrainingButton", "trainingPrograms", "trainingTkd", "trainingMt", "trainingNext",
   "familyCard", "editFamilyButton", "familyMembers", "editContractButton", "contractStart", "contractEnd",
@@ -130,8 +131,17 @@ el.memberListToggle.addEventListener("click", () => setMemberViewMode("list"));
 el.memberLandscapeToggle.addEventListener("click", () => setMemberViewMode("landscape"));
 el.memberBackButton.addEventListener("click", () => state.view === "member" ? showHome() : showRoster(state.rosterFilter));
 el.nextMemberButton.addEventListener("click", openNextMember);
-el.recordPaymentButton.addEventListener("click", recordPrimaryPayment);
+el.recordPaymentButton.addEventListener("click", toggleRecordPayments);
 el.paymentMenuButton.addEventListener("click", () => el.paymentMenu.classList.toggle("hidden"));
+// Clicking anywhere outside the payment dropdown collapses it.
+document.addEventListener("click", (event) => {
+  if (el.paymentMenu.classList.contains("hidden")) return;
+  if (el.paymentMenu.contains(event.target) || el.paymentMenuButton.contains(event.target)) return;
+  el.paymentMenu.classList.add("hidden");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") el.paymentMenu.classList.add("hidden");
+});
 el.customPaymentButton.addEventListener("click", openPaymentDialog);
 el.catchUpButton.addEventListener("click", catchUpPayments);
 el.reminderButton.addEventListener("click", sendReminder);
@@ -284,6 +294,7 @@ function openMember(memberId) {
   state.view = "member";
   state.selectedId = memberId;
   state.historyExpanded = false;
+  state.calendarOpen = false;
   el.searchInput.value = "";
   addRecent(memberId);
   render();
@@ -467,32 +478,38 @@ function renderMember() {
   el.memberStatusBadge.textContent = statusLabel(level);
   el.memberSubtitle.textContent = memberSubtitle(member);
 
+  el.amountDue.textContent = money(balance.dueNow);
   if (!isPayer(member)) {
     el.paymentHeadline.textContent = `Payments are managed by ${payer.name}`;
     el.paymentSubhead.textContent = "Open the responsible payer to record family payments.";
-    el.amountDue.textContent = money(balance.dueNow);
     el.recordPaymentButton.disabled = false;
     el.recordPaymentButton.classList.remove("done");
     el.recordPaymentButton.dataset.openPayer = payer.id;
-    el.recordPaymentLabel.textContent = "Open payer account";
-  } else if (currentPaid) {
-    el.paymentHeadline.textContent = `${formatMonthEn(status.currentMonth)} is paid`;
-    el.paymentSubhead.textContent = balance.dueUnpaidMonths.length ? `${balance.dueUnpaidMonths.length} earlier payment${balance.dueUnpaidMonths.length === 1 ? "" : "s"} still need attention.` : "This account is up to date.";
-    el.amountDue.textContent = money(balance.dueNow);
-    el.recordPaymentButton.disabled = false;
-    el.recordPaymentButton.classList.add("done");
-    delete el.recordPaymentButton.dataset.openPayer;
-    el.recordPaymentLabel.textContent = "Click to mark this month unpaid";
+    el.recordPaymentTitle.textContent = "Open payer account";
+    el.recordPaymentLabel.textContent = `Record family payments on ${payer.name}'s page`;
   } else {
-    el.paymentHeadline.textContent = balance.dueUnpaidMonths.length > 1 ? `${balance.dueUnpaidMonths.length} payments need attention` : `${formatMonthEn(status.currentMonth)} payment`;
-    el.paymentSubhead.textContent = balance.monthlyAmount > 0 ? `Normal tuition is ${money(balance.monthlyAmount)} per month.` : "Add the monthly tuition amount before recording payment.";
-    el.amountDue.textContent = money(balance.dueNow);
-    el.recordPaymentButton.disabled = balance.monthlyAmount <= 0;
-    el.recordPaymentButton.classList.remove("done");
+    if (currentPaid) {
+      el.paymentHeadline.textContent = `${formatMonthEn(status.currentMonth)} is paid`;
+      el.paymentSubhead.textContent = balance.dueUnpaidMonths.length ? `${balance.dueUnpaidMonths.length} earlier payment${balance.dueUnpaidMonths.length === 1 ? "" : "s"} still need attention.` : "This account is up to date.";
+    } else {
+      el.paymentHeadline.textContent = balance.dueUnpaidMonths.length > 1 ? `${balance.dueUnpaidMonths.length} payments need attention` : `${formatMonthEn(status.currentMonth)} payment`;
+      el.paymentSubhead.textContent = balance.monthlyAmount > 0 ? `Normal tuition is ${money(balance.monthlyAmount)} per month.` : "Add the monthly tuition amount before recording payment.";
+    }
     delete el.recordPaymentButton.dataset.openPayer;
-    el.recordPaymentLabel.textContent = balance.monthlyAmount > 0 ? `${money(balance.monthlyAmount)} for ${formatMonthEn(status.currentMonth)}` : "Monthly amount not set";
+    el.recordPaymentButton.disabled = balance.monthlyAmount <= 0;
+    el.recordPaymentButton.classList.toggle("done", !balance.dueUnpaidMonths.length && balance.monthlyAmount > 0);
+    el.recordPaymentTitle.textContent = "Record payments";
+    el.recordPaymentLabel.textContent = balance.monthlyAmount <= 0
+      ? "Monthly amount not set"
+      : balance.dueUnpaidMonths.length
+        ? `${balance.dueUnpaidMonths.length} month${balance.dueUnpaidMonths.length === 1 ? "" : "s"} due · ${money(balance.dueNow)}`
+        : state.calendarOpen ? "Click a month below to adjust" : "All caught up · click to review months";
   }
 
+  const showCalendar = isPayer(member) && state.calendarOpen;
+  el.recordPaymentButton.setAttribute("aria-expanded", String(showCalendar));
+  el.paymentCalendar.classList.toggle("hidden", !showCalendar);
+  if (showCalendar) renderPaymentCalendar(member, status, balance);
   el.catchUpButton.disabled = !isPayer(member) || !balance.dueUnpaidMonths.length || balance.monthlyAmount <= 0;
   el.reminderButton.disabled = !payer.email || !balance.dueUnpaidMonths.length;
   el.invoiceButton.disabled = !isPayer(member) || !balance.dueUnpaidMonths.length;
@@ -1302,21 +1319,59 @@ function squarePaymentDate(payment) {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
-function recordPrimaryPayment() {
+function toggleRecordPayments() {
   const member = selectedMember();
   if (!member) return;
   if (el.recordPaymentButton.dataset.openPayer) return openMember(el.recordPaymentButton.dataset.openPayer);
+  state.calendarOpen = !state.calendarOpen;
+  renderMember();
+}
+
+function calendarCellLabel(month) {
+  if (month.prepaid) return "Down payment";
+  if (month.paid) return "✓ Paid";
+  if (month.state === "behind") return `${month.daysLate} days late`;
+  if (month.state === "attention") return "Due";
+  if (month.state === "pending") return "Card pending";
+  return "Upcoming";
+}
+
+function renderPaymentCalendar(member, status = accountPaymentState(member), balance = accountBalance(member)) {
+  const disabled = balance.monthlyAmount <= 0;
+  el.paymentCalendarGrid.innerHTML = status.months.map((month) => `
+    <button class="calendar-month ${month.prepaid ? "prepaid" : month.paid ? "paid" : month.state}" type="button"
+      data-calendar-month="${escapeAttr(month.month)}" ${month.prepaid || disabled ? "disabled" : ""}
+      title="${month.prepaid ? "Covered by the contract down payment" : month.paid ? "Click to un-record this payment" : "Click to record this payment"}"
+      aria-label="${escapeAttr(`${formatMonthEn(month.month)}: ${month.prepaid ? "covered by down payment" : month.paid ? "un-record payment" : "record payment"}`)}">
+      <strong>${escapeHtml(shortMonth(month.month))}</strong>
+      <span>${escapeHtml(calendarCellLabel(month))}</span>
+    </button>`).join("");
+  el.paymentCalendarGrid.querySelectorAll("[data-calendar-month]").forEach((button) =>
+    button.addEventListener("click", () => toggleCalendarMonth(button.dataset.calendarMonth))
+  );
+}
+
+function toggleCalendarMonth(monthKey) {
+  const member = selectedMember();
+  if (!member || !isPayer(member)) return;
   const status = accountPaymentState(member);
-  if (status.paidMonths.has(status.currentMonth)) {
-    state.store = removePayment(state.store, member.id, status.currentMonth);
-    saveStore("Payment marked unpaid");
-    toast(`${formatMonthEn(status.currentMonth)} marked unpaid.`);
+  if (status.prepaidMonths.has(monthKey)) return toast("That month is covered by the contract down payment.");
+  if (status.paidMonths.has(monthKey)) {
+    const accountIds = new Set(state.store.members.filter((candidate) => payerFor(candidate).id === member.id).map((candidate) => candidate.id));
+    state.store = {
+      ...state.store,
+      payments: state.store.payments.filter((payment) =>
+        !((!payment.category || payment.category === "tuition") && payment.month === monthKey && accountIds.has(payment.memberId))
+      )
+    };
+    saveStore("Payment removed");
+    toast(`${formatMonthEn(monthKey)} marked unpaid.`);
   } else {
     const amount = accountBalance(member).monthlyAmount;
-    if (amount <= 0) return;
-    state.store = addPayment(state.store, { memberId: member.id, month: status.currentMonth, amount, paidAt: todayKey(), source: "simple-desk" });
+    if (amount <= 0) return toast("Add the monthly tuition amount first.");
+    state.store = addPayment(state.store, { memberId: member.id, month: monthKey, amount, paidAt: todayKey(), source: "simple-desk-calendar" });
     saveStore("Payment recorded");
-    toast(`${formatMonthEn(status.currentMonth)} payment recorded.`);
+    toast(`${formatMonthEn(monthKey)} payment recorded.`);
   }
   render();
 }
@@ -1361,8 +1416,7 @@ function catchUpPayments() {
     state.store = addPayment(state.store, { memberId: member.id, month, amount, paidAt: todayKey(), source: "simple-desk-catch-up" });
   });
   saveStore("Past-due payments recorded");
-  el.paymentMenu.classList.add("hidden");
-  toast(`${status.dueUnpaidMonths.length} payment${status.dueUnpaidMonths.length === 1 ? "" : "s"} recorded.`);
+  toast(`${status.dueUnpaidMonths.length} payment${status.dueUnpaidMonths.length === 1 ? "" : "s"} recorded and saved.`);
   render();
 }
 

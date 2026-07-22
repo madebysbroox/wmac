@@ -172,6 +172,26 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 46px 0 80
 .payment-menu button:hover { background: #f1f6f2; }
 .payment-menu button:disabled { color: var(--muted); opacity: .65; cursor: default; }
 .payment-menu button:disabled:hover { background: transparent; }
+.payment-calendar { margin-top: 14px; padding: 16px; border: 1px solid #d7e4dc; border-radius: 13px; background: #f7faf8; }
+.calendar-hint { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.payment-calendar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(102px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.calendar-month { display: grid; gap: 3px; min-height: 56px; padding: 9px 6px; border: 1px solid var(--line); border-radius: 10px; background: #fff; text-align: center; cursor: pointer; }
+.calendar-month strong { font-size: 12px; }
+.calendar-month span { font-size: 10px; font-weight: 800; color: var(--muted); }
+.calendar-month:hover { border-color: #9dbcae; }
+.calendar-month.paid { border-color: #a9cdbb; background: var(--mint); }
+.calendar-month.paid strong, .calendar-month.paid span { color: var(--green-dark); }
+.calendar-month.paid:hover { border-color: #d0847a; background: #f6ece9; }
+.calendar-month.paid:hover span { color: var(--red); }
+.calendar-month.prepaid { border-style: dashed; background: #f2f7f3; cursor: default; }
+.calendar-month.prepaid span { color: var(--green); }
+.calendar-month.attention { border-color: #e4cd9c; background: var(--amber-soft); }
+.calendar-month.attention span { color: var(--amber); }
+.calendar-month.behind { border-color: #e3b3ab; background: var(--red-soft); }
+.calendar-month.behind span { color: var(--red); }
+.calendar-month:disabled { opacity: .7; cursor: default; }
+.payment-calendar > .button { width: 100%; }
+
 .payment-timeline { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e7ece8; }
 .timeline-heading h3 { margin: 0; font-size: 15px; }
 .payment-history { display: grid; margin-top: 10px; }
