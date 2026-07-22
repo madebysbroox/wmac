@@ -63,6 +63,16 @@
   font-weight: 700;
 }
 
+.down-payment-record-control {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid #d7e4dc;
+  border-radius: 10px;
+  background: #f3f8f5;
+}
+
 .household-card,
 .progress-card {
   margin: 18px 0;

@@ -98,11 +98,25 @@ In the installed desktop app, **앱 업데이트 (App Updates)** stays at the bo
 
 The app saves the working data in the browser on the same computer, so the member CSV does not need to be imported again every time.
 
+## Data Safety During Upgrades
+
+The simplified interface uses the same `master-lee-payment-tracker` store and preserves the existing `members` and `payments` arrays.
+
+- Opening or migrating the app never creates a financial transaction.
+- Before a store-version upgrade, the app saves an exact snapshot under a versioned `master-lee-payment-tracker-pre-migration-v*` key.
+- If the safety snapshot cannot be written, the migration is skipped and the original store is used.
+- Existing member IDs, payment IDs, unknown legacy fields, and exact payment records are preserved.
+- Saving one member spreads the existing record first, so fields outside the simplified form are not erased.
+- A saved contract down-payment amount does not create ledger revenue. The operator must click **Record Down Payment** explicitly.
+- The explicit down-payment action is idempotent: repeating it does not create duplicates.
+- Square recurring billing writes optional Square fields only after the operator explicitly starts that setup for the responsible payer.
+
 ## Code Layout
 
 - `index.html` — page structure with bilingual labels baked in
 - `src/app.js` — UI state, rendering, and actions
 - `src/data.js` — pure data logic: CSV parsing, import matching, payment status (fully unit-tested)
+- `src/storage.js` — versioned pre-migration snapshots and safe store loading
 - `src/i18n.js` — every user-facing Korean/English string in one place
 - `src/styles.css` — large-type, high-contrast styling
 - `server.mjs` — tiny static file server

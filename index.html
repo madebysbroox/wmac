@@ -205,10 +205,18 @@
                 <div><dt>Signed</dt><dd id="contractStart"></dd></div>
                 <div><dt>Ends</dt><dd id="contractEnd"></dd></div>
                 <div><dt>Monthly</dt><dd id="contractAmount"></dd></div>
+                <div><dt>Down payment</dt><dd id="contractDownPayment"></dd></div>
                 <div><dt>Type</dt><dd id="contractType"></dd></div>
               </dl>
               <div id="contractProgress" class="contract-progress"><span></span></div>
               <p id="contractNote" class="contract-note"></p>
+              <div id="downPaymentAction" class="down-payment-action hidden">
+                <div>
+                  <strong id="downPaymentActionTitle">Down payment not recorded</strong>
+                  <small id="downPaymentActionHelp">Saving a contract amount does not create a financial transaction.</small>
+                </div>
+                <button id="recordDownPaymentButton" class="button secondary" type="button">Record down payment</button>
+              </div>
             </section>
 
             <section class="info-card bio-card">

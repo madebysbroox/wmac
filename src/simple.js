@@ -2,10 +2,10 @@ import {
   MEMBER_FIELD_ALIASES,
   PAYMENT_FIELD_ALIASES,
   addPayment,
-  createEmptyStore,
   defaultAgreementEndDate,
   exportStoreRows,
   getAgreementExpirationStatus,
+  getContractDownPaymentRecord,
   getLandscapeRows,
   getLateFeeBalance,
   getMemberBalance,
@@ -16,9 +16,9 @@ import {
   importMembersFromRecords,
   importPaymentsFromRecords,
   isActiveParticipant,
-  migrateStore,
   nextUnpaidTuitionMonth,
   parseCsv,
+  recordContractDownPayment,
   removePayment,
   searchMembers,
   stagedPaymentMonth,
@@ -26,6 +26,7 @@ import {
   toCsv,
   upsertMember
 } from "./data.js";
+import { loadStoreWithMigrationBackup } from "./storage.js";
 import { buildReminderEmail, formatMonthEn } from "./i18n.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
@@ -57,7 +58,8 @@ const ids = [
   "recordPaymentButton", "recordPaymentLabel", "paymentMenuButton", "paymentMenu", "customPaymentButton",
   "catchUpButton", "reminderButton", "showAllPaymentsButton", "paymentHistory",
   "familyCard", "editFamilyButton", "familyMembers", "editContractButton", "contractStart", "contractEnd",
-  "contractAmount", "contractType", "contractProgress", "contractNote", "editBioButton", "bioPhone", "bioEmail",
+  "contractAmount", "contractDownPayment", "contractType", "contractProgress", "contractNote", "downPaymentAction",
+  "downPaymentActionTitle", "downPaymentActionHelp", "recordDownPaymentButton", "editBioButton", "bioPhone", "bioEmail",
   "bioDob", "bioAddress", "editorDialog", "editorForm", "editorEyebrow", "editorTitle", "editorHelp",
   "editorFields", "closeEditorButton", "cancelEditorButton", "paymentDialog", "paymentForm", "closePaymentButton",
   "cancelPaymentButton", "paymentMonth", "paymentAmount", "paymentDate", "paymentNote",
@@ -100,6 +102,7 @@ el.showAllPaymentsButton.addEventListener("click", () => { state.historyExpanded
 el.editProfileButton.addEventListener("click", () => openEditor("profile"));
 el.editBioButton.addEventListener("click", () => openEditor("bio"));
 el.editContractButton.addEventListener("click", () => openEditor("contract"));
+el.recordDownPaymentButton.addEventListener("click", recordSelectedDownPayment);
 el.editFamilyButton.addEventListener("click", () => openEditor("family"));
 el.closeEditorButton.addEventListener("click", closeEditor);
 el.cancelEditorButton.addEventListener("click", closeEditor);
@@ -115,12 +118,7 @@ el.squareEmptySyncButton.addEventListener("click", syncSquarePayments);
 el.saveSquareSettingsButton.addEventListener("click", saveSquareSettings);
 
 function loadStore() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return parsed?.members && parsed?.payments ? migrateStore(parsed) : createEmptyStore();
-  } catch {
-    return createEmptyStore();
-  }
+  return loadStoreWithMigrationBackup(localStorage, { storageKey: STORAGE_KEY });
 }
 
 function saveStore(message = "Saved on this computer") {
@@ -461,9 +459,12 @@ function renderFamily(member) {
 function renderContract(member) {
   const payer = payerFor(member);
   const expiration = getAgreementExpirationStatus(payer);
+  const downPaymentRecord = getContractDownPaymentRecord(state.store, payer.id);
+  const downPaymentAmount = Number(payer.downPayment || 0);
   el.contractStart.textContent = dateLabel(payer.startDate);
   el.contractEnd.textContent = payer.agreementType === "Month-to-Month" ? "Ongoing" : dateLabel(payer.agreementEndDate);
   el.contractAmount.textContent = money(accountBalance(member).monthlyAmount);
+  el.contractDownPayment.textContent = downPaymentAmount > 0 ? money(downPaymentAmount) : "None";
   el.contractType.textContent = payer.agreementType || "Contract";
   const start = Date.parse(payer.startDate || "");
   const end = Date.parse(payer.agreementEndDate || "");
@@ -472,6 +473,39 @@ function renderContract(member) {
   el.contractProgress.querySelector("span").style.width = `${percent}%`;
   el.contractProgress.classList.toggle("hidden", payer.agreementType === "Month-to-Month" || !end);
   el.contractNote.textContent = expiration.level === "expired" ? "Contract renewal is due." : expiration.daysUntil != null ? `${Math.max(0, expiration.daysUntil)} days remaining` : "";
+  const canRecord = isPayer(member) && downPaymentAmount > 0 && Boolean(payer.startDate);
+  el.downPaymentAction.classList.toggle("hidden", !isPayer(member) || downPaymentAmount <= 0);
+  el.recordDownPaymentButton.disabled = !canRecord;
+  if (downPaymentRecord) {
+    const matchesContract = Number(downPaymentRecord.amount || 0) === downPaymentAmount
+      && downPaymentRecord.paidAt === payer.startDate;
+    el.downPaymentActionTitle.textContent = matchesContract ? "Down payment recorded" : "Recorded payment needs updating";
+    el.downPaymentActionHelp.textContent = `${money(downPaymentRecord.amount)} recorded on ${dateLabel(downPaymentRecord.paidAt)}.`;
+    el.recordDownPaymentButton.textContent = matchesContract ? "Already recorded" : "Update recorded payment";
+    el.recordDownPaymentButton.disabled = matchesContract || !canRecord;
+  } else {
+    el.downPaymentActionTitle.textContent = "Down payment not recorded";
+    el.downPaymentActionHelp.textContent = "The contract value is saved, but no financial transaction has been created.";
+    el.recordDownPaymentButton.textContent = "Record down payment";
+  }
+}
+
+function recordSelectedDownPayment() {
+  const member = selectedMember();
+  if (!member) return;
+  try {
+    const result = recordContractDownPayment(state.store, payerFor(member).id);
+    if (!result.changed) {
+      toast("The contract down payment is already recorded.");
+      return;
+    }
+    state.store = result.store;
+    saveStore("Contract down payment recorded");
+    toast(`${money(result.payment.amount)} down payment recorded.`);
+    render();
+  } catch (error) {
+    toast(error.message || "Could not record the contract down payment.");
+  }
 }
 
 function renderBio(member) {
@@ -944,6 +978,7 @@ function openEditor(mode) {
         field("Contract signed", "startDate", payer.startDate, "date", true),
         field("Contract ends", "agreementEndDate", payer.agreementEndDate, "date"),
         moneyField("Monthly tuition", "monthlyAmount", payer.monthlyAmount),
+        moneyField("Contract down payment", "downPayment", payer.downPayment),
         selectField("Agreement type", "agreementType", payer.agreementType || "Contract", [["Contract", "Annual contract"], ["Month-to-Month", "Month-to-month"]])
       ]
     },
@@ -989,6 +1024,7 @@ function saveEditor(event) {
   const next = { ...target, ...values };
   if (state.editorMode === "contract") {
     next.monthlyAmount = Number(values.monthlyAmount || 0);
+    next.downPayment = values.downPayment === "" ? "" : Number(values.downPayment || 0);
     if (values.agreementType === "Month-to-Month") next.agreementEndDate = "";
   }
   if (state.editorMode === "family") {

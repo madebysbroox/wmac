@@ -190,6 +190,11 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 46px 0 80
 .contract-progress { height: 7px; margin-top: 14px; overflow: hidden; border-radius: 99px; background: #e5ebe6; }
 .contract-progress span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--green); }
 .contract-note { margin: 9px 0 0; color: var(--muted); font-size: 11px; text-align: right; }
+.down-payment-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 17px; padding: 13px; border: 1px solid #d7e4dc; border-radius: 11px; background: #f3f8f5; }
+.down-payment-action > div { display: grid; gap: 3px; }
+.down-payment-action strong { font-size: 12px; }
+.down-payment-action small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.down-payment-action .button { flex: 0 0 auto; min-height: 38px; padding-inline: 12px; font-size: 11px; }
 .family-members { display: grid; gap: 9px; }
 .family-member { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5ebe6; border-radius: 12px; background: #fbfcfb; }
 .family-member.current { border-color: #a6c5b5; background: #f1f7f3; }

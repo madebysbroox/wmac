@@ -40,7 +40,8 @@ const MEMBER_FIELD_ALIASES = {
   muayThaiCertification: ["muay thai certification", "muay thai level"]
 };
 
-const CONTRACT_DOWN_PAYMENT_SOURCE = "contract-down-payment";
+export const CURRENT_STORE_VERSION = 3;
+export const CONTRACT_DOWN_PAYMENT_SOURCE = "contract-down-payment";
 
 const PAYMENT_FIELD_ALIASES = {
   name: ["name", "member name", "student name", "customer name"],
@@ -54,7 +55,7 @@ const PAYMENT_FIELD_ALIASES = {
 
 export function createEmptyStore() {
   return {
-    version: 2,
+    version: CURRENT_STORE_VERSION,
     members: [],
     payments: [],
     updatedAt: new Date().toISOString()
@@ -258,11 +259,11 @@ export function importMembersFromRecords(records, columnMap, existingStore = cre
   });
 
   return {
-    store: synchronizeContractDownPayments({
+    store: {
       ...existingStore,
       members: sortMembersByAccount(linkResponsibleParties(members)),
       updatedAt: new Date().toISOString()
-    }),
+    },
     imported,
     added,
     updated,
@@ -661,20 +662,29 @@ export function upsertMember(store, member) {
   nextMember.identityKey = buildIdentityKey(nextMember);
   const members = store.members.filter((item) => item.id !== nextMember.id);
   members.push(nextMember);
-  return synchronizeContractDownPayments({
+  return {
     ...store,
     members: sortMembersByAccount(linkResponsibleParties(members)),
     updatedAt: new Date().toISOString()
-  });
+  };
 }
 
 export function migrateStore(store) {
   if (!store?.members || !store?.payments) {
     return createEmptyStore();
   }
-  return synchronizeContractDownPayments({
+  const sourceVersion = Number(store.version || 1);
+  if (sourceVersion >= 2) {
+    return {
+      ...store,
+      version: CURRENT_STORE_VERSION,
+      members: store.members.map((member) => ({ ...member })),
+      payments: store.payments.map((payment) => ({ ...payment }))
+    };
+  }
+  return {
     ...store,
-    version: 2,
+    version: CURRENT_STORE_VERSION,
     members: linkResponsibleParties(store.members.map((member) => {
       const certifications = normalizeMemberCertifications(member);
       return {
@@ -705,48 +715,74 @@ export function migrateStore(store) {
         nextLevel: nextMemberCertification({ ...member, certifications }) || member.nextLevel || ""
       };
     }))
-  });
+  };
 }
 
-// A down payment is real cash received, distinct from the two service months
-// it can prepay. Keep one auditable payer-level transaction dated to the
-// contract signing date so backup and year-end reports include the receipt.
-function synchronizeContractDownPayments(store) {
-  const members = Array.isArray(store?.members) ? store.members : [];
-  const expected = new Map();
-  members.forEach((member) => {
-    const payer = getResponsibleParty(member, members) || member;
-    const amount = Number(member.downPayment || 0);
-    const contractDate = normalizeDate(member.startDate);
-    if (payer.id !== member.id || amount <= 0 || !contractDate) return;
-    expected.set(member.id, {
-      memberId: member.id,
-      amount,
-      month: contractDate.slice(0, 7),
-      paidAt: contractDate,
-      source: CONTRACT_DOWN_PAYMENT_SOURCE,
-      category: "down_payment",
-      note: "Contract down payment paid at signing"
-    });
-  });
-
-  const existingByPayer = new Map(
-    (store.payments || [])
-      .filter((payment) => payment.source === CONTRACT_DOWN_PAYMENT_SOURCE)
-      .map((payment) => [payment.memberId, payment])
-  );
-  const payments = (store.payments || []).filter((payment) => payment.source !== CONTRACT_DOWN_PAYMENT_SOURCE);
-  expected.forEach((payment, memberId) => {
-    payments.push({
-      id: existingByPayer.get(memberId)?.id || cryptoId("pay"),
-      ...payment
-    });
-  });
-
+export function prepareStoreForLoad(store) {
+  const sourceVersion = Number(store?.version || 1);
   return {
-    ...store,
-    payments,
-    updatedAt: new Date().toISOString()
+    store: migrateStore(store),
+    needsBackup: Boolean(store?.members && store?.payments && sourceVersion < CURRENT_STORE_VERSION),
+    sourceVersion,
+    targetVersion: CURRENT_STORE_VERSION
+  };
+}
+
+export function getContractDownPaymentRecord(store, memberId) {
+  return (store?.payments || []).find((payment) =>
+    payment.memberId === memberId && payment.source === CONTRACT_DOWN_PAYMENT_SOURCE
+  ) || null;
+}
+
+// Recording money is always explicit. Loading, importing, and editing a member
+// never call this function.
+export function recordContractDownPayment(store, memberId) {
+  const member = (store?.members || []).find((candidate) => candidate.id === memberId);
+  if (!member) {
+    throw new Error("Member not found.");
+  }
+  const payer = getResponsibleParty(member, store.members) || member;
+  if (payer.id !== member.id) {
+    throw new Error("Record the down payment on the responsible payer.");
+  }
+  const amount = Number(member.downPayment || 0);
+  const contractDate = normalizeDate(member.startDate);
+  if (amount <= 0) {
+    throw new Error("Enter the contract down-payment amount first.");
+  }
+  if (!contractDate) {
+    throw new Error("Enter the contract signing date first.");
+  }
+
+  const existing = getContractDownPaymentRecord(store, member.id);
+  const payment = {
+    id: existing?.id || cryptoId("pay"),
+    memberId: member.id,
+    amount,
+    month: contractDate.slice(0, 7),
+    paidAt: contractDate,
+    source: CONTRACT_DOWN_PAYMENT_SOURCE,
+    category: "down_payment",
+    note: "Contract down payment paid at signing"
+  };
+  const unchanged = existing
+    && existing.amount === payment.amount
+    && existing.month === payment.month
+    && existing.paidAt === payment.paidAt
+    && existing.category === payment.category;
+  if (unchanged) {
+    return { store, payment: existing, changed: false };
+  }
+  return {
+    store: {
+      ...store,
+      payments: [...store.payments.filter((item) =>
+        !(item.memberId === member.id && item.source === CONTRACT_DOWN_PAYMENT_SOURCE)
+      ), payment],
+      updatedAt: new Date().toISOString()
+    },
+    payment,
+    changed: true
   };
 }
 
@@ -1122,7 +1158,7 @@ export function restoreStoreFromBackupRows(records = []) {
     throw new Error("This file does not contain a valid WMAC full backup.");
   }
   const store = migrateStore({
-    version: 2,
+    version: CURRENT_STORE_VERSION,
     members: [...members.values()],
     payments: [...payments.values()],
     updatedAt: new Date().toISOString()

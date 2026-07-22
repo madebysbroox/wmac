@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CURRENT_STORE_VERSION,
   addPayment,
   accountMembers,
   bringMemberUpToDate,
@@ -8,6 +9,7 @@ import {
   defaultAgreementEndDate,
   exportDailyPaymentStatusRows,
   getAgreementExpirationStatus,
+  getContractDownPaymentRecord,
   getDashboardSummary,
   exportStoreRows,
   exportRosterRows,
@@ -27,6 +29,8 @@ import {
   nextUnpaidTuitionMonth,
   pendingSquarePaymentsForMember,
   parseCsv,
+  prepareStoreForLoad,
+  recordContractDownPayment,
   removePayment,
   reconcileDuePayments,
   restoreStoreFromBackupRows,
@@ -695,7 +699,7 @@ test("does not mark contract months prepaid when the down payment is partial", (
   ]);
 });
 
-test("records a payer down payment on the contract signing date without making it a monthly tuition payment", () => {
+test("records a payer down payment only after an explicit action and remains idempotent", () => {
   let store = createEmptyStore();
   store = upsertMember(store, {
     id: "payer-with-down-payment",
@@ -707,7 +711,11 @@ test("records a payer down payment on the contract signing date without making i
     downPayment: 240
   });
 
-  const downPayment = store.payments.find((payment) => payment.source === "contract-down-payment");
+  assert.deepEqual(store.payments, [], "saving a member must not create a financial transaction");
+  const first = recordContractDownPayment(store, "payer-with-down-payment");
+  assert.equal(first.changed, true);
+  store = first.store;
+  const downPayment = getContractDownPaymentRecord(store, "payer-with-down-payment");
   assert.deepEqual(
     {
       memberId: downPayment.memberId,
@@ -728,7 +736,69 @@ test("records a payer down payment on the contract signing date without making i
   assert.deepEqual([...activeContract.prepaidMonths], ["2026-12"]);
   assert.deepEqual(activeContract.unpaidMonths, ["2027-01"]);
   assert.equal(getYearRevenue(store, 2026).totalRevenue, 240);
+  const second = recordContractDownPayment(store, "payer-with-down-payment");
+  assert.equal(second.changed, false);
+  assert.equal(second.store, store);
   assert.equal(migrateStore(store).payments.filter((payment) => payment.source === "contract-down-payment").length, 1);
+});
+
+test("loading a current store preserves member and payment records exactly", () => {
+  const current = {
+    version: 2,
+    updatedAt: "2026-07-20T12:00:00.000Z",
+    members: [{
+      id: "member-1",
+      name: "Original Name",
+      startDate: "2026-01-15",
+      downPayment: 240,
+      customLegacyField: { keep: true }
+    }],
+    payments: [{
+      id: "payment-1",
+      memberId: "member-1",
+      month: "2026-06",
+      amount: 120,
+      paidAt: "2026-06-15",
+      customPaymentField: "keep-me"
+    }]
+  };
+  const prepared = prepareStoreForLoad(current);
+  assert.equal(prepared.needsBackup, true);
+  assert.equal(prepared.sourceVersion, 2);
+  assert.equal(prepared.targetVersion, CURRENT_STORE_VERSION);
+  assert.equal(prepared.store.version, CURRENT_STORE_VERSION);
+  assert.deepEqual(prepared.store.members, current.members);
+  assert.deepEqual(prepared.store.payments, current.payments);
+  assert.equal(prepared.store.updatedAt, current.updatedAt);
+});
+
+test("editing one member field preserves unknown fields and every payment", () => {
+  const original = {
+    version: CURRENT_STORE_VERSION,
+    updatedAt: "2026-07-20T12:00:00.000Z",
+    members: [{
+      id: "member-1",
+      name: "Original Name",
+      email: "original@example.com",
+      monthlyAmount: 120,
+      startDate: "2026-01-15",
+      participant: true,
+      customLegacyField: { keep: true }
+    }],
+    payments: [{
+      id: "payment-1",
+      memberId: "member-1",
+      month: "2026-06",
+      amount: 120,
+      paidAt: "2026-06-15",
+      customPaymentField: "keep-me"
+    }]
+  };
+  const edited = upsertMember(original, { ...original.members[0], name: "Updated Name" });
+  assert.equal(edited.members[0].name, "Updated Name");
+  assert.equal(edited.members[0].email, "original@example.com");
+  assert.deepEqual(edited.members[0].customLegacyField, { keep: true });
+  assert.deepEqual(edited.payments, original.payments);
 });
 
 test("matches a Square subscription payment by dedicated Square customer ID", () => {

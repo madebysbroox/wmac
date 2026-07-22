@@ -3,12 +3,12 @@ import {
   PAYMENT_FIELD_ALIASES,
   addPayment,
   accountMembers,
-  createEmptyStore,
   defaultAgreementEndDate,
   exportDailyPaymentStatusRows,
   exportRosterRows,
   exportStoreRows,
   getAgreementExpirationStatus,
+  getContractDownPaymentRecord,
   getMemberBalance,
   getLateFeeBalance,
   getLandscapeRows,
@@ -25,6 +25,7 @@ import {
   nextUnpaidTuitionMonth,
   pendingStagedPaymentsForMember,
   parseCsv,
+  recordContractDownPayment,
   removePayment,
   reconcileDuePayments,
   restoreStoreFromBackupRows,
@@ -36,6 +37,7 @@ import {
   undoPaymentBatch,
   upsertMember
 } from "./data.js";
+import { loadStoreWithMigrationBackup } from "./storage.js";
 import { getOperatorBrief } from "./operator.js";
 import { createActivityLog, recordActivity, undoActivity } from "./activity.js";
 import { buildRenewalEmail, formatAgreementDate } from "./renewals.js";
@@ -70,7 +72,6 @@ import {
 } from "./collections.js";
 
 const STORAGE_KEY = "master-lee-payment-tracker";
-const STORAGE_BACKUP_KEY = "master-lee-payment-tracker-v1-backup";
 const EMAIL_TEMPLATE_KEY = "master-lee-payment-tracker-email-template";
 const ACTIVITY_LOG_KEY = "master-lee-payment-tracker-activity";
 const RENEWAL_CONTRACT_URL = new URL("./assets/WMAC-membership-agreement-with-contact-permission.pdf", import.meta.url).href;
@@ -123,7 +124,7 @@ const elements = {};
   "memberHomePhone", "memberWorkPhone", "memberCellPhone", "memberAddress", "memberCity", "memberState", "memberZip", "memberDob",
   "memberEmail", "memberParent", "memberResponsibleParty", "memberHousehold", "memberRole", "memberParticipant",
   "memberTaeKwonDo", "memberMuayThai", "memberBeltLevel", "memberMuayThaiLevel", "memberNextLevel", "memberSquareCustomerId", "memberAmount", "memberLateFeeMinimum", "memberLateFeePercentage", "memberStart",
-  "memberAgreementType", "memberAgreementEnd", "memberDownPayment", "memberEmailConsent", "memberTextConsent", "memberPhoneConsent",
+  "memberAgreementType", "memberAgreementEnd", "memberDownPayment", "memberRecordDownPaymentButton", "memberDownPaymentRecordStatus", "memberEmailConsent", "memberTextConsent", "memberPhoneConsent",
   "memberInactive", "mappingDialog", "mappingForm", "mappingTitle",
   "mappingHelp", "mappingReassure", "mappingFields", "cancelMapping", "toast",
   "yearReportButton", "nextYearCsvButton", "yearDialog",
@@ -320,6 +321,7 @@ elements.backToDashboard.addEventListener("click", showDashboard);
 elements.syncSquareButton.addEventListener("click", syncSquarePayments);
 elements.saveSquareSettingsButton.addEventListener("click", saveSquareConnectionSettings);
 elements.quickPayButton.addEventListener("click", quickPayCurrentMonth);
+elements.memberRecordDownPaymentButton.addEventListener("click", recordMemberDownPayment);
 elements.catchUpButton.addEventListener("click", catchUpMemberPayments);
 elements.undoCatchUpButton.addEventListener("click", undoMemberCatchUp);
 elements.reviewAllAttentionButton.addEventListener("click", () => openAttentionReview());
@@ -418,18 +420,7 @@ loadSquareConnectionSettings();
 // ---------------------------------------------------------------------------
 
 function loadStore() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored?.members && stored?.payments) {
-      if (Number(stored.version || 1) < 2 && !localStorage.getItem(STORAGE_BACKUP_KEY)) {
-        localStorage.setItem(STORAGE_BACKUP_KEY, JSON.stringify(stored));
-      }
-      return migrateStore(stored);
-    }
-  } catch {
-    return createEmptyStore();
-  }
-  return createEmptyStore();
+  return loadStoreWithMigrationBackup(localStorage, { storageKey: STORAGE_KEY });
 }
 
 function saveStore(message = MSG.savedOnComputer) {
@@ -1145,6 +1136,26 @@ function renderDetail() {
   elements.memberAgreementEnd.title = !isPayer ? `Set the billing contract date on ${payer.name}'s payer account.` : "";
   elements.memberDownPayment.disabled = collectionPlaced || !isPayer;
   elements.memberDownPayment.title = !isPayer ? `Set the down payment on ${payer.name}'s payer account.` : "";
+  const downPaymentRecord = getContractDownPaymentRecord(state.store, payer.id);
+  const downPaymentAmount = Number(payer.downPayment || 0);
+  const downPaymentMatches = downPaymentRecord
+    && Number(downPaymentRecord.amount || 0) === downPaymentAmount
+    && downPaymentRecord.paidAt === payer.startDate;
+  elements.memberRecordDownPaymentButton.disabled = collectionPlaced
+    || !isPayer
+    || downPaymentAmount <= 0
+    || !payer.startDate
+    || Boolean(downPaymentMatches);
+  elements.memberRecordDownPaymentButton.classList.toggle("hidden", !isPayer || downPaymentAmount <= 0);
+  if (downPaymentMatches) {
+    elements.memberDownPaymentRecordStatus.textContent = `${formatMoney(downPaymentRecord.amount)} recorded on ${downPaymentRecord.paidAt}.`;
+  } else if (downPaymentRecord) {
+    elements.memberDownPaymentRecordStatus.textContent = `${formatMoney(downPaymentRecord.amount)} was recorded on ${downPaymentRecord.paidAt}. Save contract changes, then update the recorded payment.`;
+  } else if (downPaymentAmount > 0) {
+    elements.memberDownPaymentRecordStatus.textContent = "The contract amount is saved, but no payment transaction has been created.";
+  } else {
+    elements.memberDownPaymentRecordStatus.textContent = "Saving the amount does not create a payment transaction.";
+  }
   elements.memberInactive.disabled = collectionPlaced;
   elements.memberResponsibleParty.disabled = collectionPlaced;
 
@@ -3159,6 +3170,29 @@ function saveMember(event) {
   saveStore(MSG.memberSaved);
   showToast(MSG.memberSavedToast);
   render();
+}
+
+function recordMemberDownPayment() {
+  const member = selectedMember();
+  if (!member) return;
+  const payer = getResponsibleParty(member, state.store.members) || member;
+  if (payer.id !== member.id) {
+    showToast(`계약금은 ${payer.name} 계정에서 기록하세요. · Record the down payment on the payer account.`);
+    return;
+  }
+  try {
+    const result = recordContractDownPayment(state.store, payer.id);
+    if (!result.changed) {
+      showToast("계약금 결제가 이미 기록되어 있습니다. · The down payment is already recorded.");
+      return;
+    }
+    state.store = result.store;
+    saveStore("계약금 결제 기록됨 · Contract down payment recorded");
+    showToast(`${formatMoney(result.payment.amount)} 계약금 결제를 기록했습니다. · Down payment recorded.`);
+    render();
+  } catch (error) {
+    showToast(error.message || "계약금 결제를 기록할 수 없습니다. · Could not record the down payment.");
+  }
 }
 
 // ---------------------------------------------------------------------------
