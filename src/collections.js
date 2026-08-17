@@ -1,6 +1,7 @@
 import { defaultAgreementEndDate, getMemberPaymentState, getLateFeeBalance, getResponsibleParty } from "./data.js";
+import { getCollectionsAgencyEmail } from "./settings.js";
 
-export const FIRST_CREDIT_SERVICES_EMAIL = "placements@fcsbpo.com";
+export const FIRST_CREDIT_SERVICES_EMAIL = "placements@fcsbpo.com";  // Deprecated: use getCollectionsAgencyEmail() from settings.js
 export const FIRST_CREDIT_SERVICES_HEADERS = [
   "Club Number or Location Name",
   "Member #\n\nYour member's unique account number with your business",
@@ -247,7 +248,7 @@ export function collectionPlacementFilename(placement) {
 export function firstCreditServicesEmailDraft(placement, filename) {
   const name = [placement?.row?.[3], placement?.row?.[2]].filter(Boolean).join(" ");
   return {
-    to: FIRST_CREDIT_SERVICES_EMAIL,
+    to: getCollectionsAgencyEmail(),
     subject: `New manual placement - ${name}`,
     body: `Hello,\n\nPlease find attached the fresh First Credit Services manual placement spreadsheet for ${name}.\n\nCharge-off date: ${placement.chargeOffDate}\nTotal balance at charge-off: ${money(placement.frozenBalance)}\nFile to attach: ${filename}\n\nThank you,\nWorld Martial Arts Center`
   };

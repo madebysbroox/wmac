@@ -50,6 +50,7 @@ import {
   nextMemberCertification,
   normalizeMemberCertifications
 } from "./certification.js";
+import { getDailyStatusEmail } from "./settings.js";
 
 const CONTRACT_PDF_URL = new URL("./assets/WMAC-membership-agreement-with-contact-permission.pdf", import.meta.url).href;
 const CONTRACT_PDF_FILENAME = "WMAC-membership-agreement-renewal.pdf";
@@ -1108,7 +1109,7 @@ function exportDailyStatusEmail() {
     "World Martial Arts Center"
   ].join("\r\n");
   toast("Attach the downloaded daily CSV to the email.");
-  window.location.href = `mailto:${DAILY_STATUS_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = `mailto:${getDailyStatusEmail()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function exportNextYearRoster() {

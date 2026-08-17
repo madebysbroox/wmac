@@ -1,3 +1,5 @@
+import { getFrontOfficePhone } from "./settings.js";
+
 export function buildRenewalEmail(member, renewal) {
   const expiration = formatAgreementDate(renewal.expirationDate);
   const recipient = member.parentName || member.name;
@@ -5,6 +7,7 @@ export function buildRenewalEmail(member, renewal) {
     ? `expired on ${expiration}`
     : `will expire on ${expiration}`;
 
+  const phone = getFrontOfficePhone();
   return {
     subject: `World Martial Arts Center Membership Renewal - ${member.name}`,
     body: [
@@ -14,7 +17,7 @@ export function buildRenewalEmail(member, renewal) {
       "",
       "Please review the agreement attached to this email. Complete and sign it, then bring the signed agreement with you to your next class.",
       "",
-      "If you have any questions or would prefer a paper copy, please call Master Lee at (540) 347-7266.",
+      `If you have any questions or would prefer a paper copy, please call the front office at ${phone}.`,
       "",
       "Thank you!",
       "",

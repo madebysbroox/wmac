@@ -60,7 +60,7 @@ test("builds an English-only payment reminder with due dates, late fees, and pho
   assert.match(body, /Total due: \$246\.00/);
   assert.match(body, /\* Payments are due each month on the same day of the month as the signing date\./);
   assert.match(body, /A one-time late fee of 5% or \$5 \(whichever is greater\) is added to each payment that is 10 or more days past due\./);
-  assert.match(body, /call Master Lee at \(540\) 347-7266/);
+  assert.match(body, /call the front office at \(540\) 347-7266/);
   assert.ok(body.includes("\r\n"), "uses CRLF line breaks for mail programs");
   assert.ok(!/[ㄱ-힝]/.test(subject + body), "email contains no Korean text");
 });
@@ -80,7 +80,7 @@ test("reminder email includes the collection note only when 2 or more months are
   const single = buildReminderEmail(member, oneBehind).body;
   assert.ok(!single.includes("collection agency"), "no collection note for a single month");
   assert.ok(!single.includes("late fee*"), "no fee footnote when no fees apply");
-  assert.match(single, /call Master Lee at \(540\) 347-7266/);
+  assert.match(single, /call the front office at \(540\) 347-7266/);
 });
 
 test("reminder email describes the member's $10 contract minimum", () => {

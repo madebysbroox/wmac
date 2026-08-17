@@ -2,6 +2,7 @@
 // so the whole app stays bilingual and the wording is easy to adjust in one place.
 
 import { LATE_FEE_GRACE_DAYS } from "./data.js";
+import { getFrontOfficePhone } from "./settings.js";
 
 export const STATUS_LABELS = {
   paid: { ko: "완납", en: "Paid up" },
@@ -166,7 +167,7 @@ export function formatMonthBi(month) {
   return `${formatMonthKo(month)} (${formatMonthEn(month)})`;
 }
 
-export const MASTER_LEE_PHONE = "(540) 347-7266";
+export const MASTER_LEE_PHONE = "(540) 347-7266";  // Deprecated: use getFrontOfficePhone() from settings.js
 
 export const DEFAULT_EMAIL_TEMPLATE = {
   subject: "World Martial Arts Center Payment Reminder — {{memberName}}",
@@ -182,7 +183,7 @@ export const DEFAULT_EMAIL_TEMPLATE = {
     "{{lateFeeNote}}",
     "{{collectionNote}}",
     "",
-    `The best next step is a quick phone call: please call Master Lee at ${MASTER_LEE_PHONE}. Keeping an open line of communication means we can always find a solution together.`,
+    `The best next step is a quick phone call: please call the front office at {{phone}}. Keeping an open line of communication means we can always find a solution together.`,
     "",
     "Thank you!",
     "",
@@ -224,7 +225,7 @@ export function buildReminderEmail(member, balance, template = DEFAULT_EMAIL_TEM
     totalDue: money(balance.totalDue),
     lateFeeNote,
     collectionNote,
-    phone: MASTER_LEE_PHONE
+    phone: getFrontOfficePhone()
   };
   const subject = fillTemplate(template.subject || DEFAULT_EMAIL_TEMPLATE.subject, values);
   const body = fillTemplate(template.body || DEFAULT_EMAIL_TEMPLATE.body, values)

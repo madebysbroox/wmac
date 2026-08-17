@@ -57,18 +57,6 @@ If an update is available, the app downloads it from the public GitHub release. 
 
 The first version that adds in-app updates must still be installed with the downloaded installer. After that, future updates can be pulled from inside the app.
 
-## Invoice and Email Review
-
-When a member has unpaid months:
-
-- Click **청구서 만들기 (Generate Invoice)** or **알림 이메일 쓰기 (Email Reminder)**.
-- Check only the unpaid months that should be included.
-- Edit the email wording if needed.
-- Click **이 문구 저장 (Save Wording)** to make that email wording the new default.
-- Generate the invoice or open the email.
-
----
-
 ## Important Things to Know
 
 - **Use the same Windows account.** The data is saved for the Windows user who runs the app.

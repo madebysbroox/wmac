@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -12,6 +12,42 @@ import {
   upsertProviderPayment
 } from "./src/data.js";
 import { resolveStaticFilePath } from "./src/static-path.js";
+
+// Load .env file if present (simple parser, no external dependencies)
+async function loadEnvFile() {
+  const envPath = join(dirname(fileURLToPath(import.meta.url)), ".env");
+  if (!existsSync(envPath)) {
+    return;
+  }
+  try {
+    const content = await readFile(envPath, "utf8");
+    const lines = content.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+      const match = trimmed.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (match) {
+        const [, key, value] = match;
+        let cleanValue = value.trim();
+        // Remove surrounding quotes if present
+        if ((cleanValue.startsWith('"') && cleanValue.endsWith('"')) ||
+            (cleanValue.startsWith("'") && cleanValue.endsWith("'"))) {
+          cleanValue = cleanValue.slice(1, -1);
+        }
+        // Only set if not already in environment
+        if (!(key in process.env)) {
+          process.env[key] = cleanValue;
+        }
+      }
+    }
+  } catch {
+    // Ignore .env load errors
+  }
+}
+
+await loadEnvFile();
 
 const preferredPort = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "127.0.0.1";
@@ -210,10 +246,30 @@ async function createSquareMonthlyInvoice(input = {}) {
   }
   const baseUrl = process.env.SQUARE_ENVIRONMENT === "sandbox" ? "https://connect.squareupsandbox.com" : "https://connect.squareup.com";
   let customerId = String(input.squareCustomerId || "").trim();
+  
+  // Look up customer by email before creating a new one
+  if (!customerId) {
+    try {
+      const searchResult = await squareApiRequest(baseUrl, token, "/v2/customers/search", {
+        query: {
+          filter: {
+            email_address: { exact: email }
+          }
+        }
+      });
+      if (searchResult.customers?.length > 0) {
+        customerId = searchResult.customers[0].id;
+      }
+    } catch {
+      // Search failed; proceed to create customer
+    }
+  }
+  
   if (!customerId) {
     const [givenName, ...familyName] = String(input.name).trim().split(/\s+/);
+    const customerIdempotencyKey = stableIdempotencyKey(`customer-${input.memberId}-${email}`);
     const customer = await squareApiRequest(baseUrl, token, "/v2/customers", {
-      idempotency_key: randomUUID(),
+      idempotency_key: customerIdempotencyKey,
       given_name: givenName || input.name,
       family_name: familyName.join(" "),
       email_address: email,
@@ -223,8 +279,10 @@ async function createSquareMonthlyInvoice(input = {}) {
     customerId = customer.customer?.id || "";
   }
   if (!customerId) throw new Error("Square did not return a customer ID.");
+  
+  const subscriptionIdempotencyKey = stableIdempotencyKey(`subscription-${input.memberId}-${input.startDate}`);
   const result = await squareApiRequest(baseUrl, token, "/v2/subscriptions", {
-    idempotency_key: randomUUID(),
+    idempotency_key: subscriptionIdempotencyKey,
     customer_id: customerId,
     location_id: locationId,
     plan_variation_id: planVariationId,
@@ -237,6 +295,10 @@ async function createSquareMonthlyInvoice(input = {}) {
   });
   if (!result.subscription?.id) throw new Error("Square did not return a subscription ID.");
   return { customerId, subscription: result.subscription };
+}
+
+function stableIdempotencyKey(input) {
+  return createHash("sha256").update(String(input)).digest("hex").slice(0, 32);
 }
 
 async function squareApiRequest(baseUrl, token, pathName, body) {
@@ -450,7 +512,7 @@ export function squareRelayPaymentIsCompleted(payment) {
     payment?.payment?.status ||
     ""
   ).toUpperCase();
-  return !providerStatus || providerStatus === "COMPLETED";
+  return providerStatus === "COMPLETED";
 }
 
 function relayPaymentEventId(payment) {
@@ -488,9 +550,12 @@ async function readJsonBody(request) {
   return raw ? JSON.parse(raw) : {};
 }
 
-function validateSquareWebhook(request, rawBody) {
+export function validateSquareWebhook(request, rawBody) {
   if (!process.env.SQUARE_WEBHOOK_SIGNATURE_KEY || !process.env.SQUARE_WEBHOOK_NOTIFICATION_URL) {
-    return true;
+    if (process.env.SQUARE_WEBHOOK_DEV_BYPASS === "1") {
+      return true;
+    }
+    return false;
   }
   const signature = request.headers["x-square-hmacsha256-signature"];
   if (!signature) {

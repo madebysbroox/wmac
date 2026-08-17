@@ -36,6 +36,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The windows-installer tag is force-updated to always point to the latest build.
+          # This is the correct pattern for electron-updater with GitHub releases:
+          # the app checks this fixed tag/release for updates, so the tag must move
+          # to ensure users always get the newest version.
           $tag = "windows-installer"
           $title = "Payment Tracker Windows Installer"
           $notes = "Download the installer below. This release is updated automatically from the latest successful Windows build. The app also uses this release to check for updates."
