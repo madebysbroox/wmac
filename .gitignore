@@ -8,3 +8,6 @@ square-webhook-relay/
 .claude/
 tmp/
 output/
+.env
+.env.*
+!.env.example

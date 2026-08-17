@@ -8,6 +8,13 @@ Every button and label shows Korean first with English underneath, so the app ca
 
 Install Node.js 20 or newer if it is not already installed.
 
+Create a `.env` file in the project root if you need custom environment variables (optional):
+
+```bash
+cp .env.example .env
+# Edit .env with your settings
+```
+
 Start the app:
 
 ```bash
@@ -30,7 +37,7 @@ The everyday workflow needs only the left side of the screen:
 2. On the member page, click the big green **이번 달 납부 완료 (Mark This Month Paid)** button. One click records this month's payment at the member's normal amount.
 3. For a different month or amount, use **다른 달 회비 입력 (Record a Different Month)** below it.
 4. **＋ 새 회원 추가 (Add New Member)** creates a new member and jumps straight to the name field.
-5. For a member who is behind, **알림 이메일 쓰기 (Email Reminder)** opens the computer's own mail program (such as Outlook) with a polite English payment reminder already written — recipient, subject, unpaid months, and total due all filled in. Just click Send. Each month's payment is due on the same day of the month as the member's signing date (clamped for short months); payments 10 or more days past due include a one-time late fee using that member's saved percentage and contract minimum ($5 or $10), whichever is greater, with a footnote explaining it. When 2 or more months are behind, the email adds a note that accounts 3+ months behind may go to a collection agency — while urging a phone call to Master Lee at (540) 347-7266 to work things out first. The button explains itself if the member has no email on file or no balance due.
+5. For a member who is behind, **알림 이메일 쓰기 (Email Reminder)** opens the computer's own mail program (such as Outlook) with a polite English payment reminder already written — recipient, subject, unpaid months, and total due all filled in. Just click Send. Each month's payment is due on the same day of the month as the member's signing date (clamped for short months); payments 10 or more days past due include a one-time late fee using that member's saved percentage and contract minimum ($5 or $10), whichever is greater, with a footnote explaining it. When 2 or more months are behind, the email adds a note that accounts 3+ months behind may go to a collection agency — while urging a phone call to the front office at (540) 347-7266 to work things out first. The button explains itself if the member has no email on file or no balance due.
 
 The home screen (처음 화면) shows who is paid, who needs attention, and who is behind — click any card to see that list of members.
 
@@ -43,6 +50,8 @@ Participants can be enrolled in Tae Kwon Do, Muay Thai, or both. Current belt/le
 ## Square Confirmations · Square 결제 확인
 
 The **Square Confirmations** page is a manual staging area for completed Square payments. Square payments stay separate from member payment history until someone confirms them.
+
+**⚠️ Important:** Approvals are stored on this computer only. If you run this app on multiple computers, each one can confirm the same Square payment, resulting in duplicate entries in different ledgers. Use one designated machine as the approval authority.
 
 - Pending card payments show the amount, date, receipt/terminal details, suggested member match, payment month, and a review note field.
 - If the suggested match is wrong or missing, choose the correct member before approving.
@@ -78,6 +87,12 @@ Optional local webhook testing settings:
 ```bash
 SQUARE_WEBHOOK_SIGNATURE_KEY=...
 SQUARE_WEBHOOK_NOTIFICATION_URL=https://your-public-url.example.com/api/square/webhook
+```
+
+For development without a valid signature (local testing only), set:
+
+```bash
+SQUARE_WEBHOOK_DEV_BYPASS=1
 ```
 
 Square requires a public HTTPS webhook URL. The recommended setup is the separate `wmac-square-webhook-relay` AWS project, which receives Square webhooks and lets this local app securely pull staged payments. The local app stores staged payment data in `data/square-payments.json`, which is ignored by Git so the review copy stays local.

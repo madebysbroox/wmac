@@ -18,10 +18,12 @@ test("Square provider accepts completed payments and rejects unfinished states",
   assert.equal(squarePaymentIsCompleted({ status: "FAILED" }), false);
   assert.equal(squarePaymentIsCompleted({ squareStatus: "APPROVED" }), false);
   assert.equal(squarePaymentIsCompleted({ payment: { status: "FAILED" } }), false);
+  assert.equal(squarePaymentIsCompleted({ status: "" }), false, "blank status must not be imported");
+  assert.equal(squarePaymentIsCompleted({}), false, "missing status must not be imported");
 });
 
-test("legacy relay records without a provider status remain importable", () => {
-  assert.equal(squarePaymentIsCompleted({ paymentId: "legacy-1", localStatus: "pending" }), true);
+test("legacy relay records without a provider status are rejected", () => {
+  assert.equal(squarePaymentIsCompleted({ paymentId: "legacy-1", localStatus: "pending" }), false);
 });
 
 test("installed-app provider settings persist without exposing the relay token", async () => {
@@ -64,6 +66,7 @@ test("Square monthly invoices create an email-payment subscription without a sto
       appRoot,
       fetchImpl: async (url, options = {}) => {
         requests.push({ url, options });
+        if (url.endsWith("/v2/customers/search")) return jsonFetchResponse(200, { customers: [] });
         if (url.endsWith("/v2/customers")) return jsonFetchResponse(200, { customer: { id: "customer-1" } });
         if (url.endsWith("/v2/subscriptions")) {
           return jsonFetchResponse(200, {
@@ -86,12 +89,13 @@ test("Square monthly invoices create an email-payment subscription without a sto
 
     assert.equal(result.customerId, "customer-1");
     assert.equal(result.subscription.id, "subscription-1");
-    assert.equal(requests.length, 2);
-    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/customers");
-    assert.equal(requests[1].url, "https://connect.squareupsandbox.com/v2/subscriptions");
-    assert.equal(requests[1].options.headers.Authorization, "Bearer test-square-token");
-    assert.equal(requests[1].options.headers["Square-Version"], "2026-07-15");
-    const subscriptionRequest = JSON.parse(requests[1].options.body);
+    assert.equal(requests.length, 3, "should make customer search, customer create, and subscription create requests");
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/customers/search");
+    assert.equal(requests[1].url, "https://connect.squareupsandbox.com/v2/customers");
+    assert.equal(requests[2].url, "https://connect.squareupsandbox.com/v2/subscriptions");
+    assert.equal(requests[2].options.headers.Authorization, "Bearer test-square-token");
+    assert.equal(requests[2].options.headers["Square-Version"], "2026-07-15");
+    const subscriptionRequest = JSON.parse(requests[2].options.body);
     assert.equal(subscriptionRequest.customer_id, "customer-1");
     assert.equal(subscriptionRequest.location_id, "location-1");
     assert.equal(subscriptionRequest.plan_variation_id, "monthly-plan-1");
@@ -100,6 +104,16 @@ test("Square monthly invoices create an email-payment subscription without a sto
     assert.equal(subscriptionRequest.monthly_billing_anchor_date, 15);
     assert.equal(subscriptionRequest.canceled_date, "2027-07-15");
     assert.equal("card_id" in subscriptionRequest, false);
+    
+    // Verify idempotency keys are stable (based on member ID + start date / email)
+    const customerRequest = JSON.parse(requests[1].options.body);
+    const stableCustomerKey = customerRequest.idempotency_key;
+    assert.ok(stableCustomerKey, "customer creation should have idempotency key");
+    assert.ok(!stableCustomerKey.includes("-"), "idempotency key should be hash-based, not UUID");
+    
+    const stableSubscriptionKey = subscriptionRequest.idempotency_key;
+    assert.ok(stableSubscriptionKey, "subscription creation should have idempotency key");
+    assert.ok(!stableSubscriptionKey.includes("-"), "idempotency key should be hash-based, not UUID");
   } finally {
     for (const [key, value] of Object.entries(oldEnvironment)) {
       if (value === undefined) delete process.env[key];
@@ -236,6 +250,49 @@ test("local server reports filtered imports and never acknowledges without an ev
   );
   for (const { options } of acknowledgementRequests) {
     assert.equal(options.headers["Content-Type"], "application/json");
+  }
+});
+
+test("webhook validation fails closed when signature vars are missing and no dev bypass is set", async () => {
+  const { validateSquareWebhook } = await import("../server.mjs");
+  const oldKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  const oldUrl = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+  const oldBypass = process.env.SQUARE_WEBHOOK_DEV_BYPASS;
+  delete process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  delete process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+  delete process.env.SQUARE_WEBHOOK_DEV_BYPASS;
+
+  try {
+    const request = { headers: {} };
+    const rawBody = '{"type":"payment.created"}';
+    const result = validateSquareWebhook(request, rawBody);
+    assert.equal(result, false, "webhook must be rejected when signature vars are missing and no dev bypass");
+  } finally {
+    if (oldKey !== undefined) process.env.SQUARE_WEBHOOK_SIGNATURE_KEY = oldKey;
+    if (oldUrl !== undefined) process.env.SQUARE_WEBHOOK_NOTIFICATION_URL = oldUrl;
+    if (oldBypass !== undefined) process.env.SQUARE_WEBHOOK_DEV_BYPASS = oldBypass;
+  }
+});
+
+test("webhook validation allows unsigned requests when dev bypass is explicitly enabled", async () => {
+  const { validateSquareWebhook } = await import("../server.mjs");
+  const oldKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  const oldUrl = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+  const oldBypass = process.env.SQUARE_WEBHOOK_DEV_BYPASS;
+  delete process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  delete process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+  process.env.SQUARE_WEBHOOK_DEV_BYPASS = "1";
+
+  try {
+    const request = { headers: {} };
+    const rawBody = '{"type":"payment.created"}';
+    const result = validateSquareWebhook(request, rawBody);
+    assert.equal(result, true, "webhook must pass when dev bypass is set to 1");
+  } finally {
+    if (oldKey !== undefined) process.env.SQUARE_WEBHOOK_SIGNATURE_KEY = oldKey;
+    if (oldUrl !== undefined) process.env.SQUARE_WEBHOOK_NOTIFICATION_URL = oldUrl;
+    if (oldBypass !== undefined) process.env.SQUARE_WEBHOOK_DEV_BYPASS = oldBypass;
+    else delete process.env.SQUARE_WEBHOOK_DEV_BYPASS;
   }
 });
 

@@ -1,7 +1,7 @@
 const { readFile, writeFile, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { randomUUID } = require("node:crypto");
+const { createHash } = require("node:crypto");
 
 function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch }) {
   const dataDir = path.join(userDataPath, "provider-data");
@@ -270,17 +270,37 @@ function createPaymentProviderService({ userDataPath, appRoot, fetchImpl = fetch
   async function createSquareMonthlyInvoice(input = {}) {
     const config = await effectiveSettings();
     if (config.squareRelayBaseUrl && config.squareRelaySyncToken) {
-      const response = await fetchImpl(`${config.squareRelayBaseUrl}/subscriptions/monthly-invoice`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.squareRelaySyncToken}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(input)
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || body.detail || "Square relay could not create the monthly invoice.");
-      return body;
+      try {
+        const response = await fetchImpl(`${config.squareRelayBaseUrl}/subscriptions/monthly-invoice`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.squareRelaySyncToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(input)
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          if (response.status === 404) {
+            // Relay route not implemented; fall back to direct Square API
+            if (!config.squareAccessToken || !config.squareLocationId || !config.squarePlanVariationId) {
+              throw new Error("Square monthly invoices need SQUARE_ACCESS_TOKEN, SQUARE_LOCATION_ID, and SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID.");
+            }
+            return createSquareMonthlyInvoiceDirect(config, input, fetchImpl);
+          }
+          throw new Error(body.error || body.detail || "Square relay could not create the monthly invoice.");
+        }
+        return body;
+      } catch (error) {
+        // Network error or 404 without credentials
+        if (error.message.includes("SQUARE_ACCESS_TOKEN")) {
+          throw error;
+        }
+        if (!config.squareAccessToken || !config.squareLocationId || !config.squarePlanVariationId) {
+          throw new Error("Square monthly invoices need SQUARE_ACCESS_TOKEN, SQUARE_LOCATION_ID, and SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID (or a working relay with the /subscriptions/monthly-invoice route).");
+        }
+        return createSquareMonthlyInvoiceDirect(config, input, fetchImpl);
+      }
     }
     if (!config.squareAccessToken || !config.squareLocationId || !config.squarePlanVariationId) {
       throw new Error("Square monthly invoices need SQUARE_ACCESS_TOKEN, SQUARE_LOCATION_ID, and SQUARE_MONTHLY_INVOICE_PLAN_VARIATION_ID.");
@@ -299,10 +319,30 @@ async function createSquareMonthlyInvoiceDirect(config, input, fetchImpl = fetch
   }
   const baseUrl = config.squareEnvironment === "sandbox" ? "https://connect.squareupsandbox.com" : "https://connect.squareup.com";
   let customerId = String(input.squareCustomerId || "").trim();
+  
+  // Look up customer by email before creating a new one
+  if (!customerId) {
+    try {
+      const searchResult = await squareRequest(baseUrl, config, "/v2/customers/search", {
+        query: {
+          filter: {
+            email_address: { exact: email }
+          }
+        }
+      }, fetchImpl);
+      if (searchResult.customers?.length > 0) {
+        customerId = searchResult.customers[0].id;
+      }
+    } catch {
+      // Search failed; proceed to create customer
+    }
+  }
+  
   if (!customerId) {
     const [givenName, ...familyName] = String(input.name).trim().split(/\s+/);
+    const customerIdempotencyKey = stableIdempotencyKey(`customer-${input.memberId}-${email}`);
     const customer = await squareRequest(baseUrl, config, "/v2/customers", {
-      idempotency_key: randomUUID(),
+      idempotency_key: customerIdempotencyKey,
       given_name: givenName || input.name,
       family_name: familyName.join(" "),
       email_address: email,
@@ -312,8 +352,10 @@ async function createSquareMonthlyInvoiceDirect(config, input, fetchImpl = fetch
     customerId = customer.customer?.id || "";
     if (!customerId) throw new Error("Square did not return a customer ID.");
   }
+  
+  const subscriptionIdempotencyKey = stableIdempotencyKey(`subscription-${input.memberId}-${input.startDate}`);
   const subscription = await squareRequest(baseUrl, config, "/v2/subscriptions", {
-    idempotency_key: randomUUID(),
+    idempotency_key: subscriptionIdempotencyKey,
     customer_id: customerId,
     location_id: config.squareLocationId,
     plan_variation_id: config.squarePlanVariationId,
@@ -326,6 +368,10 @@ async function createSquareMonthlyInvoiceDirect(config, input, fetchImpl = fetch
   }, fetchImpl);
   if (!subscription.subscription?.id) throw new Error("Square did not return a subscription ID.");
   return { customerId, subscription: subscription.subscription };
+}
+
+function stableIdempotencyKey(input) {
+  return createHash("sha256").update(String(input)).digest("hex").slice(0, 32);
 }
 
 async function squareRequest(baseUrl, config, pathName, body, fetchImpl = fetch) {
@@ -370,7 +416,7 @@ function squarePaymentIsCompleted(payment) {
     payment?.payment?.status ||
     ""
   ).toUpperCase();
-  return !status || status === "COMPLETED";
+  return status === "COMPLETED";
 }
 
 function relayPaymentEventId(payment) {

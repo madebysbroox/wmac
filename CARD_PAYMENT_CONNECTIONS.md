@@ -4,6 +4,8 @@ Square payments enter the WMAC Payment Tracker through **Square Confirmations**.
 
 ## Installed Windows App
 
+**⚠️ Important:** Square payment approvals are stored on the computer where they are confirmed. If you run this app on multiple computers, each one can approve the same payment onto separate ledgers. Designate one machine as the approval authority.
+
 1. Open **Square Confirmations**.
 2. Expand **Square connection settings**.
 3. Enter the relay HTTPS URL and limited-scope sync token.
@@ -36,11 +38,18 @@ npm start
 
 The relay must expose:
 
-- `GET /payments`, returning JSON with a `payments` array.
+- `GET /payments`, returning JSON with a `payments` array and optional `nextCursor` for pagination.
 - `POST /payments/:paymentId/delivered`, accepting `{"eventId":"SQUARE_EVENT_ID"}`.
 - Optionally, `POST /subscriptions/monthly-invoice` for monthly Square payment links.
 
-Each relay payment should include its Square event ID and may include `paymentId`, `squarePaymentId`, `amount`, `buyerName`, `buyerEmailAddress`, `receiptUrl`, `squareCreatedAt`, `receivedAt`, and `localStatus`.
+Each relay payment should include:
+- `paymentId` or `squarePaymentId` — the Square payment identifier
+- `eventId` or `event_id` — the Square webhook event identifier
+- `status` or `squareStatus` — payment status (must be `COMPLETED` to import)
+- `amountCents` — payment amount in cents
+- `buyerEmail` or `buyerEmailAddress` — payer email address
+- `squareCreatedAt` or `createdAt` — when the payment was created
+- Optional fields: `buyerName`, `receiptUrl`, `receivedAt`, `localStatus`
 
 ## Optional: Direct Square Sync
 
