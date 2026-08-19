@@ -569,6 +569,66 @@ export function removePayment(store, memberId, month) {
   };
 }
 
+function localDateKey(today = new Date()) {
+  const date = today instanceof Date ? today : new Date(today);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// One click from the member calendar or payment landscape records a normal
+// tuition payment for that month, or removes it. Household tuition is stored
+// on whichever family member received it, so unpaid has to clear the whole
+// account rather than only the selected row.
+export function toggleMemberMonthPayment(store, memberId, month, today = new Date()) {
+  const member = (store?.members || []).find((candidate) => candidate.id === memberId);
+  if (!member) {
+    return { store, changed: false, action: "none" };
+  }
+  const payer = getResponsibleParty(member, store.members) || member;
+  if (payer.id !== member.id) {
+    return { store, changed: false, action: "none" };
+  }
+  const monthKeyValue = normalizeMonth(month);
+  if (!monthKeyValue) {
+    return { store, changed: false, action: "none" };
+  }
+  const status = getMemberPaymentState(payer, store.payments, today, [], store.members);
+  if (status.prepaidMonths.has(monthKeyValue)) {
+    return { store, changed: false, action: "none" };
+  }
+  const accountIds = new Set(accountMembers(store.members, payer).map((person) => person.id));
+  if (status.paidMonths.has(monthKeyValue)) {
+    return {
+      store: {
+        ...store,
+        payments: store.payments.filter((payment) =>
+          !(isTuitionPayment(payment) && payment.month === monthKeyValue && accountIds.has(payment.memberId))
+        ),
+        updatedAt: new Date().toISOString()
+      },
+      changed: true,
+      action: "unpaid"
+    };
+  }
+  const amount = getMemberBalance(payer, store.payments, today, store.members).monthlyAmount;
+  if (amount <= 0) {
+    return { store, changed: false, action: "none" };
+  }
+  return {
+    store: addPayment(store, {
+      memberId: payer.id,
+      month: monthKeyValue,
+      amount,
+      paidAt: localDateKey(today),
+      source: "month-toggle"
+    }),
+    changed: true,
+    action: "paid"
+  };
+}
+
 // Records one normal tuition payment for every unpaid billable month through
 // today. Individual months remain ordinary payments, so they can be removed
 // later with removePayment just like any manually entered payment.
@@ -989,10 +1049,15 @@ export function getLandscapeRows(store, pendingPayments = [], today = new Date()
     const pending = pendingPaymentsFor(member, pendingPayments, store.members);
     const paymentState = getMemberPaymentState(member, store.payments, today, pending, store.members);
     const stateByMonth = new Map(paymentState.months.map((month) => [month.month, month]));
-    const cells = visibleMonths.map((month) => ({
-      month,
-      state: paymentState.flags.setupNeeded ? "not_billable" : stateByMonth.get(month)?.state || "not_billable"
-    }));
+    const cells = visibleMonths.map((month) => {
+      const viewed = stateByMonth.get(month);
+      return {
+        month,
+        state: paymentState.flags.setupNeeded ? "not_billable" : viewed?.state || "not_billable",
+        paid: Boolean(viewed?.paid),
+        prepaid: Boolean(viewed?.prepaid)
+      };
+    });
     return {
       member,
       paymentState,

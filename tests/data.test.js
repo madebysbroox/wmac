@@ -40,6 +40,7 @@ import {
   squarePaymentMonth,
   suggestedSquareMember,
   toCsv,
+  toggleMemberMonthPayment,
   undoPaymentBatch,
   migrateStore,
   upsertMember
@@ -1022,4 +1023,77 @@ test("store migration keeps household members' certifications independent and is
   assert.equal(migrated.members[0].responsiblePartyId, "a");
   assert.equal(migrated.members[1].responsiblePartyId, "a");
   assert.deepEqual(twice, migrated);
+});
+
+test("clicking a member month records that month paid and clicking again marks it unpaid", () => {
+  const imported = importMembersFromRecords(
+    [{ Name: "Sam Park", Amount: "120", Start: "2026-04-01" }],
+    { name: "Name", monthlyAmount: "Amount", startDate: "Start" },
+    createEmptyStore()
+  );
+  const member = imported.store.members[0];
+  const today = new Date("2026-06-08T12:00:00");
+
+  const paid = toggleMemberMonthPayment(imported.store, member.id, "2026-05", today);
+  assert.equal(paid.changed, true);
+  assert.equal(paid.action, "paid");
+  assert.equal(getMemberStatus(member, paid.store.payments, today, paid.store.members).paidMonths.has("2026-05"), true);
+  assert.deepEqual(getMemberBalance(member, paid.store.payments, today, paid.store.members).unpaidMonths, ["2026-04", "2026-06"]);
+
+  const unpaid = toggleMemberMonthPayment(paid.store, member.id, "2026-05", today);
+  assert.equal(unpaid.changed, true);
+  assert.equal(unpaid.action, "unpaid");
+  assert.equal(getMemberStatus(member, unpaid.store.payments, today, unpaid.store.members).paidMonths.has("2026-05"), false);
+  assert.deepEqual(getMemberBalance(member, unpaid.store.payments, today, unpaid.store.members).unpaidMonths, ["2026-04", "2026-05", "2026-06"]);
+});
+
+test("unpaying a month removes household tuition even when it was recorded on a dependent", () => {
+  const payer = {
+    id: "payer",
+    name: "Morgan Lee",
+    participant: false,
+    responsiblePartyId: "payer",
+    startDate: "2026-01-10"
+  };
+  const child = {
+    id: "child",
+    name: "Jamie Lee",
+    participant: true,
+    responsiblePartyId: "payer",
+    monthlyAmount: 120,
+    startDate: "2026-01-25"
+  };
+  let store = createEmptyStore();
+  store = upsertMember(store, payer);
+  store = upsertMember(store, child);
+  store = addPayment(store, { memberId: child.id, month: "2026-05", amount: 120 });
+  const today = new Date("2026-06-08T12:00:00");
+
+  assert.equal(getMemberStatus(payer, store.payments, today, store.members).paidMonths.has("2026-05"), true);
+
+  const unpaid = toggleMemberMonthPayment(store, payer.id, "2026-05", today);
+  assert.equal(unpaid.changed, true);
+  assert.equal(unpaid.action, "unpaid");
+  assert.equal(getMemberStatus(payer, unpaid.store.payments, today, unpaid.store.members).paidMonths.has("2026-05"), false);
+});
+
+test("does not toggle months covered by a contract down payment", () => {
+  const member = {
+    id: "contract-member",
+    name: "Morgan Lee",
+    participant: true,
+    monthlyAmount: 120,
+    startDate: "2026-01-15",
+    agreementType: "Contract",
+    agreementEndDate: "2027-01-15",
+    downPayment: 240
+  };
+  let store = createEmptyStore();
+  store = upsertMember(store, member);
+  const today = new Date("2026-06-08T12:00:00");
+
+  const result = toggleMemberMonthPayment(store, member.id, "2026-01", today);
+  assert.equal(result.changed, false);
+  assert.equal(result.action, "none");
+  assert.deepEqual(result.store.payments, []);
 });
