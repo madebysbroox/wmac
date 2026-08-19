@@ -29,6 +29,7 @@ import {
   stagedPaymentMonth,
   suggestedPaymentMember,
   toCsv,
+  toggleMemberMonthPayment,
   upsertMember
 } from "./data.js";
 import { loadStoreWithMigrationBackup } from "./storage.js";
@@ -514,10 +515,23 @@ function renderMemberLandscape() {
       <th class="landscape-member-name"><button class="landscape-member-button" type="button" data-open-member="${row.member.id}">${escapeHtml(row.member.name)}</button></th>
       <td><span class="mini-status ${row.paymentState.level}">${statusLabel(row.paymentState.level)}</span></td>
       <td><strong>${row.balance.dueNow ? money(row.balance.dueNow) : "—"}</strong></td>
-      ${row.cells.map((cell) => `<td class="simple-landscape-cell ${cell.state}" title="${escapeAttr(formatMonthEn(cell.month))}">${landscapeSymbol(cell.state)}</td>`).join("")}
+      ${row.cells.map((cell) => {
+        const disabled = cell.state === "not_billable" || cell.prepaid || row.balance.monthlyAmount <= 0;
+        const label = cell.prepaid
+          ? "covered by down payment"
+          : cell.paid
+            ? "click to mark unpaid"
+            : "click to record payment";
+        return `<td class="simple-landscape-cell ${cell.state}${cell.prepaid ? " prepaid" : ""}">
+          <button class="landscape-month-button" type="button" data-toggle-member="${escapeAttr(row.member.id)}" data-toggle-month="${escapeAttr(cell.month)}" ${disabled ? "disabled" : ""} title="${escapeAttr(`${formatMonthEn(cell.month)}: ${label}`)}" aria-label="${escapeAttr(`${row.member.name}, ${formatMonthEn(cell.month)}: ${label}`)}">${landscapeSymbol(cell.state)}</button>
+        </td>`;
+      }).join("")}
     </tr>`).join("") : `<tr><td colspan="15" class="empty-message">No active member accounts.</td></tr>`;
   el.memberLandscapeBody.querySelectorAll("[data-open-member]").forEach((button) =>
     button.addEventListener("click", () => openMember(button.dataset.openMember))
+  );
+  el.memberLandscapeBody.querySelectorAll("[data-toggle-month]").forEach((button) =>
+    button.addEventListener("click", () => toggleLandscapeMonth(button.dataset.toggleMember, button.dataset.toggleMonth))
   );
 }
 
@@ -1589,23 +1603,29 @@ function renderPaymentCalendar(member, status = accountPaymentState(member), bal
 
 function toggleCalendarMonth(monthKey) {
   const member = selectedMember();
-  if (!member || !isPayer(member)) return;
-  const status = accountPaymentState(member);
-  if (status.prepaidMonths.has(monthKey)) return toast("That month is covered by the contract down payment.");
-  if (status.paidMonths.has(monthKey)) {
-    const accountIds = new Set(state.store.members.filter((candidate) => payerFor(candidate).id === member.id).map((candidate) => candidate.id));
-    state.store = {
-      ...state.store,
-      payments: state.store.payments.filter((payment) =>
-        !((!payment.category || payment.category === "tuition") && payment.month === monthKey && accountIds.has(payment.memberId))
-      )
-    };
+  if (!member) return;
+  applyMonthToggle(member.id, monthKey);
+}
+
+function toggleLandscapeMonth(memberId, monthKey) {
+  applyMonthToggle(memberId, monthKey);
+}
+
+function applyMonthToggle(memberId, monthKey) {
+  const member = state.store.members.find((candidate) => candidate.id === memberId);
+  if (!member) return;
+  if (!isPayer(member)) return toast(`Record payments on ${payerFor(member).name}'s account.`);
+  const result = toggleMemberMonthPayment(state.store, member.id, monthKey);
+  if (!result.changed) {
+    if (accountPaymentState(member).prepaidMonths.has(monthKey)) return toast("That month is covered by the contract down payment.");
+    if (accountBalance(member).monthlyAmount <= 0) return toast("Add the monthly tuition amount first.");
+    return;
+  }
+  state.store = result.store;
+  if (result.action === "unpaid") {
     saveStore("Payment removed");
     toast(`${formatMonthEn(monthKey)} marked unpaid.`);
   } else {
-    const amount = accountBalance(member).monthlyAmount;
-    if (amount <= 0) return toast("Add the monthly tuition amount first.");
-    state.store = addPayment(state.store, { memberId: member.id, month: monthKey, amount, paidAt: todayKey(), source: "simple-desk-calendar" });
     saveStore("Payment recorded");
     toast(`${formatMonthEn(monthKey)} payment recorded.`);
   }
