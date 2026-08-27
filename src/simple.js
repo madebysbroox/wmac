@@ -91,7 +91,7 @@ const ids = [
   "rosterView", "rosterTitle", "rosterSummary", "rosterList", "memberListToggle", "memberLandscapeToggle",
   "memberLandscape", "memberLandscapeHead", "memberLandscapeBody",
   "memberView", "memberBackButton", "memberAvatar", "memberNameHeading", "memberStatusBadge", "memberSubtitle",
-  "editProfileButton", "nextMemberButton", "paymentCard", "paymentHeadline", "paymentSubhead", "amountDue",
+  "editProfileButton", "deleteMemberButton", "nextMemberButton", "paymentCard", "paymentHeadline", "paymentSubhead", "amountDue",
   "recordPaymentButton", "recordPaymentTitle", "recordPaymentLabel", "paymentMenuButton", "paymentMenu",
   "paymentCalendar", "paymentCalendarGrid", "customPaymentButton",
   "catchUpButton", "reminderButton", "invoiceButton", "squareRecurringButton", "showAllPaymentsButton", "paymentHistory",
@@ -166,6 +166,7 @@ el.squareRecurringButton.addEventListener("click", setUpSquareMonthlyInvoice);
 el.editTrainingButton.addEventListener("click", () => openEditor("training"));
 el.showAllPaymentsButton.addEventListener("click", () => { state.historyExpanded = !state.historyExpanded; renderMember(); });
 el.editProfileButton.addEventListener("click", () => openEditor("profile"));
+el.deleteMemberButton.addEventListener("click", confirmDeleteMember);
 el.editBioButton.addEventListener("click", () => openEditor("bio"));
 el.editContractButton.addEventListener("click", () => openEditor("contract"));
 el.recordDownPaymentButton.addEventListener("click", recordSelectedDownPayment);
@@ -2206,6 +2207,76 @@ function selectField(label, name, value, options) {
 
 function checkboxField(label, name, checked) {
   return `<label class="checkbox-label"><input name="${name}" type="checkbox" value="true" ${checked ? "checked" : ""}><span>${escapeHtml(label)}</span></label>`;
+}
+
+function confirmDeleteMember() {
+  const member = selectedMember();
+  if (!member) return;
+  
+  // Check if this member is a payer for others
+  const dependents = state.store.members.filter((other) => 
+    other.id !== member.id && other.responsiblePartyId === member.id
+  );
+  
+  // Check if member has payments
+  const payments = state.store.payments.filter((payment) => payment.memberId === member.id);
+  const hasPayments = payments.length > 0;
+  
+  // Build confirmation message
+  let message = `Remove ${member.name || "this member"}?\n\n`;
+  
+  if (dependents.length > 0) {
+    const names = dependents.map((d) => d.name || "Unnamed").join(", ");
+    message += `⚠️ This member is the responsible payer for ${dependents.length} other member${dependents.length === 1 ? "" : "s"}: ${names}.\n\n`;
+    message += `Those members will become independent (self-paying) after this deletion.\n\n`;
+  }
+  
+  if (hasPayments) {
+    message += `This member has ${payments.length} payment record${payments.length === 1 ? "" : "s"} totaling $${payments.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}. Those payments will also be deleted.\n\n`;
+  }
+  
+  message += `This action cannot be undone.`;
+  
+  if (window.confirm(message)) {
+    deleteMember(member.id);
+  }
+}
+
+function deleteMember(memberId) {
+  const member = state.store.members.find((m) => m.id === memberId);
+  if (!member) return;
+  
+  // Find dependents and make them independent
+  const dependents = state.store.members.filter((other) => 
+    other.id !== memberId && other.responsiblePartyId === memberId
+  );
+  
+  // Update dependents to be self-paying
+  dependents.forEach((dependent) => {
+    state.store = upsertMember(state.store, {
+      ...dependent,
+      responsiblePartyId: dependent.id,
+      parentName: ""
+    });
+  });
+  
+  // Remove member's payments
+  state.store = {
+    ...state.store,
+    payments: state.store.payments.filter((payment) => payment.memberId !== memberId)
+  };
+  
+  // Remove member
+  state.store = {
+    ...state.store,
+    members: state.store.members.filter((m) => m.id !== memberId)
+  };
+  
+  saveStore(`${member.name || "Member"} removed`);
+  toast(`${member.name || "Member"} removed.`);
+  
+  // Navigate away from the deleted member
+  showHome();
 }
 
 function openNextMember() {

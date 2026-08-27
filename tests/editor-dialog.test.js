@@ -65,3 +65,64 @@ test("cancel and close buttons both call closeEditor", async () => {
   assert.match(renderer, /el\.closeEditorButton\.addEventListener\("click", closeEditor\)/);
   assert.match(renderer, /el\.cancelEditorButton\.addEventListener\("click", closeEditor\)/);
 });
+
+test("delete member button calls confirmDeleteMember", async () => {
+  const renderer = await readFile(new URL("../src/simple.js", import.meta.url), "utf8");
+
+  // Verify delete button exists and is wired to confirmDeleteMember
+  assert.match(renderer, /deleteMemberButton/);
+  assert.match(renderer, /el\.deleteMemberButton\.addEventListener\("click", confirmDeleteMember\)/);
+});
+
+test("confirmDeleteMember checks for dependents and payments", async () => {
+  const renderer = await readFile(new URL("../src/simple.js", import.meta.url), "utf8");
+
+  // Verify confirmation checks for dependents (members with this as responsiblePartyId)
+  assert.match(renderer, /state\.store\.members\.filter\(\(other\)/);
+  assert.match(renderer, /responsiblePartyId === member\.id/);
+  
+  // Verify confirmation checks for payments
+  assert.match(renderer, /state\.store\.payments\.filter\(\(payment\) => payment\.memberId === member\.id\)/);
+  
+  // Verify enhanced warning message is shown
+  assert.match(renderer, /responsible payer for/);
+  assert.match(renderer, /payment record.*will also be deleted/);
+});
+
+test("deleteMember reassigns dependents to be self-paying", async () => {
+  const renderer = await readFile(new URL("../src/simple.js", import.meta.url), "utf8");
+
+  // Verify dependents are found
+  assert.match(renderer, /dependents.*=.*state\.store\.members\.filter/);
+  
+  // Verify dependents are updated with their own ID as responsiblePartyId
+  assert.match(renderer, /responsiblePartyId: dependent\.id/);
+  assert.match(renderer, /parentName: ""/);
+});
+
+test("deleteMember removes member payments and member record", async () => {
+  const renderer = await readFile(new URL("../src/simple.js", import.meta.url), "utf8");
+
+  // Verify payments are removed
+  assert.match(renderer, /payments: state\.store\.payments\.filter\(\(payment\) => payment\.memberId !== memberId\)/);
+  
+  // Verify member is removed
+  assert.match(renderer, /members: state\.store\.members\.filter\(\(m\) => m\.id !== memberId\)/);
+  
+  // Verify navigation away from deleted member
+  assert.match(renderer, /function deleteMember[\s\S]*showHome\(\)/);
+});
+
+test("deleteMember does not use inactive flag for deletion", async () => {
+  const renderer = await readFile(new URL("../src/simple.js", import.meta.url), "utf8");
+
+  // Verify deleteMember actually removes from array, not just setting inactive
+  const deleteMemberMatch = renderer.match(/function deleteMember\(memberId\) \{([\s\S]*?)\n\}/);
+  assert.ok(deleteMemberMatch, "deleteMember function should exist");
+  
+  // Verify it filters members array (removes member)
+  assert.match(deleteMemberMatch[1], /members\.filter.*m\.id !== memberId/);
+  
+  // Verify it does NOT set inactive flag
+  assert.ok(!deleteMemberMatch[1].includes("inactive: true"), "Should not set inactive flag");
+});

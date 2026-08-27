@@ -75,6 +75,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 46px 0 80
 .section-heading h2, .card-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
 .section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .text-button { padding: 6px; border: 0; background: transparent; color: var(--green); font-weight: 800; cursor: pointer; }
+.delete-button { color: #d32f2f; }
 .attention-list { display: grid; }
 .attention-row { display: grid; grid-template-columns: minmax(230px, 1.4fr) minmax(150px, .8fr) 120px 145px; align-items: center; gap: 16px; min-height: 74px; border-top: 1px solid #edf1ed; }
 .person { display: flex; align-items: center; gap: 13px; min-width: 0; }
