@@ -1449,7 +1449,11 @@ function bindSquareEvents() {
 
 function updateSquareDraft(paymentId, patch, rerender = true) {
   state.squarePayments = state.squarePayments.map((payment) =>
-    payment.id === paymentId ? { ...payment, ...patch, status: patch.memberId && payment.status === "needs_match" ? "pending" : payment.status } : payment
+    payment.id === paymentId ? { 
+      ...payment, 
+      status: patch.memberId && payment.status === "needs_match" ? "pending" : payment.status,
+      ...patch 
+    } : payment
   );
   if (rerender) renderSquare();
 }
