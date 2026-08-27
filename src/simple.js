@@ -2095,7 +2095,37 @@ function openEditor(mode) {
 }
 
 function closeEditor() {
-  if (!selectedMember()?.name && state.editorMode === "profile") return;
+  const member = selectedMember();
+  if (!member) return;
+  
+  // If member has no name and we're in profile mode, check if it should be removed
+  if (!member.name && state.editorMode === "profile") {
+    const hasPayments = state.store.payments.some((payment) => payment.memberId === member.id);
+    const hasDependents = state.store.members.some((other) => other.responsiblePartyId === member.id && other.id !== member.id);
+    const hasContract = member.monthlyAmount > 0 || (member.downPayment && member.downPayment !== "");
+    const hasFamilyData = member.householdName || member.parentName;
+    const hasContactData = member.email || member.cellPhone || member.phone || member.address;
+    
+    // Only remove if this is truly a brand-new blank member with no data
+    const isBlankNewMember = !hasPayments && !hasDependents && !hasContract && !hasFamilyData && !hasContactData;
+    
+    if (isBlankNewMember) {
+      // Remove the blank member from the store
+      state.store = {
+        ...state.store,
+        members: state.store.members.filter((m) => m.id !== member.id)
+      };
+      saveStore("Canceled new member");
+      el.editorDialog.close();
+      // Navigate back to home or roster
+      if (state.view === "member") {
+        showHome();
+      }
+      return;
+    }
+    // If member has data, allow closing without removal
+  }
+  
   el.editorDialog.close();
 }
 
