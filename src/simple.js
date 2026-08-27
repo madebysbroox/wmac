@@ -26,6 +26,7 @@ import {
   parseCsv,
   recordContractDownPayment,
   searchMembers,
+  shiftMonth,
   stagedPaymentMonth,
   suggestedPaymentMember,
   toCsv,
@@ -1386,6 +1387,7 @@ function squareDetailMarkup(payment) {
   const member = squarePaymentMember(payment);
   const memberId = payment.memberId || payment.suggestedMemberId || member?.id || "";
   const month = stagedPaymentMonth(payment) || currentMonthKey();
+  const monthCount = Number(payment.monthCount) || 1;
   const completed = payment.status === "approved" || payment.status === "ignored";
   const recommendedMonth = member
     ? nextUnpaidTuitionMonth(member, state.store.payments, squarePaymentDate(payment), state.store.members)
@@ -1395,21 +1397,29 @@ function squareDetailMarkup(payment) {
     ...state.store.members.filter((candidate) => !candidate.inactive)
       .map((candidate) => `<option value="${escapeAttr(candidate.id)}" ${candidate.id === memberId ? "selected" : ""}>${escapeHtml(candidate.name || "New member")}</option>`)
   ].join("");
+  
+  const squareAmount = Number(payment.amountCents || 0) / 100;
+  const monthlyAmount = Number(member?.monthlyAmount || 0);
+  const monthsHint = monthCount > 1 && monthlyAmount > 0
+    ? `${monthCount} months × ${money(monthlyAmount)} = ${money(monthCount * monthlyAmount)}${Math.abs(squareAmount - monthCount * monthlyAmount) > 0.01 ? ` (payment is ${money(squareAmount)})` : ""}`
+    : "";
+  
   return `
     <div class="square-detail-inner">
       <div class="square-detail-head">
         <div>
           <p class="eyebrow">Square payment</p>
-          <h2>${money(Number(payment.amountCents || 0) / 100)}</h2>
+          <h2>${money(squareAmount)}</h2>
           <p>${escapeHtml([payment.buyerName, payment.buyerEmail, payment.receiptNumber ? `Receipt ${payment.receiptNumber}` : ""].filter(Boolean).join(" · ") || "No customer details supplied")}</p>
         </div>
         <span class="square-state ${escapeAttr(payment.status)}">${escapeHtml(squareStatusLabel(payment.status))}</span>
       </div>
       <div class="square-confirmation-form">
         <label><span>Member</span><select data-square-member="${escapeAttr(payment.id)}" ${completed ? "disabled" : ""}>${options}</select></label>
-        <label><span>Tuition month</span><input data-square-month="${escapeAttr(payment.id)}" type="month" value="${escapeAttr(month)}" ${completed ? "disabled" : ""}></label>
+        <label><span>Starting month</span><input data-square-month="${escapeAttr(payment.id)}" type="month" value="${escapeAttr(month)}" ${completed ? "disabled" : ""}></label>
+        <label><span>Number of months</span><input data-square-month-count="${escapeAttr(payment.id)}" type="number" min="1" max="24" value="${escapeAttr(monthCount)}" ${completed ? "disabled" : ""}></label>
         <label class="full"><span>Note <small>optional</small></span><input data-square-note="${escapeAttr(payment.id)}" type="text" value="${escapeAttr(payment.reviewNote || "")}" placeholder="Gear, testing, special payment…" ${completed ? "disabled" : ""}></label>
-        <div class="square-recommendation">${member ? `Recommended: apply to ${escapeHtml(formatMonthEn(recommendedMonth))}, the next unpaid tuition month.` : "Choose the member this payment belongs to."}</div>
+        <div class="square-recommendation">${member ? `Recommended: apply to ${escapeHtml(formatMonthEn(recommendedMonth))}, the next unpaid tuition month.${monthsHint ? ` ${monthsHint}` : ""}` : "Choose the member this payment belongs to."}</div>
       </div>
       <div class="square-detail-actions">
         <button class="button secondary danger-link" type="button" data-square-ignore="${escapeAttr(payment.id)}" ${completed ? "disabled" : ""}>Ignore</button>
@@ -1432,6 +1442,13 @@ function bindSquareEvents() {
   el.squareDetail.querySelectorAll("[data-square-month]").forEach((input) =>
     input.addEventListener("change", () => updateSquareDraft(input.dataset.squareMonth, { paymentMonth: input.value }))
   );
+  el.squareDetail.querySelectorAll("[data-square-month-count]").forEach((input) =>
+    input.addEventListener("change", () => {
+      const count = Math.max(1, Math.min(24, Number(input.value) || 1));
+      input.value = String(count);
+      updateSquareDraft(input.dataset.squareMonthCount, { monthCount: count });
+    })
+  );
   el.squareDetail.querySelectorAll("[data-square-note]").forEach((input) => {
     input.addEventListener("input", () => updateSquareDraft(input.dataset.squareNote, { reviewNote: input.value }, false));
     input.addEventListener("change", () => saveSquareStatus(input.dataset.squareNote, { reviewNote: input.value }));
@@ -1449,7 +1466,11 @@ function bindSquareEvents() {
 
 function updateSquareDraft(paymentId, patch, rerender = true) {
   state.squarePayments = state.squarePayments.map((payment) =>
-    payment.id === paymentId ? { ...payment, ...patch, status: patch.memberId && payment.status === "needs_match" ? "pending" : payment.status } : payment
+    payment.id === paymentId ? { 
+      ...payment, 
+      status: patch.memberId && payment.status === "needs_match" ? "pending" : payment.status,
+      ...patch 
+    } : payment
   );
   if (rerender) renderSquare();
 }
@@ -1461,36 +1482,55 @@ async function confirmSquarePayment(paymentId, category) {
   const squareStatus = String(payment.squareStatus || payment.providerStatus || "").toUpperCase();
   if (squareStatus && squareStatus !== "COMPLETED") return toast("Only completed Square payments can be confirmed.");
   const payer = payerFor(member);
-  const month = stagedPaymentMonth(payment) || nextUnpaidTuitionMonth(member, state.store.payments, squarePaymentDate(payment), state.store.members);
-  const amount = Number(payment.amountCents || 0) / 100;
+  const startMonth = stagedPaymentMonth(payment) || nextUnpaidTuitionMonth(member, state.store.payments, squarePaymentDate(payment), state.store.members);
+  const monthCount = Math.max(1, Math.min(24, Number(payment.monthCount) || 1));
+  const totalAmount = Number(payment.amountCents || 0) / 100;
   const priorStore = state.store;
-  const nextStore = addPayment(state.store, {
-    memberId: category === "tuition" ? payer.id : member.id,
-    month,
-    amount,
-    paidAt: payment.paidAt || todayKey(),
-    source: "square",
-    category,
-    note: payment.reviewNote || (category === "one-off" ? "Square other sale" : ""),
-    squarePaymentId: payment.squarePaymentId || payment.id,
-    providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.id,
-    paymentProvider: "square"
-  });
+  
+  // For multi-month tuition, create a batch of payments across consecutive months
+  let nextStore = state.store;
+  // Use Square payment ID as batch ID to link multi-month payments together
+  const batchId = monthCount > 1 ? `multi-${paymentId}` : "";
+  
+  for (let i = 0; i < monthCount; i++) {
+    const currentMonth = i === 0 ? startMonth : shiftMonth(startMonth, i);
+    // Distribute amount evenly across months, with any remainder in the first month
+    const baseAmount = Math.floor((totalAmount * 100) / monthCount) / 100;
+    const remainder = i === 0 ? totalAmount - (baseAmount * monthCount) : 0;
+    const monthAmount = baseAmount + remainder;
+    
+    nextStore = addPayment(nextStore, {
+      memberId: category === "tuition" ? payer.id : member.id,
+      month: currentMonth,
+      amount: monthAmount,
+      paidAt: payment.paidAt || todayKey(),
+      source: "square",
+      category,
+      note: payment.reviewNote || (category === "one-off" ? "Square other sale" : ""),
+      squarePaymentId: payment.squarePaymentId || payment.id,
+      providerPaymentId: payment.providerPaymentId || payment.squarePaymentId || payment.id,
+      paymentProvider: "square",
+      batchId
+    });
+  }
+  
   state.store = nextStore;
   const saved = await saveSquareStatus(paymentId, {
     status: "approved",
     memberId: category === "tuition" ? payer.id : member.id,
     suggestedMemberId: category === "tuition" ? payer.id : member.id,
-    paymentMonth: month,
+    paymentMonth: startMonth,
     paymentCategory: category,
-    reviewNote: payment.reviewNote || ""
+    reviewNote: payment.reviewNote || "",
+    monthCount
   });
   if (!saved) {
     state.store = priorStore;
     return;
   }
   saveStore("Square payment confirmed");
-  toast(`${money(amount)} confirmed for ${member.name}.`);
+  const monthLabel = monthCount > 1 ? `${monthCount} months starting ${formatMonthEn(startMonth)}` : formatMonthEn(startMonth);
+  toast(`${money(totalAmount)} confirmed for ${member.name} (${monthLabel}).`);
   render();
 }
 
