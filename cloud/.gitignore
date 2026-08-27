@@ -1,0 +1,8 @@
+node_modules/
+.aws-sam/
+coverage/
+*.log
+.env
+.env.local
+samconfig.toml.bak
+package-lock.json

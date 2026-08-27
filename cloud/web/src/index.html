@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>회비 관리 관리자 로그인 · WMAC Admin Login</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .login-container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 48px;
+      max-width: 440px;
+      width: 100%;
+    }
+    
+    .logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .logo h1 {
+      font-size: 28px;
+      color: #1a202c;
+      margin-bottom: 8px;
+    }
+    
+    .logo p {
+      font-size: 16px;
+      color: #718096;
+    }
+    
+    .form-group {
+      margin-bottom: 24px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 18px;
+      font-weight: 600;
+      color: #2d3748;
+      margin-bottom: 4px;
+    }
+    
+    .form-sublabel {
+      display: block;
+      font-size: 14px;
+      color: #718096;
+      margin-bottom: 8px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      transition: border-color 0.2s;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    
+    .btn-submit {
+      width: 100%;
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .btn-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    .btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    
+    .message.success {
+      background: #c6f6d5;
+      color: #22543d;
+      border: 1px solid #9ae6b4;
+    }
+    
+    .message.error {
+      background: #fed7d7;
+      color: #742a2a;
+      border: 1px solid #fc8181;
+    }
+    
+    .security-notice {
+      margin-top: 24px;
+      padding: 16px;
+      background: #edf2f7;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #4a5568;
+      text-align: center;
+    }
+    
+    .dev-token {
+      margin-top: 16px;
+      padding: 12px;
+      background: #fff5f5;
+      border: 1px dashed #fc8181;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="logo">
+      <h1>회비 관리 관리자</h1>
+      <p>WMAC Payment Tracker Admin</p>
+    </div>
+    
+    <div id="message-container"></div>
+    
+    <form id="login-form">
+      <div class="form-group">
+        <label class="form-label" for="email">이메일 주소</label>
+        <span class="form-sublabel">Email Address</span>
+        <input 
+          type="email" 
+          id="email" 
+          name="email" 
+          class="form-input" 
+          placeholder="admin@example.com"
+          required
+          autocomplete="email"
+        >
+      </div>
+      
+      <button type="submit" class="btn-submit" id="submit-btn">
+        <span id="btn-text-ko">로그인 링크 받기</span><br>
+        <span id="btn-text-en" style="font-size: 14px; font-weight: 400;">Send Login Link</span>
+      </button>
+    </form>
+    
+    <div class="security-notice">
+      🔒 관리자만 접근 가능 · Admin Access Only<br>
+      승인된 이메일만 로그인할 수 있습니다<br>
+      Only allowlisted emails can sign in
+    </div>
+  </div>
+  
+  <script>
+    const API_BASE = window.location.origin.includes('cloudfront') 
+      ? window.API_URL 
+      : 'http://localhost:3000';
+    
+    const form = document.getElementById('login-form');
+    const emailInput = document.getElementById('email');
+    const submitBtn = document.getElementById('submit-btn');
+    const messageContainer = document.getElementById('message-container');
+    
+    function showMessage(text, type = 'success') {
+      messageContainer.innerHTML = `<div class="message ${type}">${text}</div>`;
+    }
+    
+    function clearMessage() {
+      messageContainer.innerHTML = '';
+    }
+    
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearMessage();
+      
+      const email = emailInput.value.trim();
+      if (!email) return;
+      
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '전송 중... · Sending...';
+      
+      try {
+        const response = await fetch(`${API_BASE}/auth/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Login failed');
+        }
+        
+        let message = `
+          <strong>이메일을 확인해주세요 · Check Your Email</strong><br>
+          ${data.message}
+        `;
+        
+        // DEV ONLY: show magic link token
+        if (data._devToken) {
+          message += `
+            <div class="dev-token">
+              <strong>DEV MODE:</strong> Magic link token:<br>
+              <a href="/auth/verify?token=${data._devToken}">/auth/verify?token=${data._devToken}</a>
+            </div>
+          `;
+        }
+        
+        showMessage(message, 'success');
+        emailInput.value = '';
+        
+      } catch (error) {
+        showMessage(`
+          <strong>오류 · Error</strong><br>
+          ${error.message}
+        `, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `
+          <span>로그인 링크 받기</span><br>
+          <span style="font-size: 14px; font-weight: 400;">Send Login Link</span>
+        `;
+      }
+    });
+  </script>
+</body>
+</html>

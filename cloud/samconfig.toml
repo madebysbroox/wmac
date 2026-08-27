@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "wmac-admin-web"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-us-east-1"
+s3_prefix = "wmac-admin-web"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=\"production\""
+profile = "wmac"
