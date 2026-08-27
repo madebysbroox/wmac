@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: WMAC Admin Web App - Secure admin portal for payment tracker
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - development
+      - production
+    Description: Deployment environment
+  
+  AdminAllowlistSecretName:
+    Type: String
+    Default: wmac-admin-allowlist
+    Description: Name of Secrets Manager secret containing admin email allowlist
+  
+  SessionSigningSecretName:
+    Type: String
+    Default: wmac-session-signing-key
+    Description: Name of Secrets Manager secret containing session signing key
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 29
+    MemorySize: 256
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        SESSION_TABLE: !Ref SessionTable
+        MEMBERS_TABLE: !Ref MembersTable
+        PAYMENTS_TABLE: !Ref PaymentsTable
+        SQUARE_STAGING_TABLE: !Ref SquareStagingTable
+        ADMIN_ALLOWLIST_SECRET: !Ref AdminAllowlistSecretName
+        SESSION_SIGNING_SECRET: !Ref SessionSigningSecretName
+        NODE_OPTIONS: "--enable-source-maps"
+    Architectures:
+      - arm64
+
+Resources:
+  # API Gateway
+  AdminApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub "https://${CloudFrontDistribution.DomainName}"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - X-Requested-With
+        AllowCredentials: true
+        MaxAge: 300
+      Auth:
+        Authorizers:
+          SessionAuthorizer:
+            AuthorizerPayloadFormatVersion: "2.0"
+            EnableSimpleResponses: true
+            FunctionArn: !GetAtt SessionAuthorizerFunction.Arn
+            Identity:
+              Headers:
+                - Cookie
+
+  # Session Authorizer Lambda
+  SessionAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/auth
+      Handler: authorizer.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SessionTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SessionSigningSecretName}*"
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - authorizer.mjs
+
+  # Auth Functions
+  LoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/auth
+      Handler: login.handler
+      Environment:
+        Variables:
+          RATE_LIMIT_TABLE: !Ref RateLimitTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AdminAllowlistSecretName}*"
+                - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SessionSigningSecretName}*"
+      Events:
+        LoginPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AdminApi
+            Path: /auth/login
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - login.mjs
+
+  VerifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/auth
+      Handler: verify.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SessionSigningSecretName}*"
+      Events:
+        VerifyGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AdminApi
+            Path: /auth/verify
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - verify.mjs
+
+  LogoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/auth
+      Handler: logout.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+      Events:
+        LogoutPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AdminApi
+            Path: /auth/logout
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - logout.mjs
+
+  # Protected API Functions
+  AdminHomeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/api
+      Handler: home.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SessionTable
+      Events:
+        AdminHomeGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AdminApi
+            Path: /api/home
+            Method: GET
+            Auth:
+              Authorizer: SessionAuthorizer
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: esm
+        Minify: false
+        OutExtension:
+          - .js=.mjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - home.mjs
+
+  # DynamoDB Tables
+  SessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sessionToken
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sessionToken
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  RateLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: identifier
+          AttributeType: S
+      KeySchema:
+        - AttributeName: identifier
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  MembersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: memberId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: householdName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: memberId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: HouseholdIndex
+          KeySchema:
+            - AttributeName: householdName
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  PaymentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: paymentId
+          AttributeType: S
+        - AttributeName: paidAt
+          AttributeType: S
+        - AttributeName: memberId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: paymentId
+          KeyType: HASH
+        - AttributeName: paidAt
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: MemberPaymentsIndex
+          KeySchema:
+            - AttributeName: memberId
+              KeyType: HASH
+            - AttributeName: paidAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  SquareStagingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: squarePaymentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: squarePaymentId
+          KeyType: HASH
+
+  # S3 Bucket for web assets
+  WebAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # CloudFront Distribution
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt WebAssetsBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          Compress: true
+          DefaultTTL: 3600
+          MaxTTL: 86400
+          MinTTL: 0
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  # S3 Bucket Policy for CloudFront
+  WebAssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebAssetsBucket
+      PolicyDocument:
+        Statement:
+          - Action: s3:GetObject
+            Effect: Allow
+            Resource: !Sub "${WebAssetsBucket.Arn}/*"
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway URL
+    Value: !Sub "https://${AdminApi}.execute-api.${AWS::Region}.amazonaws.com"
+  
+  CloudFrontUrl:
+    Description: CloudFront Distribution URL
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+  
+  WebAssetsBucket:
+    Description: S3 bucket for web assets
+    Value: !Ref WebAssetsBucket
+  
+  SessionTableName:
+    Description: DynamoDB session table name
+    Value: !Ref SessionTable
+  
+  MembersTableName:
+    Description: DynamoDB members table name
+    Value: !Ref MembersTable

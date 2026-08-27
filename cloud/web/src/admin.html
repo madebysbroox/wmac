@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>관리자 홈 · WMAC Admin Home</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      background: #f7fafc;
+      min-height: 100vh;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+    
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-top: 4px;
+    }
+    
+    .logout-btn {
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    
+    .logout-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+    
+    .welcome-card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .welcome-card h2 {
+      font-size: 32px;
+      color: #2d3748;
+      margin-bottom: 8px;
+    }
+    
+    .welcome-card p {
+      font-size: 18px;
+      color: #718096;
+      margin-bottom: 16px;
+    }
+    
+    .welcome-card .admin-badge {
+      display: inline-block;
+      padding: 8px 16px;
+      background: #c6f6d5;
+      color: #22543d;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    
+    .info-card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      margin-bottom: 24px;
+    }
+    
+    .info-card h3 {
+      font-size: 20px;
+      color: #2d3748;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .info-card ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    
+    .info-card li {
+      padding: 12px 0;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 16px;
+      color: #4a5568;
+    }
+    
+    .info-card li:last-child {
+      border-bottom: none;
+    }
+    
+    .info-card li strong {
+      color: #2d3748;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    
+    .status-badge.coming-soon {
+      background: #feebc8;
+      color: #7c2d12;
+    }
+    
+    .security-info {
+      background: #edf2f7;
+      border-left: 4px solid #4299e1;
+      padding: 16px 20px;
+      margin-top: 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #2d3748;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: #718096;
+    }
+    
+    .error-card {
+      background: #fed7d7;
+      color: #742a2a;
+      border: 1px solid #fc8181;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+      <div>
+        <h1>회비 관리 관리자</h1>
+        <p>WMAC Payment Tracker Admin Portal</p>
+      </div>
+      <button class="logout-btn" onclick="logout()">
+        로그아웃 · Logout
+      </button>
+    </div>
+  </div>
+  
+  <div class="container">
+    <div id="loading" class="loading">
+      로딩 중... · Loading...
+    </div>
+    
+    <div id="content" style="display: none;">
+      <div class="welcome-card">
+        <h2>환영합니다!</h2>
+        <p>Welcome!</p>
+        <div class="admin-badge" id="admin-email">
+          관리자 · Admin
+        </div>
+      </div>
+      
+      <div class="info-card">
+        <h3>🔐 인증 성공 · Authentication Successful</h3>
+        <ul>
+          <li><strong>보안 인증:</strong> 세션이 활성화되었습니다<br>
+              <strong>Secure Auth:</strong> Your session is active</li>
+          <li><strong>접근 수준:</strong> 관리자 전체 권한<br>
+              <strong>Access Level:</strong> Full admin privileges</li>
+          <li><strong>세션 만료:</strong> 24시간<br>
+              <strong>Session Expires:</strong> 24 hours</li>
+        </ul>
+      </div>
+      
+      <div class="info-card">
+        <h3>📋 다음 단계 · Next Steps</h3>
+        <ul>
+          <li>
+            <strong>회원 관리 · Member Management</strong>
+            <span class="status-badge coming-soon">준비 중 · Coming Soon</span><br>
+            회원 명단, 결제 내역, 가족 관리
+          </li>
+          <li>
+            <strong>Square 결제 승인 · Square Payment Approval</strong>
+            <span class="status-badge coming-soon">준비 중 · Coming Soon</span><br>
+            카드 결제 확인 및 회비 승인
+          </li>
+          <li>
+            <strong>보고서 · Reports</strong>
+            <span class="status-badge coming-soon">준비 중 · Coming Soon</span><br>
+            월별 수입, 연말 세금 보고서
+          </li>
+        </ul>
+      </div>
+      
+      <div class="security-info">
+        <strong>🛡️ 보안 알림 · Security Notice</strong><br>
+        이 사이트는 관리자 전용입니다. 회원 결제 정보가 포함되어 있습니다. 
+        로그아웃 후 브라우저를 닫아주세요.<br>
+        <em>This site is for admins only and contains confidential payment data. 
+        Please log out and close your browser when finished.</em>
+      </div>
+    </div>
+    
+    <div id="error-container"></div>
+  </div>
+  
+  <script>
+    const API_BASE = window.location.origin.includes('cloudfront') 
+      ? window.API_URL 
+      : 'http://localhost:3000';
+    
+    async function loadAdminHome() {
+      const loading = document.getElementById('loading');
+      const content = document.getElementById('content');
+      const errorContainer = document.getElementById('error-container');
+      
+      try {
+        const response = await fetch(`${API_BASE}/api/home`, {
+          credentials: 'include'
+        });
+        
+        if (response.status === 401 || response.status === 403) {
+          window.location.href = '/';
+          return;
+        }
+        
+        if (!response.ok) {
+          throw new Error('Failed to load admin data');
+        }
+        
+        const data = await response.json();
+        
+        document.getElementById('admin-email').textContent = data.admin || 'Admin';
+        
+        loading.style.display = 'none';
+        content.style.display = 'block';
+        
+      } catch (error) {
+        loading.style.display = 'none';
+        errorContainer.innerHTML = `
+          <div class="error-card">
+            <strong>오류 · Error</strong><br>
+            ${error.message}<br>
+            <a href="/">로그인으로 돌아가기 · Return to Login</a>
+          </div>
+        `;
+      }
+    }
+    
+    async function logout() {
+      try {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+      
+      window.location.href = '/';
+    }
+    
+    // Load admin home on page load
+    loadAdminHome();
+  </script>
+</body>
+</html>
