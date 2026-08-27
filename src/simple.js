@@ -117,95 +117,115 @@ const ids = [
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id}`)]));
 
-el.homeLink.addEventListener("click", (event) => { event.preventDefault(); showHome(); });
-el.homeNav.addEventListener("click", showHome);
-el.membersNav.addEventListener("click", () => showRoster("all"));
-el.snapshotNav.addEventListener("click", showSnapshot);
-el.snapshotPrevButton.addEventListener("click", () => shiftSnapshotMonth(-1));
-el.snapshotNextButton.addEventListener("click", () => shiftSnapshotMonth(1));
-el.squareNav.addEventListener("click", showSquare);
-el.addMemberButton.addEventListener("click", addMember);
-el.settingsButton.addEventListener("click", () => el.toolsDialog.showModal());
-el.closeToolsButton.addEventListener("click", () => el.toolsDialog.close());
-el.searchInput.addEventListener("input", handleSearch);
-el.searchInput.addEventListener("keydown", (event) => {
+// Fail-soft event listener helper: missing elements won't brick the entire app
+function attachListener(element, elementId, eventType, handler) {
+  if (!element) {
+    console.error(`[BOOT] Missing element: id="${elementId}" - control will not be interactive`);
+    return false;
+  }
+  try {
+    element.addEventListener(eventType, handler);
+    return true;
+  } catch (error) {
+    console.error(`[BOOT] Failed to attach ${eventType} listener to id="${elementId}":`, error);
+    return false;
+  }
+}
+
+attachListener(el.homeLink, "homeLink", "click", (event) => { event.preventDefault(); showHome(); });
+attachListener(el.homeNav, "homeNav", "click", showHome);
+attachListener(el.membersNav, "membersNav", "click", () => showRoster("all"));
+attachListener(el.snapshotNav, "snapshotNav", "click", showSnapshot);
+attachListener(el.snapshotPrevButton, "snapshotPrevButton", "click", () => shiftSnapshotMonth(-1));
+attachListener(el.snapshotNextButton, "snapshotNextButton", "click", () => shiftSnapshotMonth(1));
+attachListener(el.squareNav, "squareNav", "click", showSquare);
+attachListener(el.addMemberButton, "addMemberButton", "click", addMember);
+attachListener(el.settingsButton, "settingsButton", "click", () => el.toolsDialog.showModal());
+attachListener(el.closeToolsButton, "closeToolsButton", "click", () => el.toolsDialog.close());
+attachListener(el.searchInput, "searchInput", "input", handleSearch);
+attachListener(el.searchInput, "searchInput", "keydown", (event) => {
   if (event.key === "Enter") {
     const match = searchMembers(state.store.members, el.searchInput.value)[0];
     if (match) openMember(match.id);
   }
 });
-el.seeAllMembersButton.addEventListener("click", () => showRoster("all"));
-el.paidStat.addEventListener("click", () => showRoster("paid"));
-el.dueStat.addEventListener("click", () => showRoster("due"));
-el.familyStat.addEventListener("click", () => showRoster("families"));
-el.membersStat.addEventListener("click", () => showRoster("all"));
-el.memberListToggle.addEventListener("click", () => setMemberViewMode("list"));
-el.memberLandscapeToggle.addEventListener("click", () => setMemberViewMode("landscape"));
-el.memberBackButton.addEventListener("click", () => {
+attachListener(el.seeAllMembersButton, "seeAllMembersButton", "click", () => showRoster("all"));
+attachListener(el.paidStat, "paidStat", "click", () => showRoster("paid"));
+attachListener(el.dueStat, "dueStat", "click", () => showRoster("due"));
+attachListener(el.familyStat, "familyStat", "click", () => showRoster("families"));
+attachListener(el.membersStat, "membersStat", "click", () => showRoster("all"));
+attachListener(el.memberListToggle, "memberListToggle", "click", () => setMemberViewMode("list"));
+attachListener(el.memberLandscapeToggle, "memberLandscapeToggle", "click", () => setMemberViewMode("landscape"));
+attachListener(el.memberBackButton, "memberBackButton", "click", () => {
   if (state.memberOrigin === "roster") return showRoster(state.rosterFilter);
   if (state.memberOrigin === "advanced") return showAdvanced();
   showHome();
 });
-el.nextMemberButton.addEventListener("click", openNextMember);
-el.recordPaymentButton.addEventListener("click", toggleRecordPayments);
-el.paymentMenuButton.addEventListener("click", () => el.paymentMenu.classList.toggle("hidden"));
+attachListener(el.nextMemberButton, "nextMemberButton", "click", openNextMember);
+attachListener(el.recordPaymentButton, "recordPaymentButton", "click", toggleRecordPayments);
+attachListener(el.paymentMenuButton, "paymentMenuButton", "click", () => el.paymentMenu.classList.toggle("hidden"));
 // Clicking anywhere outside the payment dropdown collapses it.
-document.addEventListener("click", (event) => {
-  if (el.paymentMenu.classList.contains("hidden")) return;
-  if (el.paymentMenu.contains(event.target) || el.paymentMenuButton.contains(event.target)) return;
-  el.paymentMenu.classList.add("hidden");
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") el.paymentMenu.classList.add("hidden");
-});
-el.customPaymentButton.addEventListener("click", openPaymentDialog);
-el.catchUpButton.addEventListener("click", catchUpPayments);
-el.reminderButton.addEventListener("click", sendReminder);
-el.invoiceButton.addEventListener("click", generateInvoice);
-el.squareRecurringButton.addEventListener("click", setUpSquareMonthlyInvoice);
-el.editTrainingButton.addEventListener("click", () => openEditor("training"));
-el.showAllPaymentsButton.addEventListener("click", () => { state.historyExpanded = !state.historyExpanded; renderMember(); });
-el.editProfileButton.addEventListener("click", () => openEditor("profile"));
-el.editBioButton.addEventListener("click", () => openEditor("bio"));
-el.editContractButton.addEventListener("click", () => openEditor("contract"));
-el.recordDownPaymentButton.addEventListener("click", recordSelectedDownPayment);
-el.clearDownPaymentButton.addEventListener("click", clearSelectedDownPayment);
-el.editFamilyButton.addEventListener("click", () => openEditor("family"));
-el.closeEditorButton.addEventListener("click", closeEditor);
-el.cancelEditorButton.addEventListener("click", closeEditor);
-el.editorForm.addEventListener("submit", saveEditor);
-el.closePaymentButton.addEventListener("click", () => el.paymentDialog.close());
-el.cancelPaymentButton.addEventListener("click", () => el.paymentDialog.close());
-el.paymentForm.addEventListener("submit", saveCustomPayment);
-el.memberCsv.addEventListener("change", () => importCsv(el.memberCsv.files[0], "members"));
-el.paymentCsv.addEventListener("change", () => importCsv(el.paymentCsv.files[0], "payments"));
-el.restoreCsv.addEventListener("change", () => importCsv(el.restoreCsv.files[0], "backup"));
-el.exportButton.addEventListener("click", exportBackup);
-el.advancedToolsButton.addEventListener("click", () => { el.toolsDialog.close(); showAdvanced(); });
-el.checkUpdateButton.addEventListener("click", checkForAppUpdate);
-el.installUpdateButton.addEventListener("click", installAppUpdate);
-el.advancedBackButton.addEventListener("click", showHome);
-el.yearReportThisButton.addEventListener("click", () => runYearReport(new Date().getFullYear()));
-el.yearReportLastButton.addEventListener("click", () => runYearReport(new Date().getFullYear() - 1));
-el.dailyStatusButton.addEventListener("click", exportDailyStatusEmail);
-el.nextYearRosterButton.addEventListener("click", exportNextYearRoster);
-el.openBlankContractButton.addEventListener("click", openRenewalContract);
-el.closeCollectionButton.addEventListener("click", () => el.collectionDialog.close());
-el.cancelCollectionButton.addEventListener("click", () => el.collectionDialog.close());
-el.collectionForm.addEventListener("input", updateCollectionPreview);
-el.collectionForm.addEventListener("change", updateCollectionPreview);
-el.collectionForm.addEventListener("submit", (event) => finalizeCollection(event, false));
-el.collectionSaveEmailButton.addEventListener("click", (event) => finalizeCollection(event, true));
-el.groupEmailButton.addEventListener("click", openGroupEmailDialog);
-el.closeGroupEmailButton.addEventListener("click", () => el.groupEmailDialog.close());
-el.cancelGroupEmailButton.addEventListener("click", () => el.groupEmailDialog.close());
-el.selectAllGroupEmail.addEventListener("click", () => setAllGroupEmailMembers(true));
-el.clearAllGroupEmail.addEventListener("click", () => setAllGroupEmailMembers(false));
-el.groupEmailMembers.addEventListener("change", updateGroupEmailHelp);
-el.openGroupEmailButton.addEventListener("click", openGroupEmail);
-el.syncSquareButton.addEventListener("click", syncSquarePayments);
-el.squareEmptySyncButton.addEventListener("click", syncSquarePayments);
-el.saveSquareSettingsButton.addEventListener("click", saveSquareSettings);
+// Global listeners are fail-safe: no element lookup, just DOM behavior
+try {
+  document.addEventListener("click", (event) => {
+    if (!el.paymentMenu || el.paymentMenu.classList.contains("hidden")) return;
+    if (el.paymentMenu.contains(event.target) || (el.paymentMenuButton && el.paymentMenuButton.contains(event.target))) return;
+    el.paymentMenu.classList.add("hidden");
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && el.paymentMenu) el.paymentMenu.classList.add("hidden");
+  });
+} catch (error) {
+  console.error("[BOOT] Failed to attach document-level listeners:", error);
+}
+attachListener(el.customPaymentButton, "customPaymentButton", "click", openPaymentDialog);
+attachListener(el.catchUpButton, "catchUpButton", "click", catchUpPayments);
+attachListener(el.reminderButton, "reminderButton", "click", sendReminder);
+attachListener(el.invoiceButton, "invoiceButton", "click", generateInvoice);
+attachListener(el.squareRecurringButton, "squareRecurringButton", "click", setUpSquareMonthlyInvoice);
+attachListener(el.editTrainingButton, "editTrainingButton", "click", () => openEditor("training"));
+attachListener(el.showAllPaymentsButton, "showAllPaymentsButton", "click", () => { state.historyExpanded = !state.historyExpanded; renderMember(); });
+attachListener(el.editProfileButton, "editProfileButton", "click", () => openEditor("profile"));
+attachListener(el.editBioButton, "editBioButton", "click", () => openEditor("bio"));
+attachListener(el.editContractButton, "editContractButton", "click", () => openEditor("contract"));
+attachListener(el.recordDownPaymentButton, "recordDownPaymentButton", "click", recordSelectedDownPayment);
+attachListener(el.clearDownPaymentButton, "clearDownPaymentButton", "click", clearSelectedDownPayment);
+attachListener(el.editFamilyButton, "editFamilyButton", "click", () => openEditor("family"));
+attachListener(el.closeEditorButton, "closeEditorButton", "click", closeEditor);
+attachListener(el.cancelEditorButton, "cancelEditorButton", "click", closeEditor);
+attachListener(el.editorForm, "editorForm", "submit", saveEditor);
+attachListener(el.closePaymentButton, "closePaymentButton", "click", () => el.paymentDialog.close());
+attachListener(el.cancelPaymentButton, "cancelPaymentButton", "click", () => el.paymentDialog.close());
+attachListener(el.paymentForm, "paymentForm", "submit", saveCustomPayment);
+attachListener(el.memberCsv, "memberCsv", "change", () => importCsv(el.memberCsv.files[0], "members"));
+attachListener(el.paymentCsv, "paymentCsv", "change", () => importCsv(el.paymentCsv.files[0], "payments"));
+attachListener(el.restoreCsv, "restoreCsv", "change", () => importCsv(el.restoreCsv.files[0], "backup"));
+attachListener(el.exportButton, "exportButton", "click", exportBackup);
+attachListener(el.advancedToolsButton, "advancedToolsButton", "click", () => { el.toolsDialog.close(); showAdvanced(); });
+attachListener(el.checkUpdateButton, "checkUpdateButton", "click", checkForAppUpdate);
+attachListener(el.installUpdateButton, "installUpdateButton", "click", installAppUpdate);
+attachListener(el.advancedBackButton, "advancedBackButton", "click", showHome);
+attachListener(el.yearReportThisButton, "yearReportThisButton", "click", () => runYearReport(new Date().getFullYear()));
+attachListener(el.yearReportLastButton, "yearReportLastButton", "click", () => runYearReport(new Date().getFullYear() - 1));
+attachListener(el.dailyStatusButton, "dailyStatusButton", "click", exportDailyStatusEmail);
+attachListener(el.nextYearRosterButton, "nextYearRosterButton", "click", exportNextYearRoster);
+attachListener(el.openBlankContractButton, "openBlankContractButton", "click", openRenewalContract);
+attachListener(el.closeCollectionButton, "closeCollectionButton", "click", () => el.collectionDialog.close());
+attachListener(el.cancelCollectionButton, "cancelCollectionButton", "click", () => el.collectionDialog.close());
+attachListener(el.collectionForm, "collectionForm", "input", updateCollectionPreview);
+attachListener(el.collectionForm, "collectionForm", "change", updateCollectionPreview);
+attachListener(el.collectionForm, "collectionForm", "submit", (event) => finalizeCollection(event, false));
+attachListener(el.collectionSaveEmailButton, "collectionSaveEmailButton", "click", (event) => finalizeCollection(event, true));
+attachListener(el.groupEmailButton, "groupEmailButton", "click", openGroupEmailDialog);
+attachListener(el.closeGroupEmailButton, "closeGroupEmailButton", "click", () => el.groupEmailDialog.close());
+attachListener(el.cancelGroupEmailButton, "cancelGroupEmailButton", "click", () => el.groupEmailDialog.close());
+attachListener(el.selectAllGroupEmail, "selectAllGroupEmail", "click", () => setAllGroupEmailMembers(true));
+attachListener(el.clearAllGroupEmail, "clearAllGroupEmail", "click", () => setAllGroupEmailMembers(false));
+attachListener(el.groupEmailMembers, "groupEmailMembers", "change", updateGroupEmailHelp);
+attachListener(el.openGroupEmailButton, "openGroupEmailButton", "click", openGroupEmail);
+attachListener(el.syncSquareButton, "syncSquareButton", "click", syncSquarePayments);
+attachListener(el.squareEmptySyncButton, "squareEmptySyncButton", "click", syncSquarePayments);
+attachListener(el.saveSquareSettingsButton, "saveSquareSettingsButton", "click", saveSquareSettings);
 
 function loadStore() {
   return loadStoreWithMigrationBackup(localStorage, { storageKey: STORAGE_KEY });
