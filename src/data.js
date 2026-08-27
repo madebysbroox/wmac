@@ -1685,7 +1685,7 @@ function monthsInRange(startMonth, endMonth) {
   return months;
 }
 
-function shiftMonth(month, offset) {
+export function shiftMonth(month, offset) {
   const [year, monthNumber] = month.split("-").map(Number);
   const date = new Date(year, monthNumber - 1 + offset, 1);
   return monthKey(date);
